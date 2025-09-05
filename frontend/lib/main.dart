@@ -13,8 +13,6 @@ class CricketApp extends StatelessWidget {
       title: 'Cricket League',
       home: const Scaffold(
         body: Center(child: Text('🏏 Cricket League App')),
-
-        
       ),
     );
   }
