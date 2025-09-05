@@ -1,5 +1,5 @@
 stack:
--flutter (Riverpod, Hive/Drift) for app
+- flutter (Riverpod, Hive/Drift) for app
 - Node.js + EXPress + TypeScript + Prisma + Socket.IO fot backend
 - MySQL on planetScale
 
