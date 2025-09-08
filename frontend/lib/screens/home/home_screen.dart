@@ -1,134 +1,146 @@
 import 'package:flutter/material.dart';
-import '../team/team_dashboard_screen.dart';
+import '../../widgets/bottom_nav.dart';
+import '../team/viewer/team_dashboard_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-
   @override
-  Widget build(BuildContext context) {
-    // Dummy data (we'll replace with provider/backend later)
-    final List<Map<String, String>> teams = [
-      {"name": "Warriors", "trophies": "3"},
-      {"name": "Titans", "trophies": "5"},
-      {"name": "Strikers", "trophies": "2"},
-      {"name": "Riders", "trophies": "1"},
-      {"name": "Falcons", "trophies": "0"},
-    ];
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
-    final List<Map<String, String>> upcomingMatches = [
-      {"match": "Warriors vs Titans", "time": "Today 4:00 PM"},
-      {"match": "Strikers vs Riders", "time": "Tomorrow 10:00 AM"},
-    ];
+class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+  final TextEditingController _searchController = TextEditingController();
 
-    return Scaffold(
-      appBar: AppBar(title: const Text("Home"), centerTitle: true),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12.0),
-          child: ListView(
+  final List<Map<String, dynamic>> _teams = [
+    {
+      "name": "Titans XI",
+      "trophies": 3,
+      "image": "https://via.placeholder.com/300x300.png?text=Titans+XI",
+    },
+    {
+      "name": "Warriors CC",
+      "trophies": 2,
+      "image": "https://via.placeholder.com/300x300.png?text=Warriors+CC",
+    },
+    {
+      "name": "Strikers United",
+      "trophies": 1,
+      "image": "https://via.placeholder.com/300x300.png?text=Strikers+United",
+    },
+    {
+      "name": "Raptors CC",
+      "trophies": 4,
+      "image": "https://via.placeholder.com/300x300.png?text=Raptors+CC",
+    },
+  ];
+
+  void _onNavTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  Widget _homeTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Column(
             children: [
+              const Text('All Teams', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
-              // Search
               TextField(
+                controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: 'Search teams, players...',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                  hintText: 'Search teams by name',
+                  prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-
-              // Upcoming matches (horizontal)
-              const Text("Upcoming / Live Matches", style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 110,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: upcomingMatches.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final m = upcomingMatches[index];
-                    return Container(
-                      width: 260,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.green[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.green.shade100),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(m["match"]!, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 8),
-                          Text(m["time"]!, style: const TextStyle(color: Colors.black54)),
-                          const Spacer(),
-                          Align(
-                            alignment: Alignment.bottomRight,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                // TODO: open match details / live screen
-                              },
-                              child: const Text("View"),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 18),
-
-              // Teams header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text("All Teams", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  // optional action for filter/sort
-                  // IconButton(icon: Icon(Icons.filter_list), onPressed: () {})
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              // Teams list
-              ListView.separated(
-                physics: const NeverScrollableScrollPhysics(),
-                shrinkWrap: true,
-                itemCount: teams.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final team = teams[index];
-                  return Card(
-                    margin: EdgeInsets.zero,
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.green[700],
-                        child: Text(team["name"]![0], style: const TextStyle(color: Colors.white)),
-                      ),
-                      title: Text(team["name"]!),
-                      subtitle: Text("🏆 ${team['trophies']} trophies"),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () {
-                        // Open Team Dashboard (detail)
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => TeamDashboardScreen(teamName: team["name"]!),
-                          ),
-                        );
-                      },
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
             ],
           ),
         ),
-      ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            itemCount: _teams.length,
+            itemBuilder: (context, index) {
+              final t = _teams[index];
+              return GestureDetector(
+                onTap: () {
+                  // pass team data to dashboard
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TeamDashboardScreen(
+                        teamName: t['name'] as String,
+                        imageUrl: t['image'] as String,
+                        trophies: t['trophies'] as int,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade100),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x11000000), blurRadius: 6, offset: Offset(0, 2)),
+                    ],
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.all(12),
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(t['image'], width: 56, height: 56, fit: BoxFit.cover),
+                    ),
+                    title: Text(t['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Row(
+                      children: [
+                        const Icon(Icons.emoji_events, size: 16, color: Color(0xFF20DF6C)),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${t['trophies']} Trophies',
+                          style: const TextStyle(color: Color(0xFF20DF6C)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _placeholder(String title) {
+    return Center(
+      child: Text(title, style: const TextStyle(fontSize: 20, color: Colors.grey)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = [
+      _homeTab(),
+      _placeholder('Matches - coming soon'),
+      _placeholder('Tournaments - coming soon'),
+      _placeholder('My Team - coming soon'),
+    ];
+
+    return Scaffold(
+      body: SafeArea(child: pages[_selectedIndex]),
+      bottomNavigationBar: BottomNavBar(currentIndex: _selectedIndex, onTap: _onNavTapped),
     );
   }
 }

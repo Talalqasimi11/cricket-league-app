@@ -7,14 +7,17 @@ void main() {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'CricLeague',
       debugShowCheckedModeBanner: false,
-      title: 'Cricket League App',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: const SplashScreen(), // Start with splash
+      theme: ThemeData(
+        primaryColor: const Color(0xFF20DF6C),
+        scaffoldBackgroundColor: Colors.white,
+        useMaterial3: true,
+      ),
+      home: const SplashScreen(),
     );
   }
 }
