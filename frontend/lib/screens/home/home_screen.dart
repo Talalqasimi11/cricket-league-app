@@ -1,5 +1,7 @@
+// lib/features/home/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import '../../widgets/bottom_nav.dart';
+import '../../features/tournaments/screens/tournaments_screen.dart';
 import '../team/viewer/team_dashboard_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -74,7 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
               final t = _teams[index];
               return GestureDetector(
                 onTap: () {
-                  // pass team data to dashboard
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -134,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final pages = [
       _homeTab(),
       _placeholder('Matches - coming soon'),
-      _placeholder('Tournaments - coming soon'),
+      const TournamentsScreen(isCaptain: true), // ✅ real tournaments page
       _placeholder('My Team - coming soon'),
     ];
 
