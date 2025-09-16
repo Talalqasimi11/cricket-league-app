@@ -1,7 +1,14 @@
-import 'dart:math';
+// lib/features/tournaments/screens/tournament_draws_screen.dart
 
+import 'dart:math';
 import 'package:flutter/material.dart';
+
+// ✅ Models import
 import '../models/tournament_model.dart';
+
+// ✅ Correct detail screens
+import 'tournament_details_creator_screen.dart';
+import 'tournament_details_viewer_screen.dart';
 
 class TournamentDrawsScreen extends StatefulWidget {
   final String tournamentName;
@@ -23,13 +30,6 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
   bool _autoDraw = true;
   List<MatchModel> _matches = [];
 
-  @override
-  void initState() {
-    super.initState();
-    // if somebody navigated with precomputed matches we would load them.
-    // For now we start empty until user generates
-  }
-
   void _generateAutoDraws() {
     final teams = List<String>.from(widget.teams);
     teams.shuffle(Random());
@@ -39,15 +39,64 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
       pairs.add(MatchModel(id: 'm${i ~/ 2 + 1}', teamA: teams[i], teamB: teams[i + 1]));
     }
 
-    // if odd number — give a bye (create a match with teamB = 'BYE')
     if (teams.length.isOdd) {
-      final last = teams.last;
       pairs.add(
-        MatchModel(id: 'm${pairs.length + 1}', teamA: last, teamB: 'BYE', status: 'planned'),
+        MatchModel(id: 'm${pairs.length + 1}', teamA: teams.last, teamB: 'BYE', status: 'planned'),
       );
     }
 
     setState(() => _matches = pairs);
+  }
+
+  void _addManualMatch() async {
+    String? selectedA;
+    String? selectedB;
+
+    await showDialog(
+      context: context,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text("Create Match"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                hint: const Text("Select Team A"),
+                items: widget.teams.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                onChanged: (val) => selectedA = val,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                hint: const Text("Select Team B"),
+                items: widget.teams.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                onChanged: (val) => selectedB = val,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+            ElevatedButton(
+              onPressed: () {
+                if (selectedA != null && selectedB != null && selectedA != selectedB) {
+                  setState(() {
+                    _matches.add(
+                      MatchModel(
+                        id: 'm${_matches.length + 1}',
+                        teamA: selectedA!,
+                        teamB: selectedB!,
+                        status: 'planned',
+                      ),
+                    );
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text("Add"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _pickDateForMatch(int idx) async {
@@ -55,14 +104,14 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
     if (date == null) return;
 
     final time = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay(hour: 10, minute: 0),
+      initialTime: const TimeOfDay(hour: 10, minute: 0),
     );
     if (time == null) return;
 
@@ -76,6 +125,7 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
     final scheduledStr = match.scheduledAt == null
         ? 'Not scheduled'
         : match.scheduledAt!.toLocal().toString().substring(0, 16);
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: ListTile(
@@ -83,54 +133,12 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
         title: Text('${match.teamA}  vs  ${match.teamB}'),
         subtitle: Text(scheduledStr),
         trailing: widget.isCreator
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: 'Set date',
-                    icon: const Icon(Icons.calendar_today),
-                    onPressed: () => _pickDateForMatch(idx),
-                  ),
-                  const SizedBox(width: 4),
-                  ElevatedButton(
-                    onPressed: () {
-                      // placeholder: start match navigation
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Start match (${match.teamA} vs ${match.teamB}) — implement routing.',
-                          ),
-                        ),
-                      );
-                    },
-                    child: const Text('Start'),
-                  ),
-                ],
+            ? IconButton(
+                tooltip: 'Set date',
+                icon: const Icon(Icons.calendar_today),
+                onPressed: () => _pickDateForMatch(idx),
               )
             : null,
-        onTap: () {
-          // open match detail / summary — for MVP show simple dialog
-          showDialog(
-            context: context,
-            builder: (_) => AlertDialog(
-              title: Text('Match ${idx + 1}'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Teams: ${match.teamA} vs ${match.teamB}'),
-                  const SizedBox(height: 8),
-                  Text('Scheduled: $scheduledStr'),
-                  const SizedBox(height: 8),
-                  Text('Status: ${match.status}'),
-                ],
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-              ],
-            ),
-          );
-        },
       ),
     );
   }
@@ -143,48 +151,28 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
           onPressed: _matches.isEmpty
               ? null
               : () {
-                  /* view bracket or show printable */
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('Bracket view coming soon...')));
                 },
           child: const Text('View Bracket'),
         ),
       );
     }
 
-    // creator actions
+    // Creator actions
     return Padding(
       padding: const EdgeInsets.all(12.0),
       child: Row(
         children: [
           Expanded(
             child: ElevatedButton(
-              onPressed: _matches.isEmpty
-                  ? _generateAutoDraws
-                  : () {
-                      // regenerate confirmation
-                      showDialog(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: const Text('Regenerate draws?'),
-                          content: const Text(
-                            'This will discard current draws and create new pairings.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _generateAutoDraws();
-                              },
-                              child: const Text('Regenerate'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-              child: Text(_matches.isEmpty ? 'Generate Draws' : 'Regenerate Draws'),
+              onPressed: _autoDraw ? _generateAutoDraws : _addManualMatch,
+              child: Text(
+                _autoDraw
+                    ? (_matches.isEmpty ? 'Generate Draws' : 'Regenerate Draws')
+                    : 'Add Manual Match',
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -194,10 +182,24 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
               onPressed: _matches.isEmpty
                   ? null
                   : () {
-                      // publish/save draws (MVP: just show message)
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Draws saved / published (implement backend save).'),
+                      final updatedTournament = TournamentModel(
+                        id: UniqueKey().toString(),
+                        name: widget.tournamentName,
+                        status: "upcoming",
+                        type: "Knockout",
+                        dateRange: "TBD",
+                        location: "Unknown",
+                        overs: 20,
+                        teams: widget.teams,
+                        matches: _matches,
+                      );
+
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => widget.isCreator
+                              ? TournamentDetailsCaptainScreen(tournament: updatedTournament)
+                              : TournamentDetailsViewerScreen(tournament: updatedTournament),
                         ),
                       );
                     },
@@ -218,31 +220,31 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
       ),
       body: Column(
         children: [
-          // toggles
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Auto Draws'),
-                    selected: _autoDraw,
-                    onSelected: (v) => setState(() => _autoDraw = true),
+          if (widget.isCreator)
+            Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Auto Draws'),
+                      selected: _autoDraw,
+                      onSelected: (v) => setState(() => _autoDraw = true),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Manual Draws'),
-                    selected: !_autoDraw,
-                    onSelected: (v) => setState(() => _autoDraw = false),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Manual Draws'),
+                      selected: !_autoDraw,
+                      onSelected: (v) => setState(() => _autoDraw = false),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          // info & team summary
+          // Team list
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
             child: Row(
@@ -278,13 +280,15 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
 
           const SizedBox(height: 8),
 
-          // matches list
+          // Matches list
           Expanded(
             child: _matches.isEmpty
                 ? Center(
                     child: Text(
                       widget.isCreator
-                          ? 'No draws generated yet. Tap Generate Draws.'
+                          ? (_autoDraw
+                                ? 'No draws yet. Tap Generate Draws.'
+                                : 'No matches yet. Tap Add Manual Match.')
                           : 'Draws not published yet.',
                     ),
                   )

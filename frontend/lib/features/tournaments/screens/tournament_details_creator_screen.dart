@@ -1,85 +1,85 @@
-// lib/features/tournaments/screens/tournament_details_screen.dart
+// lib/features/tournaments/screens/tournament_details_creator_screen.dart
 import 'package:flutter/material.dart';
+import '../models/tournament_model.dart';
 
-class TournamentDetailsScreen extends StatelessWidget {
-  final String tournamentName;
+class TournamentDetailsCaptainScreen extends StatefulWidget {
+  final TournamentModel tournament;
 
-  const TournamentDetailsScreen({super.key, required this.tournamentName});
+  const TournamentDetailsCaptainScreen({super.key, required this.tournament});
+
+  @override
+  State<TournamentDetailsCaptainScreen> createState() => _TournamentDetailsCaptainScreenState();
+}
+
+class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptainScreen> {
+  late List<MatchModel> _matches;
+
+  @override
+  void initState() {
+    super.initState();
+    // ✅ Safely copy matches or use an empty list
+    _matches = List.from(widget.tournament.matches ?? []);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(tournamentName),
+        title: Text(widget.tournament.name),
         centerTitle: true,
         backgroundColor: Colors.green.shade600,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Quarter Finals
-          _buildStage("Quarter-Finals", [
-            MatchCard(
-              matchNo: 1,
-              teamA: "Team A",
-              teamB: "Team B",
-              result: "Team A won by 5 wickets",
-            ),
-            MatchCard(
-              matchNo: 2,
-              teamA: "Team C",
-              teamB: "Team D",
-              result: "Team C won by 3 wickets",
-            ),
-            MatchCard(
-              matchNo: 3,
-              teamA: "Team E",
-              teamB: "Team F",
-              result: "Team E won by 7 wickets",
-            ),
-            MatchCard(
-              matchNo: 4,
-              teamA: "Team G",
-              teamB: "Team H",
-              result: "Team G won by 2 wickets",
-            ),
-          ]),
-
-          const SizedBox(height: 24),
-
-          // Semi Finals
-          _buildStage("Semi-Finals", [
-            MatchCard(
-              matchNo: 5,
-              teamA: "Team A",
-              teamB: "Team C",
-              scheduled: "2024-07-20 14:00",
-              editable: true,
-            ),
-            MatchCard(
-              matchNo: 6,
-              teamA: "Team E",
-              teamB: "Team G",
-              scheduled: "2024-07-20 18:00",
-              editable: true,
-            ),
-          ]),
-
-          const SizedBox(height: 24),
-
-          // Final
-          _buildStage("Final", [
-            MatchCard(
-              matchNo: 7,
-              teamA: "TBD",
-              teamB: "TBD",
-              scheduled: "2024-07-22 16:00",
-              editable: true,
-            ),
-          ]),
+          if (_matches.isEmpty) const Center(child: Text("No matches scheduled yet")),
+          if (_matches.isNotEmpty) ..._buildStages(context, _matches),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildStages(BuildContext context, List<MatchModel> matches) {
+    final List<Widget> stages = [];
+
+    stages.add(
+      _buildStage(
+        "All Matches",
+        matches.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final m = entry.value;
+
+          final matchNo = int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? idx + 1;
+          final scheduled = m.scheduledAt != null
+              ? m.scheduledAt!.toLocal().toString().substring(0, 16)
+              : null;
+
+          return MatchCard(
+            matchNo: matchNo,
+            teamA: m.teamA,
+            teamB: m.teamB,
+            result: m.status == "completed" ? "Winner: ${m.winner ?? 'TBD'}" : null,
+            scheduled: scheduled,
+            editable: m.status == "planned", // allow only if not started
+            onEdit: () async {
+              final newDate = await _pickDate(context, m.scheduledAt);
+              if (newDate != null) {
+                setState(() {
+                  _matches[idx] = m.copyWith(scheduledAt: newDate);
+                });
+
+                // ✅ TODO: Save updated match date to backend here
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text("Match ${m.id} rescheduled to $newDate")));
+              }
+            },
+          );
+        }).toList(),
+      ),
+    );
+
+    return stages;
   }
 
   Widget _buildStage(String stage, List<Widget> matches) {
@@ -89,8 +89,27 @@ class TournamentDetailsScreen extends StatelessWidget {
         Text(stage, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         ...matches,
+        const SizedBox(height: 20),
       ],
     );
+  }
+
+  Future<DateTime?> _pickDate(BuildContext context, DateTime? initial) async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial ?? DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date == null) return null;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 10, minute: 0),
+    );
+    if (time == null) return null;
+
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 }
 
@@ -101,6 +120,7 @@ class MatchCard extends StatelessWidget {
   final String? result;
   final String? scheduled;
   final bool editable;
+  final VoidCallback? onEdit;
 
   const MatchCard({
     super.key,
@@ -110,6 +130,7 @@ class MatchCard extends StatelessWidget {
     this.result,
     this.scheduled,
     this.editable = false,
+    this.onEdit,
   });
 
   @override
@@ -123,42 +144,40 @@ class MatchCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Match No
             Text(
               "Match $matchNo",
               style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
             ),
-
             const SizedBox(height: 6),
-
-            // Teams
             Text(
               "$teamA vs $teamB",
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-
             const SizedBox(height: 4),
 
-            // Result OR Scheduled Date
-            if (result != null)
-              Text(result!, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+            if (result != null) Text(result!, style: const TextStyle(color: Colors.grey)),
             if (scheduled != null)
               Row(
                 children: [
-                  Text(scheduled!, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                  Text(
+                    "Scheduled: $scheduled",
+                    style: const TextStyle(color: Colors.grey, fontSize: 14),
+                  ),
                   if (editable)
                     IconButton(
                       icon: const Icon(Icons.edit, color: Colors.green),
-                      onPressed: () {
-                        // TODO: edit match date
-                      },
+                      onPressed: onEdit,
                     ),
                 ],
+              )
+            else if (editable)
+              TextButton.icon(
+                icon: const Icon(Icons.add, color: Colors.green),
+                label: const Text("Set Date"),
+                onPressed: onEdit,
               ),
 
             const SizedBox(height: 8),
-
-            // View Match Details Button
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(

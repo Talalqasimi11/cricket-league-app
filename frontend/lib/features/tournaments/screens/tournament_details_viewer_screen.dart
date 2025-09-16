@@ -1,76 +1,57 @@
+// lib/features/tournaments/screens/tournament_details_viewer_screen.dart
 import 'package:flutter/material.dart';
+import '../models/tournament_model.dart';
 
 class TournamentDetailsViewerScreen extends StatelessWidget {
-  final String tournamentName;
+  final TournamentModel tournament;
 
-  const TournamentDetailsViewerScreen({super.key, required this.tournamentName});
+  const TournamentDetailsViewerScreen({super.key, required this.tournament});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(tournamentName),
+        title: Text(tournament.name),
         centerTitle: true,
         backgroundColor: Colors.green.shade600,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Quarter Finals
-          _buildStage("Quarter-Finals", [
-            MatchCardViewer(
-              matchNo: 1,
-              teamA: "Team A",
-              teamB: "Team B",
-              result: "Team A won by 5 wickets",
-            ),
-            MatchCardViewer(
-              matchNo: 2,
-              teamA: "Team C",
-              teamB: "Team D",
-              result: "Team C won by 3 wickets",
-            ),
-            MatchCardViewer(
-              matchNo: 3,
-              teamA: "Team E",
-              teamB: "Team F",
-              result: "Team E won by 7 wickets",
-            ),
-            MatchCardViewer(
-              matchNo: 4,
-              teamA: "Team G",
-              teamB: "Team H",
-              result: "Team G won by 2 wickets",
-            ),
-          ]),
-
-          const SizedBox(height: 24),
-
-          // Semi Finals
-          _buildStage("Semi-Finals", [
-            MatchCardViewer(
-              matchNo: 5,
-              teamA: "Team A",
-              teamB: "Team C",
-              scheduled: "2024-07-20 14:00",
-            ),
-            MatchCardViewer(
-              matchNo: 6,
-              teamA: "Team E",
-              teamB: "Team G",
-              scheduled: "2024-07-20 18:00",
-            ),
-          ]),
-
-          const SizedBox(height: 24),
-
-          // Final
-          _buildStage("Final", [
-            MatchCardViewer(matchNo: 7, teamA: "TBD", teamB: "TBD", scheduled: "2024-07-22 16:00"),
-          ]),
+          if (tournament.matches == null || tournament.matches!.isEmpty)
+            const Center(child: Text("No matches scheduled yet")),
+          if (tournament.matches != null && tournament.matches!.isNotEmpty)
+            ..._buildStages(tournament.matches!),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildStages(List<MatchModel> matches) {
+    final List<Widget> stages = [];
+
+    stages.add(
+      _buildStage(
+        "All Matches",
+        matches.map((m) {
+          final matchNo = int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+          final result = m.status == "completed" ? "Winner: ${m.winner ?? 'TBD'}" : null;
+          final scheduled = m.scheduledAt != null
+              ? m.scheduledAt!.toLocal().toString().substring(0, 16)
+              : null;
+
+          return MatchCardViewer(
+            matchNo: matchNo,
+            teamA: m.teamA,
+            teamB: m.teamB,
+            result: result,
+            scheduled: scheduled,
+          );
+        }).toList(),
+      ),
+    );
+
+    return stages;
   }
 
   Widget _buildStage(String stage, List<Widget> matches) {
@@ -112,36 +93,29 @@ class MatchCardViewer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Match No
             Text(
               "Match $matchNo",
               style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
             ),
-
             const SizedBox(height: 6),
-
-            // Teams
             Text(
               "$teamA vs $teamB",
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-
             const SizedBox(height: 4),
-
-            // Result OR Scheduled Date
             if (result != null)
               Text(result!, style: const TextStyle(color: Colors.grey, fontSize: 14)),
             if (scheduled != null)
-              Text(scheduled!, style: const TextStyle(color: Colors.grey, fontSize: 14)),
-
+              Text(
+                "Scheduled: $scheduled",
+                style: const TextStyle(color: Colors.grey, fontSize: 14),
+              ),
             const SizedBox(height: 8),
-
-            // View Match Details Button
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(
                 onPressed: () {
-                  // TODO: Navigate to Match Details
+                  // TODO: Navigate to match details
                 },
                 child: const Text("View Match Details"),
               ),

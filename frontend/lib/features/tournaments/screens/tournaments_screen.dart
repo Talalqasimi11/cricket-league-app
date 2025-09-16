@@ -1,7 +1,7 @@
 // lib/features/tournaments/screens/tournaments_screen.dart
 import 'package:flutter/material.dart';
 import 'tournament_create_screen.dart';
-import 'tournament_draws_screen.dart';
+import 'tournament_draws_screen.dart' as draws; // ✅ alias to avoid conflicts
 import '../widgets/tournament_card.dart';
 import '../widgets/tournament_filter_tabs.dart';
 import '../models/tournament_model.dart';
@@ -70,16 +70,9 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                   final tournament = tournaments[index];
                   return GestureDetector(
                     onTap: () {
-                      // Navigate to Draws screen (Viewer mode)
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => TournamentDrawsScreen(
-                            tournamentName: tournament.name,
-                            teams: ["Titans XI", "Warriors CC", "Gladiators", "Raptors"],
-                            isCreator: widget.isCaptain, // captains can manage draws
-                          ),
-                        ),
+                      // ✅ For ongoing/upcoming tournaments: just show matches (NOT draws)
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Open Matches Screen for ${tournament.name}")),
                       );
                     },
                     child: TournamentCard(tournament: tournament),
@@ -88,18 +81,30 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
               ),
             ),
 
-            // 🔹 Captain-only action
+            // 🔹 Captain-only action (Create Tournament → Draws screen)
             if (widget.isCaptain) ...[
               const SizedBox(height: 12),
               ElevatedButton.icon(
                 onPressed: () async {
-                  // Navigate to Create Tournament → then to Register Teams
-                  await Navigator.push(
+                  // Navigate to Create Tournament
+                  final createdTournament = await Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const CreateTournamentScreen()),
+                    MaterialPageRoute(builder: (_) => CreateTournamentScreen()), // ✅ removed const
                   );
-                  // After returning, refresh state if needed
-                  setState(() {});
+
+                  if (createdTournament != null) {
+                    // ✅ Immediately open Draws screen for the creator
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => draws.TournamentDrawsScreen(
+                          tournamentName: createdTournament.name,
+                          teams: createdTournament.teams,
+                          isCreator: true,
+                        ),
+                      ),
+                    );
+                  }
                 },
                 icon: const Icon(Icons.add),
                 label: const Text("Create Tournament"),

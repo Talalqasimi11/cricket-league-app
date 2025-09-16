@@ -49,20 +49,20 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedCount = teams.where((t) => t["selected"]).length;
-    final List<String> selectedTeams = teams
-        .where((t) => t["selected"])
-        .map<String>((t) => t["name"] as String)
+    final selectedTeams = teams
+        .where((t) => t["selected"] == true)
+        .map((t) => t["name"] as String)
         .toList();
+    final selectedCount = selectedTeams.length;
 
     return Scaffold(
       backgroundColor: const Color(0xFF122118),
       appBar: AppBar(
         backgroundColor: const Color(0xFF122118),
         elevation: 0,
-        title: const Text(
-          "Add Teams",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        title: Text(
+          "Add Teams to ${widget.tournamentName}",
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         leading: IconButton(
@@ -94,7 +94,7 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                   borderSide: const BorderSide(color: Color(0xFF20DF6C), width: 2),
                 ),
               ),
-              onChanged: (query) => setState(() {}),
+              onChanged: (_) => setState(() {}),
             ),
           ),
 
@@ -110,7 +110,7 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF366348), style: BorderStyle.solid),
+                  border: Border.all(color: const Color(0xFF366348)),
                 ),
                 child: Row(
                   children: [
@@ -150,14 +150,16 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
               itemCount: teams.length,
               itemBuilder: (context, index) {
                 final team = teams[index];
+                final teamName = team["name"] as String;
+
                 if (_searchController.text.isNotEmpty &&
-                    !team["name"].toLowerCase().contains(_searchController.text.toLowerCase())) {
+                    !teamName.toLowerCase().contains(_searchController.text.toLowerCase())) {
                   return const SizedBox.shrink();
                 }
 
                 return GestureDetector(
                   onTap: () {
-                    setState(() => team["selected"] = !team["selected"]);
+                    setState(() => team["selected"] = !(team["selected"] as bool));
                   },
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 10),
@@ -186,7 +188,7 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                team["name"],
+                                teamName,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600,
@@ -200,9 +202,9 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                           ),
                         ),
                         Checkbox(
-                          value: team["selected"],
+                          value: team["selected"] as bool,
                           onChanged: (val) {
-                            setState(() => team["selected"] = val!);
+                            setState(() => team["selected"] = val ?? false);
                           },
                           activeColor: const Color(0xFF20DF6C),
                           side: const BorderSide(color: Color(0xFF366348)),

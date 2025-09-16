@@ -6,6 +6,7 @@ class MatchModel {
   final String teamB;
   DateTime? scheduledAt;
   String status; // planned | completed | live
+  String? winner; // <-- NEW field
 
   MatchModel({
     required this.id,
@@ -13,7 +14,26 @@ class MatchModel {
     required this.teamB,
     this.scheduledAt,
     this.status = 'planned',
+    this.winner, // optional
   });
+
+  MatchModel copyWith({
+    String? id,
+    String? teamA,
+    String? teamB,
+    DateTime? scheduledAt,
+    String? status,
+    String? winner,
+  }) {
+    return MatchModel(
+      id: id ?? this.id,
+      teamA: teamA ?? this.teamA,
+      teamB: teamB ?? this.teamB,
+      scheduledAt: scheduledAt ?? this.scheduledAt,
+      status: status ?? this.status,
+      winner: winner ?? this.winner,
+    );
+  }
 }
 
 class TournamentModel {
@@ -21,11 +41,11 @@ class TournamentModel {
   final String name;
   final String status; // ongoing | upcoming | finished
   final String type; // knockout | roundrobin etc
-  final String dateRange; // e.g. "Mar 15 - Apr 20, 2024"
-  final String location; // e.g. "City Stadium"
-  final int overs; // number of overs per match
+  final String dateRange;
+  final String location;
+  final int overs;
   final List<String> teams;
-  final List<MatchModel> matches;
+  final List<MatchModel>? matches;
 
   TournamentModel({
     required this.id,
@@ -36,6 +56,30 @@ class TournamentModel {
     required this.location,
     required this.overs,
     required this.teams,
+    this.matches,
+  });
+
+  TournamentModel copyWith({
+    String? id,
+    String? name,
+    String? status,
+    String? type,
+    String? dateRange,
+    String? location,
+    int? overs,
+    List<String>? teams,
     List<MatchModel>? matches,
-  }) : matches = matches ?? [];
+  }) {
+    return TournamentModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      status: status ?? this.status,
+      type: type ?? this.type,
+      dateRange: dateRange ?? this.dateRange,
+      location: location ?? this.location,
+      overs: overs ?? this.overs,
+      teams: teams ?? this.teams,
+      matches: matches ?? this.matches,
+    );
+  }
 }

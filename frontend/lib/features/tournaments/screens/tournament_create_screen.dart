@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../models/tournament_model.dart';
+import 'tournament_team_registration_screen.dart';
 
 class CreateTournamentScreen extends StatefulWidget {
   const CreateTournamentScreen({super.key});
@@ -36,10 +38,30 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
 
   void _onSave() {
     if (_formKey.currentState!.validate()) {
+      // Build new tournament object
+      final newTournament = TournamentModel(
+        id: UniqueKey().toString(),
+        name: _tournamentNameController.text,
+        status: "upcoming",
+        type: "Knockout",
+        dateRange:
+            "${_startDate?.day}-${_startDate?.month}-${_startDate?.year} to ${_endDate?.day}-${_endDate?.month}-${_endDate?.year}",
+        location: _locationController.text,
+        overs: int.tryParse(_selectedOvers) ?? 20,
+        teams: [],
+        matches: [],
+      );
+
+      // Show snackbar
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Tournament Saved!")));
-      Navigator.pop(context);
+      ).showSnackBar(const SnackBar(content: Text("Tournament Saved! Now register teams...")));
+
+      // ✅ Pass the full TournamentModel to RegisterTeamsScreen
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => RegisterTeamsScreen(tournamentName: newTournament.name)),
+      );
     }
   }
 
@@ -93,9 +115,9 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
                     onTap: () => _pickDate(context, true),
                     child: AbsorbPointer(
                       child: TextFormField(
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: "Start Date",
-                          border: const OutlineInputBorder(),
+                          border: OutlineInputBorder(),
                           hintText: "Select start date",
                         ),
                         controller: TextEditingController(
@@ -114,9 +136,9 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
                     onTap: () => _pickDate(context, false),
                     child: AbsorbPointer(
                       child: TextFormField(
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: "End Date",
-                          border: const OutlineInputBorder(),
+                          border: OutlineInputBorder(),
                           hintText: "Select end date",
                         ),
                         controller: TextEditingController(
@@ -135,7 +157,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
 
             // Overs
             DropdownButtonFormField<String>(
-              initialValue: _selectedOvers,
+              value: _selectedOvers,
               items: [
                 "5",
                 "10",
