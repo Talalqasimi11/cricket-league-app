@@ -36,9 +36,7 @@ class TournamentDetailsViewerScreen extends StatelessWidget {
         matches.map((m) {
           final matchNo = int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
           final result = m.status == "completed" ? "Winner: ${m.winner ?? 'TBD'}" : null;
-          final scheduled = m.scheduledAt != null
-              ? m.scheduledAt!.toLocal().toString().substring(0, 16)
-              : null;
+          final scheduled = m.scheduledAt?.toLocal().toString().substring(0, 16);
 
           return MatchCardViewer(
             matchNo: matchNo,

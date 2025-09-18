@@ -2,7 +2,9 @@
 import 'package:flutter/material.dart';
 import '../../widgets/bottom_nav.dart';
 import '../../features/tournaments/screens/tournaments_screen.dart';
-import '../team/viewer/team_dashboard_screen.dart';
+import '../team/viewer/team_dashboard_screen.dart'; // ✅ keep team dashboard
+import '../../features/teams/screens/my_team_screen.dart'; // ✅ add My Team screen
+import '../../features/matches/screens/matches_screen.dart'; // ✅ add Matches screen import
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -124,19 +126,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _placeholder(String title) {
-    return Center(
-      child: Text(title, style: const TextStyle(fontSize: 20, color: Colors.grey)),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final pages = [
-      _homeTab(),
-      _placeholder('Matches - coming soon'),
+      _homeTab(), // ✅ All Teams
+      const MatchesScreen(), // ✅ Matches screen connected here
       const TournamentsScreen(isCaptain: true), // ✅ real tournaments page
-      _placeholder('My Team - coming soon'),
+      const MyTeamScreen(), // ✅ My Team page
     ];
 
     return Scaffold(

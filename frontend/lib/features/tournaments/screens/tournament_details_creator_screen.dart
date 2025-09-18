@@ -1,6 +1,7 @@
 // lib/features/tournaments/screens/tournament_details_creator_screen.dart
 import 'package:flutter/material.dart';
 import '../models/tournament_model.dart';
+import '../../matches/screens/create_match_screen.dart'; // ✅ scoring screen (replace with your matches page)
 
 class TournamentDetailsCaptainScreen extends StatefulWidget {
   final TournamentModel tournament;
@@ -17,7 +18,6 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
   @override
   void initState() {
     super.initState();
-    // ✅ Safely copy matches or use an empty list
     _matches = List.from(widget.tournament.matches ?? []);
   }
 
@@ -50,9 +50,7 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
           final m = entry.value;
 
           final matchNo = int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? idx + 1;
-          final scheduled = m.scheduledAt != null
-              ? m.scheduledAt!.toLocal().toString().substring(0, 16)
-              : null;
+          final scheduled = m.scheduledAt?.toLocal().toString().substring(0, 16);
 
           return MatchCard(
             matchNo: matchNo,
@@ -60,7 +58,7 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
             teamB: m.teamB,
             result: m.status == "completed" ? "Winner: ${m.winner ?? 'TBD'}" : null,
             scheduled: scheduled,
-            editable: m.status == "planned", // allow only if not started
+            editable: m.status == "planned",
             onEdit: () async {
               final newDate = await _pickDate(context, m.scheduledAt);
               if (newDate != null) {
@@ -68,11 +66,20 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
                   _matches[idx] = m.copyWith(scheduledAt: newDate);
                 });
 
-                // ✅ TODO: Save updated match date to backend here
+                // ✅ TODO: Save updated match date to backend
                 ScaffoldMessenger.of(
                   context,
                 ).showSnackBar(SnackBar(content: Text("Match ${m.id} rescheduled to $newDate")));
               }
+            },
+            onStart: () {
+              // ✅ Update status to "live"
+              setState(() {
+                _matches[idx] = m.copyWith(status: "live");
+              });
+
+              // ✅ Navigate to scoring page (replace with MatchesScreen if you like)
+              Navigator.push(context, MaterialPageRoute(builder: (_) => CreateMatchScreen()));
             },
           );
         }).toList(),
@@ -121,6 +128,7 @@ class MatchCard extends StatelessWidget {
   final String? scheduled;
   final bool editable;
   final VoidCallback? onEdit;
+  final VoidCallback? onStart;
 
   const MatchCard({
     super.key,
@@ -131,6 +139,7 @@ class MatchCard extends StatelessWidget {
     this.scheduled,
     this.editable = false,
     this.onEdit,
+    this.onStart,
   });
 
   @override
@@ -177,15 +186,30 @@ class MatchCard extends StatelessWidget {
                 onPressed: onEdit,
               ),
 
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () {
-                  // TODO: Navigate to Match Details
-                },
-                child: const Text("View Match Details"),
-              ),
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      // TODO: Navigate to Match Details screen
+                    },
+                    child: const Text("View Details"),
+                  ),
+                ),
+                if (editable) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600),
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text("Start Match"),
+                      onPressed: onStart,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),

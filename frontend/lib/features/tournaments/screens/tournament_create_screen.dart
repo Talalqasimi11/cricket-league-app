@@ -157,7 +157,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
 
             // Overs
             DropdownButtonFormField<String>(
-              value: _selectedOvers,
+              initialValue: _selectedOvers,
               items: [
                 "5",
                 "10",

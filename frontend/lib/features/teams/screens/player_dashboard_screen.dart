@@ -1,32 +1,12 @@
 // lib/features/teams/screens/player_dashboard_screen.dart
 
 import 'package:flutter/material.dart';
+import 'team_dashboard_screen.dart'; // ✅ Import Player model
 
 class PlayerDashboardScreen extends StatelessWidget {
-  final String playerName;
-  final String role;
-  final String teamName;
-  final String imageUrl;
-  final int runs;
-  final double battingAvg;
-  final double strikeRate;
-  final int wickets;
-  final int fifties;
-  final int hundreds;
+  final Player player; // ✅ Full player object
 
-  const PlayerDashboardScreen({
-    super.key,
-    required this.playerName,
-    required this.role,
-    required this.teamName,
-    required this.imageUrl,
-    required this.runs,
-    required this.battingAvg,
-    required this.strikeRate,
-    required this.wickets,
-    required this.fifties,
-    required this.hundreds,
-  });
+  const PlayerDashboardScreen({super.key, required this.player});
 
   @override
   Widget build(BuildContext context) {
@@ -52,17 +32,17 @@ class PlayerDashboardScreen extends StatelessWidget {
             // Player Image + Name
             Column(
               children: [
-                CircleAvatar(radius: 60, backgroundImage: NetworkImage(imageUrl)),
+                CircleAvatar(radius: 60, backgroundImage: NetworkImage(player.imageUrl)),
                 const SizedBox(height: 10),
                 Text(
-                  playerName,
+                  player.name,
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: Colors.black87,
                   ),
                 ),
-                Text("$role • $teamName", style: const TextStyle(color: Colors.grey)),
+                Text(player.role, style: const TextStyle(color: Colors.grey)),
               ],
             ),
             const SizedBox(height: 20),
@@ -75,12 +55,18 @@ class PlayerDashboardScreen extends StatelessWidget {
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
               children: [
-                _buildStatCard(Icons.sports_cricket, "Runs", runs.toString()),
-                _buildStatCard(Icons.leaderboard, "Batting Avg", battingAvg.toStringAsFixed(2)),
-                _buildStatCard(Icons.trending_up, "Strike Rate", strikeRate.toStringAsFixed(2)),
-                _buildStatCard(Icons.sports, "Wickets", wickets.toString()),
-                _buildStatCard(null, "50s", fifties.toString(), customText: "50"),
-                _buildStatCard(null, "100s", hundreds.toString(), customText: "100"),
+                _buildStatCard(Icons.sports_cricket, "Runs", player.runs.toString()),
+                _buildStatCard(
+                  Icons.leaderboard,
+                  "Batting Avg",
+                  player.battingAverage.toStringAsFixed(2),
+                ),
+                _buildStatCard(
+                  Icons.trending_up,
+                  "Strike Rate",
+                  player.strikeRate.toStringAsFixed(2),
+                ),
+                _buildStatCard(Icons.sports, "Wickets", player.wickets.toString()),
               ],
             ),
             const SizedBox(height: 20),
@@ -95,7 +81,7 @@ class PlayerDashboardScreen extends StatelessWidget {
               icon: const Icon(Icons.edit, color: Colors.white),
               label: const Text("Edit Player Info", style: TextStyle(fontWeight: FontWeight.bold)),
               onPressed: () {
-                _showEditPlayerDialog(context);
+                _showEditPlayerDialog(context, player);
               },
             ),
           ],
@@ -139,15 +125,13 @@ class PlayerDashboardScreen extends StatelessWidget {
   }
 
   /// Popup dialog for editing player info
-  void _showEditPlayerDialog(BuildContext context) {
-    final nameController = TextEditingController(text: playerName);
-    final roleController = TextEditingController(text: role);
-    final runsController = TextEditingController(text: runs.toString());
-    final avgController = TextEditingController(text: battingAvg.toString());
-    final strikeController = TextEditingController(text: strikeRate.toString());
-    final wicketsController = TextEditingController(text: wickets.toString());
-    final fiftiesController = TextEditingController(text: fifties.toString());
-    final hundredsController = TextEditingController(text: hundreds.toString());
+  void _showEditPlayerDialog(BuildContext context, Player player) {
+    final nameController = TextEditingController(text: player.name);
+    final roleController = TextEditingController(text: player.role);
+    final runsController = TextEditingController(text: player.runs.toString());
+    final avgController = TextEditingController(text: player.battingAverage.toString());
+    final strikeController = TextEditingController(text: player.strikeRate.toString());
+    final wicketsController = TextEditingController(text: player.wickets.toString());
 
     showDialog(
       context: context,
@@ -163,7 +147,7 @@ class PlayerDashboardScreen extends StatelessWidget {
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
               const SizedBox(height: 20),
-              CircleAvatar(radius: 50, backgroundImage: NetworkImage(imageUrl)),
+              CircleAvatar(radius: 50, backgroundImage: NetworkImage(player.imageUrl)),
               const SizedBox(height: 20),
               TextField(
                 controller: nameController,
@@ -193,16 +177,7 @@ class PlayerDashboardScreen extends StatelessWidget {
                 decoration: const InputDecoration(labelText: "Wickets"),
                 keyboardType: TextInputType.number,
               ),
-              TextField(
-                controller: fiftiesController,
-                decoration: const InputDecoration(labelText: "50s"),
-                keyboardType: TextInputType.number,
-              ),
-              TextField(
-                controller: hundredsController,
-                decoration: const InputDecoration(labelText: "100s"),
-                keyboardType: TextInputType.number,
-              ),
+
               const SizedBox(height: 20),
               Row(
                 children: [

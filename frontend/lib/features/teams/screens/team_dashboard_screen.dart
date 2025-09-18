@@ -1,6 +1,7 @@
 // lib/features/teams/screens/team_dashboard_screen.dart
 
 import 'package:flutter/material.dart';
+import 'player_dashboard_screen.dart';
 
 class TeamDashboardScreen extends StatelessWidget {
   final String teamName;
@@ -61,40 +62,51 @@ class TeamDashboardScreen extends StatelessWidget {
                 itemCount: players.length,
                 itemBuilder: (context, index) {
                   final player = players[index];
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A2C22),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(radius: 24, backgroundImage: NetworkImage(player.imageUrl)),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                player.name,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
+                  return GestureDetector(
+                    onTap: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PlayerDashboardScreen(player: player), // ✅ send model directly
+    ),
+  );
+},
+
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A2C22),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(radius: 24, backgroundImage: NetworkImage(player.imageUrl)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  player.name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                player.role,
-                                style: const TextStyle(color: Colors.greenAccent, fontSize: 12),
-                              ),
-                              Text(
-                                "Runs: ${player.runs} | Avg: ${player.battingAverage} | SR: ${player.strikeRate} | Wkts: ${player.wickets}",
-                                style: const TextStyle(color: Colors.white70, fontSize: 11),
-                              ),
-                            ],
+                                Text(
+                                  player.role,
+                                  style: const TextStyle(color: Colors.greenAccent, fontSize: 12),
+                                ),
+                                Text(
+                                  "Runs: ${player.runs} | Avg: ${player.battingAverage} | SR: ${player.strikeRate} | Wkts: ${player.wickets}",
+                                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 },
