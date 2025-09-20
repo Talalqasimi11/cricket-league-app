@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'scorecard_screen.dart';
 import 'match_statistics_screen.dart';
 
 class PostMatchScreen extends StatefulWidget {
@@ -45,6 +46,18 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
       messageColor = Colors.redAccent;
     }
 
+    final List<Widget> _screens = [
+      ScorecardScreen(teamA: widget.teamA, teamB: widget.teamB),
+      MatchStatisticsScreen(
+        teamA: widget.teamA,
+        teamB: widget.teamB,
+        teamABatting: widget.teamABatting,
+        teamABowling: widget.teamABowling,
+        teamBBatting: widget.teamBBatting,
+        teamBBowling: widget.teamBBowling,
+      ),
+    ];
+
     return Scaffold(
       backgroundColor: const Color(0xFF122118),
       appBar: AppBar(
@@ -61,18 +74,7 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
           const SizedBox(height: 20),
           _buildMessage(message, messageColor),
           const SizedBox(height: 20),
-          Expanded(
-            child: _selectedIndex == 0
-                ? _buildScorecard()
-                : MatchStatisticsScreen(
-                    teamA: widget.teamA,
-                    teamB: widget.teamB,
-                    teamABatting: widget.teamABatting,
-                    teamABowling: widget.teamABowling,
-                    teamBBatting: widget.teamBBatting,
-                    teamBBowling: widget.teamBBowling,
-                  ),
-          ),
+          Expanded(child: _screens[_selectedIndex]),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -113,15 +115,6 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildScorecard() {
-    return Center(
-      child: Text(
-        "Final Scorecard (${widget.teamA} vs ${widget.teamB})",
-        style: const TextStyle(color: Colors.white, fontSize: 18),
       ),
     );
   }

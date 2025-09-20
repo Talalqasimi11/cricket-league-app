@@ -1,7 +1,6 @@
 // lib/features/matches/screens/live_match_scoring_screen.dart
 import 'package:flutter/material.dart';
-import 'match_statistics_screen.dart';
-
+import 'post_match_screen.dart';
 
 class LiveMatchScoringScreen extends StatefulWidget {
   final String teamA;
@@ -334,46 +333,87 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
               ),
               _actionButton("End Innings"),
 
-              // end match button 
-             ElevatedButton(
-  style: ElevatedButton.styleFrom(
-    backgroundColor: Colors.red,
-    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-  ),
-  onPressed: () {
-    // ✅ Collect stats (replace these with your real data from scoring logic)
-    final teamABatting = [
-      {"name": "Player A1", "runs": 45, "balls": 30, "fours": 6, "sixes": 2, "sr": 150.0},
-      {"name": "Player A2", "runs": 10, "balls": 15, "fours": 1, "sixes": 0, "sr": 66.7},
-    ];
-    final teamABowling = [
-      {"name": "Player A3", "overs": 4, "maidens": 0, "runs": 25, "wickets": 2, "econ": 6.25},
-    ];
-    final teamBBatting = [
-      {"name": "Player B1", "runs": 60, "balls": 40, "fours": 8, "sixes": 1, "sr": 150.0},
-    ];
-    final teamBBowling = [
-      {"name": "Player B2", "overs": 4, "maidens": 1, "runs": 20, "wickets": 3, "econ": 5.0},
-    ];
+              // end match button
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () {
+                  // ✅ Collect stats (replace these with your real data from scoring logic)
+                  final teamABatting = [
+                    {
+                      "name": "Player A1",
+                      "runs": 45,
+                      "balls": 30,
+                      "fours": 6,
+                      "sixes": 2,
+                      "sr": 150.0,
+                    },
+                    {
+                      "name": "Player A2",
+                      "runs": 10,
+                      "balls": 15,
+                      "fours": 1,
+                      "sixes": 0,
+                      "sr": 66.7,
+                    },
+                  ];
+                  final teamABowling = [
+                    {
+                      "name": "Player A3",
+                      "overs": 4,
+                      "maidens": 0,
+                      "runs": 25,
+                      "wickets": 2,
+                      "econ": 6.25,
+                    },
+                  ];
+                  final teamBBatting = [
+                    {
+                      "name": "Player B1",
+                      "runs": 60,
+                      "balls": 40,
+                      "fours": 8,
+                      "sixes": 1,
+                      "sr": 150.0,
+                    },
+                  ];
+                  final teamBBowling = [
+                    {
+                      "name": "Player B2",
+                      "overs": 4,
+                      "maidens": 1,
+                      "runs": 20,
+                      "wickets": 3,
+                      "econ": 5.0,
+                    },
+                  ];
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => MatchStatisticsScreen(
-          teamA: widget.teamA,
-          teamB: widget.teamB,
-          teamABatting: teamABatting,
-          teamABowling: teamABowling,
-          teamBBatting: teamBBatting,
-          teamBBowling: teamBBowling,
-        ),
-      ),
-    );
-  },
-  child: const Text("End Match", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-)
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PostMatchScreen(
+                        teamA: widget.teamA,
+                        teamB: widget.teamB,
+                        teamABatting: teamABatting,
+                        teamABowling: teamABowling,
+                        teamBBatting: teamBBatting,
+                        teamBBowling: teamBBowling,
 
+                        // 🔹 later these will come from user login/session
+                        isCaptain: true,
+                        isRegisteredTeam: true,
+                      ),
+                    ),
+                  );
+                },
+                child: const Text(
+                  "End Match",
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
             ],
           ),
         ],
