@@ -1,4 +1,6 @@
--- Make sure you are in your DB
+-- ========================
+-- DATABASE SETUP
+-- ========================
 CREATE DATABASE IF NOT EXISTS cricket_league;
 USE cricket_league;
 
@@ -15,14 +17,14 @@ DROP TABLE IF EXISTS teams;
 DROP TABLE IF EXISTS users;
 
 -- ========================
--- USERS
+-- USERS (Only captains)
 -- ========================
 CREATE TABLE users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   phone_number VARCHAR(20) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   name VARCHAR(100) NOT NULL,
-  role ENUM('captain','admin') NOT NULL DEFAULT 'captain',
+  role ENUM('captain') NOT NULL DEFAULT 'captain',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -35,6 +37,7 @@ CREATE TABLE teams (
   team_location VARCHAR(150) NOT NULL,
   matches_played INT NOT NULL DEFAULT 0 CHECK (matches_played >= 0),
   matches_won INT NOT NULL DEFAULT 0 CHECK (matches_won >= 0),
+  trophies INT NOT NULL DEFAULT 0 CHECK (trophies >= 0),
   captain_id INT NOT NULL UNIQUE,
   CONSTRAINT fk_teams_captain FOREIGN KEY (captain_id) REFERENCES users(id)
     ON DELETE CASCADE ON UPDATE CASCADE
@@ -52,6 +55,9 @@ CREATE TABLE players (
   matches_played INT NOT NULL DEFAULT 0,
   hundreds INT NOT NULL DEFAULT 0,
   fifties INT NOT NULL DEFAULT 0,
+  batting_average FLOAT NOT NULL DEFAULT 0,
+  strike_rate FLOAT NOT NULL DEFAULT 0,
+  wickets INT NOT NULL DEFAULT 0,
   CONSTRAINT fk_players_team FOREIGN KEY (team_id) REFERENCES teams(id)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -72,7 +78,6 @@ CREATE TABLE tournaments (
 
 -- ========================
 -- TOURNAMENT_TEAMS
--- (can hold both registered and temporary teams)
 -- ========================
 CREATE TABLE tournament_teams (
   id INT AUTO_INCREMENT PRIMARY KEY,
