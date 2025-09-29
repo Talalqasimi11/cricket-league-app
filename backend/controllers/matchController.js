@@ -1,39 +1,55 @@
-const db = require("../config/db");
+const pool = require("../config/db");
 
-// Create Match
-exports.createMatch = async (req, res) => {
+// 📌 Create a match (only tournament creator)
+const createMatch = async (req, res) => {
+  const { tournamentId, team1_id, team2_id, match_date, overs } = req.body;
+
+  if (!tournamentId || !team1_id || !team2_id || !match_date) {
+    return res.status(400).json({ error: "tournamentId, team1_id, team2_id, and match_date are required" });
+  }
+
+  if (team1_id === team2_id) {
+    return res.status(400).json({ error: "A team cannot play against itself" });
+  }
+
   try {
-    const { tournament_id, team1_id, team2_id, overs } = req.body;
+    // 1️⃣ Check if tournament belongs to captain
+    const [tournamentRows] = await pool.query(
+      "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
+      [tournamentId, req.user.id]
+    );
+    if (tournamentRows.length === 0) {
+      return res.status(403).json({ error: "You are not allowed to add matches to this tournament" });
+    }
 
-    const [result] = await db.query(
-      `INSERT INTO matches (tournament_id, team1_id, team2_id, overs, status)
-       VALUES (?, ?, ?, ?, 'live')`,
-      [tournament_id, team1_id, team2_id, overs]
+    // 2️⃣ Prevent duplicate matches
+    const [existing] = await pool.query(
+      `SELECT * FROM matches 
+       WHERE tournament_id = ? 
+         AND ((team1_id = ? AND team2_id = ?) OR (team1_id = ? AND team2_id = ?)) 
+         AND match_date = ?`,
+      [tournamentId, team1_id, team2_id, team2_id, team1_id, match_date]
     );
 
-    res.status(201).json({ message: "Match created", match_id: result.insertId });
+    if (existing.length > 0) {
+      return res.status(409).json({ error: "This match already exists for the given date" });
+    }
+
+    // 3️⃣ Insert new match
+    const [result] = await pool.query(
+      "INSERT INTO matches (tournament_id, team1_id, team2_id, match_date, overs, status) VALUES (?, ?, ?, ?, ?, 'upcoming')",
+      [tournamentId, team1_id, team2_id, match_date, overs || null]
+    );
+
+    res.status(201).json({
+      message: "Match created successfully",
+      matchId: result.insertId
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Error creating match" });
+    console.error("❌ Error in createMatch:", err);
+    res.status(500).json({ error: "Server error" });
   }
 };
 
-// Get All Matches
-exports.getAllMatches = async (req, res) => {
-  try {
-    const [rows] = await db.query(
-      `SELECT m.match_id, m.overs, m.status, 
-              t1.team_name AS team1, 
-              t2.team_name AS team2,
-              m.winner_team_id
-       FROM matches m
-       JOIN teams t1 ON m.team1_id = t1.team_id
-       JOIN teams t2 ON m.team2_id = t2.team_id`
-    );
-
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Error fetching matches" });
-  }
-};
+// 👇 THIS WAS MISSING
+module.exports = { createMatch };

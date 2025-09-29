@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const matchController = require("../controllers/matchController");
-const verifyToken = require("../middleware/authMiddleware");
+const { createMatch } = require("../controllers/matchController");
+const authMiddleware = require("../middleware/authMiddleware");
 
-router.post("/create", verifyToken, matchController.createMatch);
-router.get("/", matchController.getAllMatches);
+// Only logged-in captains can create matches
+router.post("/create", authMiddleware, createMatch);
 
 module.exports = router;
