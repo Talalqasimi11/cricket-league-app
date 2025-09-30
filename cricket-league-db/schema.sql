@@ -92,7 +92,7 @@ CREATE TABLE tournament_teams (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ========================
--- MATCHES
+-- MATCHES (Tournament Matches / Draws)
 -- ========================
 CREATE TABLE matches (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -101,7 +101,7 @@ CREATE TABLE matches (
   team_b_id INT NULL,
   team_a_tournament_team_id INT NULL,
   team_b_tournament_team_id INT NULL,
-  status ENUM('live','completed','abandoned') NOT NULL,
+  status ENUM('live','completed','abandoned') NOT NULL DEFAULT 'live',
   overs INT NOT NULL,
   match_datetime DATETIME NOT NULL,
   winner_team_id INT NULL,

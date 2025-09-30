@@ -21,9 +21,11 @@ const addPlayer = async (req, res) => {
 
     const teamId = teamRows[0].id;
 
-    // insert player
+    // insert player (all stats default 0)
     const [result] = await pool.query(
-      "INSERT INTO players (player_name, player_role, runs, matches_played, hundreds, fifties, team_id) VALUES (?, ?, 0, 0, 0, 0, ?)",
+      `INSERT INTO players 
+       (player_name, player_role, runs, matches_played, hundreds, fifties, batting_average, strike_rate, wickets, team_id) 
+       VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)`,
       [player_name, player_role, teamId]
     );
 
@@ -54,7 +56,7 @@ const getMyPlayers = async (req, res) => {
 
 // 📌 Update player info
 const updatePlayer = async (req, res) => {
-  const { playerId, player_name, player_role, runs, matches_played, hundreds, fifties } = req.body;
+  const { playerId, player_name, player_role, runs, matches_played, hundreds, fifties, batting_average, strike_rate, wickets } = req.body;
 
   if (!playerId) {
     return res.status(400).json({ error: "playerId is required" });
@@ -76,9 +78,10 @@ const updatePlayer = async (req, res) => {
 
     await pool.query(
       `UPDATE players 
-       SET player_name = ?, player_role = ?, runs = ?, matches_played = ?, hundreds = ?, fifties = ? 
+       SET player_name = ?, player_role = ?, runs = ?, matches_played = ?, 
+           hundreds = ?, fifties = ?, batting_average = ?, strike_rate = ?, wickets = ? 
        WHERE id = ?`,
-      [player_name, player_role, runs, matches_played, hundreds, fifties, playerId]
+      [player_name, player_role, runs, matches_played, hundreds, fifties, batting_average, strike_rate, wickets, playerId]
     );
 
     res.json({ message: "Player updated successfully" });

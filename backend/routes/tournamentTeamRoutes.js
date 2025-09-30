@@ -5,14 +5,14 @@ const authMiddleware = require("../middleware/authMiddleware");
 const {
   addTournamentTeam,
   getTournamentTeams,
+  updateTournamentTeam,
   deleteTournamentTeam,
-  updateTournamentTeam, // ✅ imported
 } = require("../controllers/tournamentTeamController");
 
 // ✅ Routes
 router.post("/add", authMiddleware, addTournamentTeam);
-router.get("/:tournament_id", getTournamentTeams);
-router.delete("/delete", authMiddleware, deleteTournamentTeam);
+router.get("/:tournament_id", getTournamentTeams); // public
 router.put("/update", authMiddleware, updateTournamentTeam);
+router.delete("/delete", authMiddleware, deleteTournamentTeam);
 
 module.exports = router;

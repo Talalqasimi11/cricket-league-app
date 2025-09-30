@@ -48,7 +48,7 @@ const updateMyTeam = async (req, res) => {
 const getAllTeams = async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT id, team_name, team_location, matches_played, matches_won FROM teams"
+      "SELECT id, team_name, team_location, matches_played, matches_won, trophies FROM teams"
     );
     res.json(rows);
   } catch (err) {

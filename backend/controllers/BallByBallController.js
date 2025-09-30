@@ -1,0 +1,85 @@
+const db = require("../config/db");
+
+// Insert a new delivery
+exports.addDelivery = async (req, res) => {
+  const { match_id, innings_id, over_number, ball_number, batsman_id, bowler_id, runs_scored, extra_type, is_wicket, dismissal_type, fielder_id } = req.body;
+
+  try {
+    const [result] = await db.query(
+      `INSERT INTO ball_by_ball 
+       (match_id, innings_id, over_number, ball_number, batsman_id, bowler_id, runs_scored, extra_type, is_wicket, dismissal_type, fielder_id) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [match_id, innings_id, over_number, ball_number, batsman_id, bowler_id, runs_scored, extra_type, is_wicket, dismissal_type, fielder_id]
+    );
+
+    res.status(201).json({ message: "Delivery recorded successfully", delivery_id: result.insertId });
+  } catch (err) {
+    console.error("Error adding delivery:", err);
+    res.status(500).json({ error: "Failed to record delivery" });
+  }
+};
+
+// Get all deliveries of a match
+exports.getDeliveriesByMatch = async (req, res) => {
+  const { match_id } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT b.*, 
+              p1.player_name AS batsman_name,
+              p2.player_name AS bowler_name,
+              p3.player_name AS fielder_name
+       FROM ball_by_ball b
+       LEFT JOIN players p1 ON b.batsman_id = p1.id
+       LEFT JOIN players p2 ON b.bowler_id = p2.id
+       LEFT JOIN players p3 ON b.fielder_id = p3.id
+       WHERE b.match_id = ?
+       ORDER BY innings_id, over_number, ball_number ASC`,
+      [match_id]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching deliveries:", err);
+    res.status(500).json({ error: "Failed to fetch deliveries" });
+  }
+};
+
+// Get deliveries of a specific innings
+exports.getDeliveriesByInnings = async (req, res) => {
+  const { innings_id } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT b.*, 
+              p1.player_name AS batsman_name,
+              p2.player_name AS bowler_name,
+              p3.player_name AS fielder_name
+       FROM ball_by_ball b
+       LEFT JOIN players p1 ON b.batsman_id = p1.id
+       LEFT JOIN players p2 ON b.bowler_id = p2.id
+       LEFT JOIN players p3 ON b.fielder_id = p3.id
+       WHERE b.innings_id = ?
+       ORDER BY over_number, ball_number ASC`,
+      [innings_id]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching deliveries:", err);
+    res.status(500).json({ error: "Failed to fetch deliveries" });
+  }
+};
+
+// Delete a delivery (for admin/debug only)
+exports.deleteDelivery = async (req, res) => {
+  const { delivery_id } = req.params;
+
+  try {
+    await db.query(`DELETE FROM ball_by_ball WHERE id = ?`, [delivery_id]);
+    res.json({ message: "Delivery deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting delivery:", err);
+    res.status(500).json({ error: "Failed to delete delivery" });
+  }
+};

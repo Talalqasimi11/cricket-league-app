@@ -1,7 +1,6 @@
-// controllers/authController.js
 const pool = require("../config/db");
 const jwt = require("jsonwebtoken");
-require("dotenv").config(); // make sure .env is loaded
+require("dotenv").config();
 
 // ========================
 // REGISTER CAPTAIN
@@ -14,17 +13,26 @@ const registerCaptain = async (req, res) => {
   }
 
   try {
+    // Step 0: Check if phone number already exists
+    const [existing] = await pool.query(
+      "SELECT id FROM users WHERE phone_number = ?",
+      [phone_number]
+    );
+    if (existing.length > 0) {
+      return res.status(409).json({ error: "Phone number already registered" });
+    }
+
     // Step 1: Create captain (user)
     const [userResult] = await pool.query(
-      "INSERT INTO users (phone_number, password_hash, name, role) VALUES (?, ?, ?, 'captain')",
-      [phone_number, password, team_name] // team_name used as display name for now
+      "INSERT INTO users (phone_number, password_hash) VALUES (?, ?)",
+      [phone_number, password] // plain password stored in password_hash for now
     );
 
     const captainId = userResult.insertId;
 
     // Step 2: Create team linked with captain
     await pool.query(
-      "INSERT INTO teams (team_name, team_location, matches_played, matches_won, captain_id) VALUES (?, ?, 0, 0, ?)",
+      "INSERT INTO teams (team_name, team_location, matches_played, matches_won, trophies, captain_id) VALUES (?, ?, 0, 0, 0, ?)",
       [team_name, team_location, captainId]
     );
 
@@ -65,8 +73,8 @@ const loginCaptain = async (req, res) => {
 
     // 3️⃣ Create JWT
     const token = jwt.sign(
-      { id: user.id, phone_number: user.phone_number, role: user.role },
-      process.env.JWT_SECRET, // must be set in .env
+      { id: user.id, phone_number: user.phone_number },
+      process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
@@ -77,7 +85,6 @@ const loginCaptain = async (req, res) => {
       captain: {
         id: user.id,
         phone_number: user.phone_number,
-        role: user.role,
       },
     });
   } catch (err) {
