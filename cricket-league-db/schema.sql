@@ -1,221 +1,146 @@
--- ========================
--- DATABASE SETUP
--- ========================
-CREATE DATABASE IF NOT EXISTS cricket_league;
-USE cricket_league;
-
--- Drop existing tables in reverse dependency order
+-- Drop existing tables if any (to avoid conflicts during re-creation)
 DROP TABLE IF EXISTS ball_by_ball;
 DROP TABLE IF EXISTS player_match_stats;
 DROP TABLE IF EXISTS match_innings;
 DROP TABLE IF EXISTS matches;
-DROP TABLE IF EXISTS team_tournament_summary;
 DROP TABLE IF EXISTS tournament_teams;
 DROP TABLE IF EXISTS tournaments;
 DROP TABLE IF EXISTS players;
+DROP TABLE IF EXISTS team_tournament_summary;
 DROP TABLE IF EXISTS teams;
 DROP TABLE IF EXISTS users;
 
--- ========================
--- USERS (Only captains)
--- ========================
+-- 1. Users (Captains)
 CREATE TABLE users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  phone_number VARCHAR(20) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  name VARCHAR(100) NOT NULL,
-  role ENUM('captain') NOT NULL DEFAULT 'captain',
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    phone_number VARCHAR(20) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    team_id INT UNIQUE
+) ENGINE=InnoDB;
 
--- ========================
--- TEAMS
--- ========================
+-- 2. Teams
 CREATE TABLE teams (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  team_name VARCHAR(150) NOT NULL,
-  team_location VARCHAR(150) NOT NULL,
-  matches_played INT NOT NULL DEFAULT 0 CHECK (matches_played >= 0),
-  matches_won INT NOT NULL DEFAULT 0 CHECK (matches_won >= 0),
-  trophies INT NOT NULL DEFAULT 0 CHECK (trophies >= 0),
-  captain_id INT NOT NULL UNIQUE,
-  CONSTRAINT fk_teams_captain FOREIGN KEY (captain_id) REFERENCES users(id)
-    ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    captain_id INT NOT NULL UNIQUE,
+    team_name VARCHAR(100) NOT NULL,
+    team_location VARCHAR(100) NOT NULL,
+    matches_played INT DEFAULT 0,
+    matches_won INT DEFAULT 0,
+    trophies INT DEFAULT 0,
+    CONSTRAINT fk_captain FOREIGN KEY (captain_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 
--- ========================
--- PLAYERS
--- ========================
+-- Link user.team_id → teams.id
+ALTER TABLE users
+    ADD CONSTRAINT fk_user_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL;
+
+-- 3. Players
 CREATE TABLE players (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  team_id INT NOT NULL,
-  player_name VARCHAR(100) NOT NULL,
-  player_role VARCHAR(50) NOT NULL,
-  runs INT NOT NULL DEFAULT 0,
-  matches_played INT NOT NULL DEFAULT 0,
-  hundreds INT NOT NULL DEFAULT 0,
-  fifties INT NOT NULL DEFAULT 0,
-  batting_average FLOAT NOT NULL DEFAULT 0,
-  strike_rate FLOAT NOT NULL DEFAULT 0,
-  wickets INT NOT NULL DEFAULT 0,
-  CONSTRAINT fk_players_team FOREIGN KEY (team_id) REFERENCES teams(id)
-    ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    team_id INT NOT NULL,
+    player_name VARCHAR(100) NOT NULL,
+    player_role ENUM('Batsman','Bowler','All-Rounder','Wicket-Keeper') NOT NULL,
+    runs INT DEFAULT 0,
+    matches_played INT DEFAULT 0,
+    hundreds INT DEFAULT 0,
+    fifties INT DEFAULT 0,
+    batting_average DECIMAL(5,2) DEFAULT 0.00,
+    strike_rate DECIMAL(5,2) DEFAULT 0.00,
+    wickets INT DEFAULT 0,
+    CONSTRAINT fk_player_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 
--- ========================
--- TOURNAMENTS
--- ========================
+-- 4. Tournaments
 CREATE TABLE tournaments (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  tournament_name VARCHAR(150) NOT NULL,
-  location VARCHAR(150) NOT NULL,
-  start_date DATE NOT NULL,
-  status ENUM('ongoing','completed','cancelled') NOT NULL,
-  created_by INT NOT NULL,
-  CONSTRAINT fk_tournaments_user FOREIGN KEY (created_by) REFERENCES users(id)
-    ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tournament_name VARCHAR(100) NOT NULL,
+    location VARCHAR(100) NOT NULL,
+    start_date DATE NOT NULL,
+    status ENUM('ongoing','completed','cancelled') NOT NULL DEFAULT 'ongoing',
+    created_by INT NOT NULL,
+    CONSTRAINT fk_tournament_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 
--- ========================
--- TOURNAMENT_TEAMS
--- ========================
+-- 5. Tournament Teams (registered + temporary teams)
 CREATE TABLE tournament_teams (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  tournament_id INT NOT NULL,
-  team_id INT NULL,
-  temp_team_name VARCHAR(150) NULL,
-  temp_team_location VARCHAR(150) NULL,
-  CONSTRAINT fk_tt_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_tt_team FOREIGN KEY (team_id) REFERENCES teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tournament_id INT NOT NULL,
+    team_id INT NULL,
+    temp_team_name VARCHAR(100),
+    temp_team_location VARCHAR(100),
+    CONSTRAINT fk_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+    CONSTRAINT fk_registered_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
 
--- ========================
--- MATCHES (Tournament Matches / Draws)
--- ========================
+-- 6. Matches
 CREATE TABLE matches (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  tournament_id INT NOT NULL,
-  team_a_id INT NULL,
-  team_b_id INT NULL,
-  team_a_tournament_team_id INT NULL,
-  team_b_tournament_team_id INT NULL,
-  status ENUM('live','completed','abandoned') NOT NULL DEFAULT 'live',
-  overs INT NOT NULL,
-  match_datetime DATETIME NOT NULL,
-  winner_team_id INT NULL,
-  winner_tournament_team_id INT NULL,
-  CONSTRAINT fk_matches_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_matches_team_a FOREIGN KEY (team_a_id) REFERENCES teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_matches_team_b FOREIGN KEY (team_b_id) REFERENCES teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_matches_ta_tt FOREIGN KEY (team_a_tournament_team_id) REFERENCES tournament_teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_matches_tb_tt FOREIGN KEY (team_b_tournament_team_id) REFERENCES tournament_teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_matches_winner_team FOREIGN KEY (winner_team_id) REFERENCES teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_matches_winner_tt FOREIGN KEY (winner_tournament_team_id) REFERENCES tournament_teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tournament_id INT NOT NULL,
+    team1_id INT NULL,
+    team2_id INT NULL,
+    tournament_team1_id INT NULL,
+    tournament_team2_id INT NULL,
+    overs INT NOT NULL,
+    match_datetime DATETIME NOT NULL,
+    status ENUM('not_started','live','completed','abandoned') DEFAULT 'not_started',
+    winner_team_id INT NULL,
+    winner_tournament_team_id INT NULL,
+    CONSTRAINT fk_match_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+    CONSTRAINT fk_match_team1 FOREIGN KEY (team1_id) REFERENCES teams(id) ON DELETE SET NULL,
+    CONSTRAINT fk_match_team2 FOREIGN KEY (team2_id) REFERENCES teams(id) ON DELETE SET NULL,
+    CONSTRAINT fk_match_tournament_team1 FOREIGN KEY (tournament_team1_id) REFERENCES tournament_teams(id) ON DELETE SET NULL,
+    CONSTRAINT fk_match_tournament_team2 FOREIGN KEY (tournament_team2_id) REFERENCES tournament_teams(id) ON DELETE SET NULL,
+    CONSTRAINT fk_match_winner_team FOREIGN KEY (winner_team_id) REFERENCES teams(id) ON DELETE SET NULL,
+    CONSTRAINT fk_match_winner_tournament_team FOREIGN KEY (winner_tournament_team_id) REFERENCES tournament_teams(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
 
--- ========================
--- MATCH_INNINGS
--- ========================
+-- 7. Match Innings
 CREATE TABLE match_innings (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  match_id INT NOT NULL,
-  batting_team_id INT NULL,
-  bowling_team_id INT NULL,
-  batting_tournament_team_id INT NULL,
-  bowling_tournament_team_id INT NULL,
-  total_runs INT NOT NULL DEFAULT 0,
-  total_wickets INT NOT NULL DEFAULT 0,
-  overs_played FLOAT NOT NULL DEFAULT 0,
-  CONSTRAINT fk_innings_match FOREIGN KEY (match_id) REFERENCES matches(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_innings_bat_team FOREIGN KEY (batting_team_id) REFERENCES teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_innings_bowl_team FOREIGN KEY (bowling_team_id) REFERENCES teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_innings_bat_tt FOREIGN KEY (batting_tournament_team_id) REFERENCES tournament_teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_innings_bowl_tt FOREIGN KEY (bowling_tournament_team_id) REFERENCES tournament_teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    match_id INT NOT NULL,
+    batting_team_id INT NULL,
+    bowling_team_id INT NULL,
+    runs INT DEFAULT 0,
+    wickets INT DEFAULT 0,
+    overs_faced DECIMAL(4,1) DEFAULT 0.0,
+    CONSTRAINT fk_innings_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+    CONSTRAINT fk_innings_batting FOREIGN KEY (batting_team_id) REFERENCES teams(id) ON DELETE SET NULL,
+    CONSTRAINT fk_innings_bowling FOREIGN KEY (bowling_team_id) REFERENCES teams(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
 
--- ========================
--- TEAM_TOURNAMENT_SUMMARY
--- ========================
-CREATE TABLE team_tournament_summary (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  tournament_id INT NOT NULL,
-  team_id INT NULL,
-  tournament_team_id INT NULL,
-  matches_played INT NOT NULL DEFAULT 0,
-  matches_won INT NOT NULL DEFAULT 0,
-  runs_for INT NOT NULL DEFAULT 0,
-  runs_against INT NOT NULL DEFAULT 0,
-  CONSTRAINT fk_tts_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_tts_team FOREIGN KEY (team_id) REFERENCES teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_tts_tt FOREIGN KEY (tournament_team_id) REFERENCES tournament_teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ========================
--- PLAYER_MATCH_STATS
--- ========================
+-- 8. Player Match Stats
 CREATE TABLE player_match_stats (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  match_id INT NOT NULL,
-  player_id INT NOT NULL,
-  tournament_team_id INT NULL,
-  runs_scored INT NOT NULL DEFAULT 0,
-  balls_faced INT NOT NULL DEFAULT 0,
-  fours INT NOT NULL DEFAULT 0,
-  sixes INT NOT NULL DEFAULT 0,
-  overs_bowled FLOAT NOT NULL DEFAULT 0,
-  runs_conceded INT NOT NULL DEFAULT 0,
-  wickets INT NOT NULL DEFAULT 0,
-  player_of_match BOOLEAN NOT NULL DEFAULT FALSE,
-  CONSTRAINT fk_pms_match FOREIGN KEY (match_id) REFERENCES matches(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_pms_player FOREIGN KEY (player_id) REFERENCES players(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_pms_tt FOREIGN KEY (tournament_team_id) REFERENCES tournament_teams(id)
-    ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    match_id INT NOT NULL,
+    player_id INT NOT NULL,
+    runs_scored INT DEFAULT 0,
+    balls_faced INT DEFAULT 0,
+    fours INT DEFAULT 0,
+    sixes INT DEFAULT 0,
+    wickets_taken INT DEFAULT 0,
+    overs_bowled DECIMAL(4,1) DEFAULT 0.0,
+    runs_conceded INT DEFAULT 0,
+    catches INT DEFAULT 0,
+    stumpings INT DEFAULT 0,
+    CONSTRAINT fk_player_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+    CONSTRAINT fk_match_player FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 
--- ========================
--- BALL_BY_BALL
--- ========================
+-- 9. Ball-by-Ball
 CREATE TABLE ball_by_ball (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  match_id INT NOT NULL,
-  innings_id INT NOT NULL,
-  over_number INT NOT NULL,
-  ball_in_over INT NOT NULL,
-  bowler_player_id INT NOT NULL,
-  batsman_player_id INT NOT NULL,
-  non_striker_player_id INT NOT NULL,
-  runs INT NOT NULL DEFAULT 0,
-  extra_type VARCHAR(50) NULL,
-  is_wicket BOOLEAN NOT NULL DEFAULT FALSE,
-  dismissal_type VARCHAR(50) NULL,
-  notes VARCHAR(255) NULL,
-  CONSTRAINT fk_bbb_match FOREIGN KEY (match_id) REFERENCES matches(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_bbb_innings FOREIGN KEY (innings_id) REFERENCES match_innings(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_bbb_bowler FOREIGN KEY (bowler_player_id) REFERENCES players(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_bbb_batsman FOREIGN KEY (batsman_player_id) REFERENCES players(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_bbb_non_striker FOREIGN KEY (non_striker_player_id) REFERENCES players(id)
-    ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    match_id INT NOT NULL,
+    over_number INT NOT NULL,
+    ball_number INT NOT NULL,
+    striker_id INT NOT NULL,
+    bowler_id INT NOT NULL,
+    runs_scored INT DEFAULT 0,
+    extras ENUM('none','wide','no-ball','bye','leg-bye') DEFAULT 'none',
+    wicket BOOLEAN DEFAULT FALSE,
+    dismissal_type ENUM('bowled','caught','lbw','run_out','stumped','hit_wicket','none') DEFAULT 'none',
+    fielder_id INT NULL,
+    CONSTRAINT fk_ball_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ball_striker FOREIGN KEY (striker_id) REFERENCES players(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ball_bowler FOREIGN KEY (bowler_id) REFERENCES players(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ball_fielder FOREIGN KEY (fielder_id) REFERENCES players(id) ON DELETE SET NULL
+) ENGINE=InnoDB;

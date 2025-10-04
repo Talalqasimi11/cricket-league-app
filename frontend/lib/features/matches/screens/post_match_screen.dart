@@ -47,15 +47,15 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
     }
 
     final List<Widget> _screens = [
-      ScorecardScreen(teamA: widget.teamA, teamB: widget.teamB),
-      MatchStatisticsScreen(
-        teamA: widget.teamA,
-        teamB: widget.teamB,
-        teamABatting: widget.teamABatting,
-        teamABowling: widget.teamABowling,
-        teamBBatting: widget.teamBBatting,
-        teamBBowling: widget.teamBBowling,
-      ),
+      // ScorecardScreen(teamA: widget.teamA, teamB: widget.teamB),
+      // MatchStatisticsScreen(
+      //   teamA: widget.teamA,
+      //   teamB: widget.teamB,
+      //   teamABatting: widget.teamABatting,
+      //   teamABowling: widget.teamABowling,
+      //   teamBBatting: widget.teamBBatting,
+      //   teamBBowling: widget.teamBBowling,
+      // ),
     ];
 
     return Scaffold(

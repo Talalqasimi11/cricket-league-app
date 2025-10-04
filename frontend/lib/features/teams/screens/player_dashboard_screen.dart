@@ -1,17 +1,64 @@
 // lib/features/teams/screens/player_dashboard_screen.dart
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'team_dashboard_screen.dart'; // ✅ Import Player model
+import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-class PlayerDashboardScreen extends StatelessWidget {
-  final Player player; // ✅ Full player object
+// ✅ Import Player model
+import '../models/player.dart';
+
+class PlayerDashboardScreen extends StatefulWidget {
+  final Player player;
 
   const PlayerDashboardScreen({super.key, required this.player});
 
   @override
+  State<PlayerDashboardScreen> createState() => _PlayerDashboardScreenState();
+}
+
+class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
+  final storage = const FlutterSecureStorage();
+  late Player _player;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _player = widget.player;
+  }
+
+  /// 🔹 Update Player on Backend
+  Future<void> _updatePlayer(Player updatedPlayer) async {
+    setState(() => _loading = true);
+    final token = await storage.read(key: 'jwt_token');
+
+    final response = await http.put(
+      Uri.parse("http://localhost:5000/api/players/${updatedPlayer.id}"),
+      headers: {"Authorization": "Bearer $token", "Content-Type": "application/json"},
+      body: jsonEncode(updatedPlayer.toJson()),
+    );
+
+    setState(() => _loading = false);
+
+    if (response.statusCode == 200) {
+      setState(() => _player = updatedPlayer);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("✅ Player info updated")));
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("❌ Failed: ${response.body}")));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC), // light background
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         backgroundColor: Colors.white.withOpacity(0.9),
         elevation: 1,
@@ -25,73 +72,76 @@ class PlayerDashboardScreen extends StatelessWidget {
         ),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Player Image + Name
-            Column(
-              children: [
-                CircleAvatar(radius: 60, backgroundImage: NetworkImage(player.imageUrl)),
-                const SizedBox(height: 10),
-                Text(
-                  player.name,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  // 🔹 Player Image + Name
+                  Column(
+                    children: [
+                      CircleAvatar(radius: 60, backgroundColor: Colors.grey[300]),
+                      const SizedBox(height: 10),
+                      Text(
+                        _player.playerName,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      Text(_player.playerRole, style: const TextStyle(color: Colors.grey)),
+                    ],
                   ),
-                ),
-                Text(player.role, style: const TextStyle(color: Colors.grey)),
-              ],
-            ),
-            const SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
-            // Stats Grid
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              children: [
-                _buildStatCard(Icons.sports_cricket, "Runs", player.runs.toString()),
-                _buildStatCard(
-                  Icons.leaderboard,
-                  "Batting Avg",
-                  player.battingAverage.toStringAsFixed(2),
-                ),
-                _buildStatCard(
-                  Icons.trending_up,
-                  "Strike Rate",
-                  player.strikeRate.toStringAsFixed(2),
-                ),
-                _buildStatCard(Icons.sports, "Wickets", player.wickets.toString()),
-              ],
-            ),
-            const SizedBox(height: 20),
+                  // 🔹 Stats Grid
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    children: [
+                      _buildStatCard(Icons.sports_cricket, "Runs", _player.runs.toString()),
+                      _buildStatCard(
+                        Icons.leaderboard,
+                        "Batting Avg",
+                        _player.battingAverage.toStringAsFixed(2),
+                      ),
+                      _buildStatCard(
+                        Icons.trending_up,
+                        "Strike Rate",
+                        _player.strikeRate.toStringAsFixed(2),
+                      ),
+                      _buildStatCard(Icons.sports, "Wickets", _player.wickets.toString()),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
 
-            // Edit Player Button
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF16a34a),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                minimumSize: const Size(double.infinity, 50),
+                  // 🔹 Edit Button
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF16a34a),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                    icon: const Icon(Icons.edit, color: Colors.white),
+                    label: const Text(
+                      "Edit Player Info",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: () => _showEditPlayerDialog(_player),
+                  ),
+                ],
               ),
-              icon: const Icon(Icons.edit, color: Colors.white),
-              label: const Text("Edit Player Info", style: TextStyle(fontWeight: FontWeight.bold)),
-              onPressed: () {
-                _showEditPlayerDialog(context, player);
-              },
             ),
-          ],
-        ),
-      ),
     );
   }
 
-  // Card builder for stats
-  Widget _buildStatCard(IconData? icon, String title, String value, {String? customText}) {
+  /// 🔹 Card builder for stats
+  Widget _buildStatCard(IconData? icon, String title, String value) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -102,17 +152,7 @@ class PlayerDashboardScreen extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (icon != null)
-            Icon(icon, size: 40, color: Colors.green)
-          else
-            Text(
-              customText ?? "",
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.green,
-              ),
-            ),
+          if (icon != null) Icon(icon, size: 40, color: Colors.green),
           const SizedBox(height: 8),
           Text(
             value,
@@ -124,10 +164,10 @@ class PlayerDashboardScreen extends StatelessWidget {
     );
   }
 
-  /// Popup dialog for editing player info
-  void _showEditPlayerDialog(BuildContext context, Player player) {
-    final nameController = TextEditingController(text: player.name);
-    final roleController = TextEditingController(text: player.role);
+  /// 🔹 Popup dialog for editing player info
+  void _showEditPlayerDialog(Player player) {
+    final nameController = TextEditingController(text: player.playerName);
+    final roleController = TextEditingController(text: player.playerRole);
     final runsController = TextEditingController(text: player.runs.toString());
     final avgController = TextEditingController(text: player.battingAverage.toString());
     final strikeController = TextEditingController(text: player.strikeRate.toString());
@@ -147,8 +187,10 @@ class PlayerDashboardScreen extends StatelessWidget {
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
               const SizedBox(height: 20),
-              CircleAvatar(radius: 50, backgroundImage: NetworkImage(player.imageUrl)),
+              CircleAvatar(radius: 50, backgroundColor: Colors.grey[300]),
               const SizedBox(height: 20),
+
+              // 🔹 Input fields
               TextField(
                 controller: nameController,
                 decoration: const InputDecoration(labelText: "Player Name"),
@@ -179,6 +221,7 @@ class PlayerDashboardScreen extends StatelessWidget {
               ),
 
               const SizedBox(height: 20),
+
               Row(
                 children: [
                   Expanded(
@@ -191,11 +234,20 @@ class PlayerDashboardScreen extends StatelessWidget {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () {
-                        // TODO: Save updated player info to backend
+                        final updated = Player(
+                          id: player.id,
+                          playerName: nameController.text,
+                          playerRole: roleController.text,
+                          runs: int.tryParse(runsController.text) ?? 0,
+                          matchesPlayed: player.matchesPlayed,
+                          hundreds: player.hundreds,
+                          fifties: player.fifties,
+                          battingAverage: double.tryParse(avgController.text) ?? 0,
+                          strikeRate: double.tryParse(strikeController.text) ?? 0,
+                          wickets: int.tryParse(wicketsController.text) ?? 0,
+                        );
                         Navigator.pop(context);
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(const SnackBar(content: Text("Player Info Updated")));
+                        _updatePlayer(updated);
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF16a34a)),
                       child: const Text("Save Changes"),

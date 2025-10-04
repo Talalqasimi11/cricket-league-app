@@ -1,6 +1,8 @@
 // lib/features/auth/screens/register_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -12,7 +14,8 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
   final TextEditingController _captainNameController = TextEditingController();
   final TextEditingController _teamNameController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
@@ -20,6 +23,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isOtpSent = false;
   bool _isLoading = false;
+
+  final String baseUrl = "http://localhost:5000/api/auth"; // Backend base URL
 
   /// Send OTP to the phone number
   void _sendOtp() async {
@@ -32,21 +37,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
 
-    // TODO: Replace with Supabase / Backend OTP logic
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/send-otp"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"phone_number": _phoneController.text}),
+      );
 
-    setState(() {
-      _isLoading = false;
-      _isOtpSent = true;
-    });
+      final data = jsonDecode(response.body);
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("OTP sent to your phone")));
+      if (response.statusCode == 200) {
+        setState(() => _isOtpSent = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message'] ?? "OTP sent successfully")),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? "Failed to send OTP")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Server error: $e")));
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   /// Register user after verifying OTP
-  void _register() {
+  void _register() async {
     if (_passwordController.text != _confirmPasswordController.text) {
       ScaffoldMessenger.of(
         context,
@@ -61,13 +81,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    // TODO: Replace with backend (Supabase / API) registration logic
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Registration successful")));
+    setState(() => _isLoading = true);
 
-    // Navigate to login screen immediately after successful register
-    Navigator.pushReplacementNamed(context, "/login");
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/register"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "phone_number": _phoneController.text,
+          "password": _passwordController.text,
+          "otp": _otpController.text,
+          "captain_name": _captainNameController.text,
+          "team_name": _teamNameController.text,
+          "team_location": _locationController.text,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message'] ?? "Registration successful")),
+        );
+        Navigator.pushReplacementNamed(context, "/login");
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? "Registration failed")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Server error: $e")));
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -103,7 +151,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             TextField(
               controller: _confirmPasswordController,
               obscureText: true,
-              decoration: _inputDecoration("Confirm Password", Icons.lock_outline),
+              decoration: _inputDecoration(
+                "Confirm Password",
+                Icons.lock_outline,
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -148,9 +199,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   style: OutlinedButton.styleFrom(
                     backgroundColor: const Color(0xFFE8F3EC),
                     foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: _isLoading ? const CircularProgressIndicator() : const Text("Send OTP"),
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text("Send OTP"),
                 ),
               ),
 
@@ -161,17 +216,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: _register,
+                onPressed: _isLoading ? null : _register,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF36E27B),
                   foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-                child: const Text(
-                  "Register",
-
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        "Register",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ),
           ],
@@ -180,7 +241,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  /// Reusable input decoration for text fields
+  /// Reusable input decoration
   InputDecoration _inputDecoration(String hint, IconData icon) {
     return InputDecoration(
       hintText: hint,

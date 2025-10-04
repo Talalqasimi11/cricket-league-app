@@ -1,6 +1,8 @@
 // lib/features/auth/screens/login_screen.dart
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,30 +12,68 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
   bool _isLoading = false;
+  String? _jwtToken; // store token in memory
 
+  final String baseUrl = "http://localhost:5000/api/auth"; // Backend base URL
+
+  /// Login function
   void _login() async {
+    final phone = _phoneController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (phone.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Phone number and password are required")),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
-    // TODO: Replace with Supabase / backend authentication
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/login"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"phone_number": phone, "password": password}),
+      );
 
-    setState(() => _isLoading = false);
+      final data = jsonDecode(response.body);
 
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Login successful")));
+      if (response.statusCode == 200) {
+        _jwtToken = data['token']; // store token in memory
 
-    // TODO: Navigate to My Team dashboard after login
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Login successful")));
+
+        // Navigate to My Team Dashboard
+        Navigator.pushReplacementNamed(context, '/my_team_dashboard');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? "Login failed")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Server error: $e")));
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   void _register() {
-    // TODO: Navigate to Register screen
+    Navigator.pushNamed(context, '/register');
   }
 
   void _forgotPassword() {
-    // TODO: Implement forgot password functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Forgot password feature coming soon")),
+    );
   }
 
   @override
@@ -50,7 +90,11 @@ class _LoginScreenState extends State<LoginScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.sports_cricket, size: 48, color: Color(0xFF36E27B)),
+                  const Icon(
+                    Icons.sports_cricket,
+                    size: 48,
+                    color: Color(0xFF36E27B),
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     "CricLeague",
@@ -64,36 +108,19 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Email Field
+              // Phone Number
               TextField(
-                controller: _emailController,
-                decoration: InputDecoration(
-                  hintText: "Email",
-                  prefixIcon: const Icon(Icons.email, color: Colors.grey),
-                  filled: true,
-                  fillColor: const Color(0xFFE8F3EC),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: _inputDecoration("Phone Number", Icons.phone),
               ),
               const SizedBox(height: 16),
 
-              // Password Field
+              // Password
               TextField(
                 controller: _passwordController,
                 obscureText: true,
-                decoration: InputDecoration(
-                  hintText: "Password",
-                  prefixIcon: const Icon(Icons.lock, color: Colors.grey),
-                  filled: true,
-                  fillColor: const Color(0xFFE8F3EC),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
+                decoration: _inputDecoration("Password", Icons.lock),
               ),
 
               // Forgot password
@@ -101,13 +128,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: _forgotPassword,
-                  child: const Text("Forgot Password?", style: TextStyle(color: Color(0xFF50956C))),
+                  child: const Text(
+                    "Forgot Password?",
+                    style: TextStyle(color: Color(0xFF50956C)),
+                  ),
                 ),
               ),
 
               const SizedBox(height: 20),
 
-              // Login button
+              // Login Button
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -116,20 +146,25 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF36E27B),
                     foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text(
                           "Login",
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ),
 
               const SizedBox(height: 12),
 
-              // Register button
+              // Register Button
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -139,7 +174,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     backgroundColor: const Color(0xFFE8F3EC),
                     foregroundColor: Colors.black,
                     side: BorderSide.none,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: const Text(
                     "Register",
@@ -150,6 +187,20 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Reusable input decoration
+  InputDecoration _inputDecoration(String hint, IconData icon) {
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: Icon(icon, color: Colors.grey),
+      filled: true,
+      fillColor: const Color(0xFFE8F3EC),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
       ),
     );
   }
