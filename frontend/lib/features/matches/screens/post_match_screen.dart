@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'scorecard_screen.dart';
-import 'match_statistics_screen.dart';
+// import 'scorecard_screen.dart';
+// import 'match_statistics_screen.dart';
 
 class PostMatchScreen extends StatefulWidget {
   final String teamA;

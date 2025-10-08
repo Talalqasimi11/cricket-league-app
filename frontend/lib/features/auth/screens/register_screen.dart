@@ -74,12 +74,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    if (_otpController.text.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Enter OTP to continue")));
-      return;
-    }
+    // if (_otpController.text.isEmpty) {
+    //   ScaffoldMessenger.of(
+    //     context,
+    //   ).showSnackBar(const SnackBar(content: Text("Enter OTP to continue")));
+    //   return;
+    // }
 
     setState(() => _isLoading = true);
 

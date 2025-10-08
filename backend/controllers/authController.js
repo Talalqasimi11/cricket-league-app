@@ -19,7 +19,7 @@ const registerCaptain = async (req, res) => {
       [phone_number]
     );
     if (existing.length > 0) {
-      return res.status(409).json({ error: "Phone number already registered" });
+      return res.status(200).json({ error: "Phone number already registered" });
     }
 
     // Step 1: Create captain (user)

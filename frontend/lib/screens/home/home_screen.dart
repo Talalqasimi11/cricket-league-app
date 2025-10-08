@@ -20,7 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
     {
       "name": "Titans XI",
       "trophies": 3,
-      "image": "https://via.placeholder.com/300x300.png?text=Titans+XI",
+    
     },
     {
       "name": "Warriors CC",
