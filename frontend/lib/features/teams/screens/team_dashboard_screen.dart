@@ -2,16 +2,27 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:frontend/features/teams/screens/my_team_screen.dart';
 import 'package:http/http.dart' as http;
+import '../../../core/api_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/player.dart'; // ✅ Use separate Player model
 import 'player_dashboard_screen.dart';
 
 class TeamDashboardScreen extends StatefulWidget {
-  final String teamId; // use teamId to fetch data dynamically
+  final String? teamId; // optional: backend uses JWT to resolve captain's team
+  final String? teamName;
+  final String? teamLogoUrl;
+  final int? trophies;
+  final List<Player>? players;
 
-  const TeamDashboardScreen({super.key, required this.teamId, required teamName, required teamLogoUrl, required trophies, required List<Player> players});
+  const TeamDashboardScreen({
+    super.key,
+    this.teamId,
+    this.teamName,
+    this.teamLogoUrl,
+    this.trophies,
+    this.players,
+  });
 
   @override
   State<TeamDashboardScreen> createState() => _TeamDashboardScreenState();
@@ -28,6 +39,11 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    // seed UI with any passed values
+    teamName = widget.teamName ?? teamName;
+    teamLogoUrl = widget.teamLogoUrl ?? teamLogoUrl;
+    trophies = widget.trophies ?? trophies;
+    players = widget.players ?? players;
     _fetchTeamDetails();
   }
 
@@ -37,22 +53,33 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
 
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:5000/api/teams/${widget.teamId}'),
+        Uri.parse('${ApiClient.baseUrl}/api/teams/my-team'),
         headers: {'Authorization': 'Bearer $token'},
       );
 
-      final data = jsonDecode(response.body);
       if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
         setState(() {
-          teamName = data['team_name'] ?? '';
-          teamLogoUrl = data['team_logo'] ?? '';
-          trophies = data['trophies'] ?? 0;
-          players = (data['players'] as List).map((p) => Player.fromJson(p)).toList();
+          teamName = data['team_name'] ?? teamName;
+          teamLogoUrl = data['team_logo'] ?? teamLogoUrl;
+          trophies = data['trophies'] ?? trophies;
         });
       } else {
+        final data = jsonDecode(response.body);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(data['error'] ?? 'Failed to load team')));
+      }
+      // fetch players separately
+      final responsePlayers = await http.get(
+        Uri.parse('${ApiClient.baseUrl}/api/players/my-players'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (responsePlayers.statusCode == 200) {
+        final list = jsonDecode(responsePlayers.body) as List;
+        setState(() {
+          players = list.map((p) => Player.fromJson(p)).toList();
+        });
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
@@ -67,9 +94,9 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:5000/api/players'),
+        Uri.parse('${ApiClient.baseUrl}/api/players/add'),
         headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
-        body: jsonEncode({'team_id': widget.teamId, 'player_name': name, 'player_role': role}),
+        body: jsonEncode({'player_name': name, 'player_role': role}),
       );
 
       if (response.statusCode == 201) {
@@ -86,9 +113,9 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
     final token = await storage.read(key: 'jwt_token');
     try {
       final response = await http.put(
-        Uri.parse('http://localhost:5000/api/teams/${widget.teamId}'),
+        Uri.parse('${ApiClient.baseUrl}/api/teams/update'),
         headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
-        body: jsonEncode({'team_name': name, 'team_logo': logo}),
+        body: jsonEncode({'team_name': name, 'team_location': teamLogoUrl}),
       );
 
       if (response.statusCode == 200) {
@@ -103,13 +130,10 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   }
 
   /// API placeholder: Delete team
-  Future<void> _deleteTeam() async {
+  Future<void> _deleteTeam(dynamic response) async {
     final token = await storage.read(key: 'jwt_token');
     try {
-      final response = await http.delete(
-        Uri.parse('http://localhost:5000/api/teams/${widget.teamId}'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      // Delete team endpoint not available in backend; consider implementing or disabling in UI.
 
       if (response.statusCode == 200) {
         Navigator.pop(context);
@@ -117,6 +141,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text("Team $teamName deleted")));
       }
+      return;
     } catch (e) {
       debugPrint("Delete team failed: $e");
     }
@@ -457,7 +482,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
           ElevatedButton(
             onPressed: () {
-              _deleteTeam();
+              _deleteTeam(null);
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),

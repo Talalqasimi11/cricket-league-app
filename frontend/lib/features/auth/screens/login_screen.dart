@@ -1,7 +1,9 @@
 // In frontend/lib/features/auth/screens/login_screen.dart
 
 import 'package:flutter/material.dart';
-import '../../../services/api_service.dart'; // Import the service
+import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../../core/api_client.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,10 +17,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _apiService = ApiService();
   bool _isLoading = false;
+  String? _jwtToken; // store token in memory
+  final storage = const FlutterSecureStorage();
 
-  Future<void> _handleLogin() async {
-    // Basic validation
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+  final String baseUrl = "${ApiClient.baseUrl}/api/auth"; // Backend base URL
+
+  /// Login function
+  void _login() async {
+    final phone = _phoneController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (phone.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Email and password are required")),
       );
@@ -45,6 +54,25 @@ class _LoginScreenState extends State<LoginScreen> {
       // Example navigation (ensure you have a route named '/home' or similar)
       // Navigator.pushReplacementNamed(context, '/home');
 
+      if (response.statusCode == 200) {
+        _jwtToken = data['token']; // store token in memory
+        if (_jwtToken != null) {
+          await storage.write(key: 'jwt_token', value: _jwtToken);
+        }
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Login successful")));
+
+        // Navigate to Home screen
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/');
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? "Login failed")),
+        );
+      }
     } catch (e) {
       // --- ERROR ---
       ScaffoldMessenger.of(context).showSnackBar(

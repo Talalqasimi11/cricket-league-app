@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../../../core/api_client.dart';
 import 'dart:convert';
 
 class RegisterScreen extends StatefulWidget {
@@ -24,7 +25,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isOtpSent = false;
   bool _isLoading = false;
 
-  final String baseUrl = "http://localhost:5000/api/auth"; // Backend base URL
+  final String baseUrl = "${ApiClient.baseUrl}/api/auth"; // Backend base URL
 
   /// Send OTP to the phone number
   void _sendOtp() async {
@@ -99,7 +100,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       final data = jsonDecode(response.body);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 201 || response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data['message'] ?? "Registration successful")),
         );
