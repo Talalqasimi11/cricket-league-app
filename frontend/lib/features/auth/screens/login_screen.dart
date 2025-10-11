@@ -1,8 +1,7 @@
-// lib/features/auth/screens/login_screen.dart
+// In frontend/lib/features/auth/screens/login_screen.dart
 
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../../../services/api_service.dart'; // Import the service
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,22 +11,16 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _apiService = ApiService();
   bool _isLoading = false;
-  String? _jwtToken; // store token in memory
 
-  final String baseUrl = "http://localhost:5000/api/auth"; // Backend base URL
-
-  /// Login function
-  void _login() async {
-    final phone = _phoneController.text.trim();
-    final password = _passwordController.text.trim();
-
-    if (phone.isEmpty || password.isEmpty) {
+  Future<void> _handleLogin() async {
+    // Basic validation
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Phone number and password are required")),
+        const SnackBar(content: Text("Email and password are required")),
       );
       return;
     }
@@ -35,45 +28,55 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await http.post(
-        Uri.parse("$baseUrl/login"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"phone_number": phone, "password": password}),
+      final token = await _apiService.login(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
       );
 
-      final data = jsonDecode(response.body);
+      // --- SUCCESS ---
+      print("Login successful! Token: $token");
+      // TODO: Securely store the token and navigate to the home screen.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Login Successful!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      // Example navigation (ensure you have a route named '/home' or similar)
+      // Navigator.pushReplacementNamed(context, '/home');
 
-      if (response.statusCode == 200) {
-        _jwtToken = data['token']; // store token in memory
-
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Login successful")));
-
-        // Navigate to My Team Dashboard
-        Navigator.pushReplacementNamed(context, '/my_team_dashboard');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? "Login failed")),
-        );
-      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Server error: $e")));
+      // --- ERROR ---
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  void _register() {
-    Navigator.pushNamed(context, '/register');
+  void _navigateToRegister() {
+    // TODO: Implement navigation to your RegisterScreen
+    // Navigator.pushNamed(context, '/register');
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Navigate to Register Screen")),
+    );
   }
 
-  void _forgotPassword() {
+  void _handleForgotPassword() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Forgot password feature coming soon")),
     );
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
@@ -108,11 +111,11 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Phone Number
+              // Email
               TextField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: _inputDecoration("Phone Number", Icons.phone),
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: _inputDecoration("Email", Icons.email),
               ),
               const SizedBox(height: 16),
 
@@ -127,14 +130,13 @@ class _LoginScreenState extends State<LoginScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: _forgotPassword,
+                  onPressed: _handleForgotPassword,
                   child: const Text(
                     "Forgot Password?",
                     style: TextStyle(color: Color(0xFF50956C)),
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
 
               // Login Button
@@ -142,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _login,
+                  onPressed: _isLoading ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF36E27B),
                     foregroundColor: Colors.black,
@@ -161,7 +163,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                 ),
               ),
-
               const SizedBox(height: 12),
 
               // Register Button
@@ -169,7 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 50,
                 child: OutlinedButton(
-                  onPressed: _register,
+                  onPressed: _navigateToRegister,
                   style: OutlinedButton.styleFrom(
                     backgroundColor: const Color(0xFFE8F3EC),
                     foregroundColor: Colors.black,
@@ -191,7 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Reusable input decoration
+  // Reusable input decoration
   InputDecoration _inputDecoration(String hint, IconData icon) {
     return InputDecoration(
       hintText: hint,
