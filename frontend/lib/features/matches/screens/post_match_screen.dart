@@ -46,7 +46,7 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
       messageColor = Colors.redAccent;
     }
 
-    final List<Widget> _screens = [
+    final List<Widget> screens = [
       // ScorecardScreen(teamA: widget.teamA, teamB: widget.teamB),
       // MatchStatisticsScreen(
       //   teamA: widget.teamA,
@@ -74,7 +74,7 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
           const SizedBox(height: 20),
           _buildMessage(message, messageColor),
           const SizedBox(height: 20),
-          Expanded(child: _screens[_selectedIndex]),
+          Expanded(child: screens[_selectedIndex]),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(

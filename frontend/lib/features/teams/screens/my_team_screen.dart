@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../../../core/api_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'team_dashboard_screen.dart';
 import '../../auth/screens/login_screen.dart';
@@ -34,28 +35,39 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
     final token = await storage.read(key: 'jwt_token');
 
     try {
-      final response = await http.get(
-        Uri.parse('http://localhost:5000/api/teams/my-team'),
+      // 1) Get my team
+      final responseTeam = await http.get(
+        Uri.parse('${ApiClient.baseUrl}/api/teams/my-team'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
       );
 
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200) {
-        setState(() {
-          _teamData = data['team'];
-          _players = (data['players'] as List)
-              .map((player) => Player.fromJson(player))
-              .toList();
-          _matches = List<Map<String, dynamic>>.from(data['matches'] ?? []);
-        });
+      if (responseTeam.statusCode == 200) {
+        final team = jsonDecode(responseTeam.body);
+        _teamData = team is Map<String, dynamic> ? team : null;
       } else {
+        final err = jsonDecode(responseTeam.body);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? 'Failed to fetch team data')),
+          SnackBar(content: Text(err['error'] ?? 'Failed to fetch team')),
         );
       }
+
+      // 2) Get my players
+      final responsePlayers = await http.get(
+        Uri.parse('${ApiClient.baseUrl}/api/players/my-players'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (responsePlayers.statusCode == 200) {
+        final players = jsonDecode(responsePlayers.body) as List;
+        _players = players.map((p) => Player.fromJson(p)).toList();
+      }
+
+      setState(() {});
     } catch (e) {
       ScaffoldMessenger.of(
         context,
@@ -64,7 +76,6 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
       setState(() => _isLoading = false);
     }
   }
-
   void _logout() async {
     await storage.delete(key: 'jwt_token');
     Navigator.pushReplacementNamed(context, '/login');
@@ -257,7 +268,7 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
                       ],
                     ),
                   );
-                }).toList(),
+                }),
 
                 const SizedBox(height: 32),
 

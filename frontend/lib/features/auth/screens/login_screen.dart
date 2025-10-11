@@ -3,6 +3,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../../core/api_client.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,8 +19,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   String? _jwtToken; // store token in memory
+  final storage = const FlutterSecureStorage();
 
-  final String baseUrl = "http://localhost:5000/api/auth"; // Backend base URL
+  final String baseUrl = "${ApiClient.baseUrl}/api/auth"; // Backend base URL
 
   /// Login function
   void _login() async {
@@ -45,13 +48,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode == 200) {
         _jwtToken = data['token']; // store token in memory
+        if (_jwtToken != null) {
+          await storage.write(key: 'jwt_token', value: _jwtToken);
+        }
 
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text("Login successful")));
 
-        // Navigate to My Team Dashboard
-        Navigator.pushReplacementNamed(context, '/my_team_dashboard');
+        // Navigate to Home screen
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/');
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data['error'] ?? "Login failed")),
