@@ -61,15 +61,16 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
             editable: m.status == "planned",
             onEdit: () async {
               final newDate = await _pickDate(context, m.scheduledAt);
+              if (!mounted) return;
               if (newDate != null) {
                 setState(() {
                   _matches[idx] = m.copyWith(scheduledAt: newDate);
                 });
 
                 // ✅ TODO: Save updated match date to backend
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text("Match ${m.id} rescheduled to $newDate")));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Match ${m.id} rescheduled to $newDate")),
+                );
               }
             },
             onStart: () {

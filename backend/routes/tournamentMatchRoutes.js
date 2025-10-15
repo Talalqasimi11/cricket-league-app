@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
 const {
+  getAllTournamentMatches,
   createTournamentMatches,
   getTournamentMatches,
   updateTournamentMatch,
@@ -11,6 +12,7 @@ const {
 } = require("../controllers/tournamentMatchController");
 
 // ✅ Routes
+router.get("/", getAllTournamentMatches); // public list across tournaments
 router.post("/create", authMiddleware, createTournamentMatches);
 router.get("/:tournament_id", getTournamentMatches);
 router.put("/update/:id", authMiddleware, updateTournamentMatch);

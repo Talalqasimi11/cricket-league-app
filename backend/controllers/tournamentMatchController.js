@@ -1,6 +1,32 @@
 const pool = require("../config/db");
 
 /**
+ * 📌 List ALL Tournament Matches (across tournaments)
+ */
+const getAllTournamentMatches = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT m.id, m.tournament_id, t.tournament_name, m.round, m.match_date, m.location, m.status,
+              COALESCE(t1.team_name, tt1.temp_team_name) AS team1_name,
+              COALESCE(t2.team_name, tt2.temp_team_name) AS team2_name,
+              m.winner_id,
+              m.parent_match_id
+       FROM tournament_matches m
+       LEFT JOIN teams t1 ON m.team1_id = t1.id
+       LEFT JOIN teams t2 ON m.team2_id = t2.id
+       LEFT JOIN tournament_teams tt1 ON m.team1_tt_id = tt1.id
+       LEFT JOIN tournament_teams tt2 ON m.team2_tt_id = tt2.id
+       LEFT JOIN tournaments t ON m.tournament_id = t.id
+       ORDER BY (m.match_date IS NULL), m.match_date ASC, m.id DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("❌ Error in getAllTournamentMatches:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+/**
  * 📌 Create Tournament Matches (manual or auto)
  */
 const createTournamentMatches = async (req, res) => {
@@ -10,30 +36,37 @@ const createTournamentMatches = async (req, res) => {
     return res.status(400).json({ error: "Tournament ID and mode are required" });
   }
 
+  const conn = await pool.getConnection();
   try {
+    await conn.beginTransaction();
+
     // ✅ Check tournament ownership
-    const [tournament] = await pool.query(
+    const [tournament] = await conn.query(
       "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
       [tournament_id, req.user.id]
     );
     if (tournament.length === 0) {
+      await conn.rollback();
       return res.status(403).json({ error: "Not allowed to modify this tournament" });
     }
 
     if (mode === "manual") {
       if (!matches || matches.length === 0) {
+        await conn.rollback();
         return res.status(400).json({ error: "Matches data required for manual mode" });
       }
 
       for (let m of matches) {
-        await pool.query(
+        await conn.query(
           `INSERT INTO tournament_matches 
-          (tournament_id, team1_id, team2_id, round, match_date, location, status) 
-          VALUES (?, ?, ?, ?, ?, ?, 'upcoming')`,
+          (tournament_id, team1_id, team2_id, team1_tt_id, team2_tt_id, round, match_date, location, status) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'upcoming')`,
           [
             tournament_id,
             m.team1_id || null,
             m.team2_id || null,
+            m.team1_tt_id || null,
+            m.team2_tt_id || null,
             m.round || "round_1",
             m.match_date || null,
             m.location || null,
@@ -41,17 +74,19 @@ const createTournamentMatches = async (req, res) => {
         );
       }
 
+      await conn.commit();
       return res.json({ message: "Manual matches created successfully" });
     }
 
     if (mode === "auto") {
       // ✅ Fetch all teams of tournament
-      const [teams] = await pool.query(
+      const [teams] = await conn.query(
         "SELECT id, team_id, temp_team_name FROM tournament_teams WHERE tournament_id = ?",
         [tournament_id]
       );
 
       if (teams.length < 2) {
+        await conn.rollback();
         return res.status(400).json({ error: "At least 2 teams required for auto draws" });
       }
 
@@ -61,30 +96,35 @@ const createTournamentMatches = async (req, res) => {
       // auto pair teams into matches
       for (let i = 0; i < shuffled.length; i += 2) {
         if (shuffled[i + 1]) {
-          await pool.query(
+          await conn.query(
             `INSERT INTO tournament_matches 
-            (tournament_id, team1_id, team2_id, round, status) 
-            VALUES (?, ?, ?, ?, 'upcoming')`,
-            [tournament_id, shuffled[i].team_id, shuffled[i + 1].team_id, "round_1"]
+            (tournament_id, team1_id, team2_id, team1_tt_id, team2_tt_id, round, status) 
+            VALUES (?, ?, ?, ?, ?, ?, 'upcoming')`,
+            [tournament_id, shuffled[i].team_id, shuffled[i + 1].team_id, shuffled[i].id, shuffled[i + 1].id, "round_1"]
           );
         } else {
           // odd team out → auto-advance to next round
-          await pool.query(
+          await conn.query(
             `INSERT INTO tournament_matches 
-            (tournament_id, team1_id, round, status, winner_id) 
-            VALUES (?, ?, ?, 'finished', ?)`,
-            [tournament_id, shuffled[i].team_id, "bye", shuffled[i].team_id]
+            (tournament_id, team1_id, team1_tt_id, round, status, winner_id) 
+            VALUES (?, ?, ?, ?, 'finished', ?)`,
+            [tournament_id, shuffled[i].team_id, shuffled[i].id, "bye", shuffled[i].team_id]
           );
         }
       }
 
+      await conn.commit();
       return res.json({ message: "Auto matches created successfully" });
     }
 
+    await conn.rollback();
     res.status(400).json({ error: "Invalid mode" });
   } catch (err) {
+    await conn.rollback();
     console.error("❌ Error in createTournamentMatches:", err);
     res.status(500).json({ error: "Server error" });
+  } finally {
+    conn.release();
   }
 };
 
@@ -96,14 +136,18 @@ const getTournamentMatches = async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      `SELECT m.id, m.tournament_id, m.round, m.match_date, m.location, m.status, 
-              t1.team_name AS team1_name, t2.team_name AS team2_name, 
-              m.winner_id
+      `SELECT m.id, m.tournament_id, m.round, m.match_date, m.location, m.status,
+              COALESCE(t1.team_name, tt1.temp_team_name) AS team1_name,
+              COALESCE(t2.team_name, tt2.temp_team_name) AS team2_name,
+              m.winner_id,
+              m.parent_match_id
        FROM tournament_matches m
        LEFT JOIN teams t1 ON m.team1_id = t1.id
        LEFT JOIN teams t2 ON m.team2_id = t2.id
+       LEFT JOIN tournament_teams tt1 ON m.team1_tt_id = tt1.id
+       LEFT JOIN tournament_teams tt2 ON m.team2_tt_id = tt2.id
        WHERE m.tournament_id = ?
-       ORDER BY m.round, m.id ASC`,
+       ORDER BY m.round, COALESCE(m.match_date, '9999-12-31') ASC, m.id ASC`,
       [tournament_id]
     );
 
@@ -161,7 +205,7 @@ const startTournamentMatch = async (req, res) => {
   try {
     // check ownership
     const [match] = await pool.query(
-      `SELECT m.*, t.created_by FROM tournament_matches m 
+      `SELECT m.*, t.created_by, t.id as tournament_id FROM tournament_matches m 
        JOIN tournaments t ON m.tournament_id = t.id
        WHERE m.id = ? AND t.created_by = ?`,
       [id, req.user.id]
@@ -171,13 +215,29 @@ const startTournamentMatch = async (req, res) => {
       return res.status(403).json({ error: "Not allowed to start this match" });
     }
 
-    if (match[0].status !== "upcoming") {
+    const row = match[0];
+    if (row.status !== "upcoming") {
       return res.status(400).json({ error: "Match already started or finished" });
     }
 
-    await pool.query(`UPDATE tournament_matches SET status = 'live' WHERE id = ?`, [id]);
+    // Require registered teams for live match
+    if (!row.team1_id || !row.team2_id) {
+      return res.status(400).json({ error: "Cannot start live match for temporary teams. Register both teams first." });
+    }
 
-    res.json({ message: "Match started, live scoring enabled" });
+    // Create actual match record for live scoring
+    const oversDefault = 20; // TODO: derive from tournament config if available
+    const [ins] = await pool.query(
+      `INSERT INTO matches (team1_id, team2_id, overs, status, tournament_id) VALUES (?, ?, ?, 'live', ?)`,
+      [row.team1_id, row.team2_id, oversDefault, row.tournament_id]
+    );
+
+    const createdMatchId = ins.insertId;
+
+    // Link and set status
+    await pool.query(`UPDATE tournament_matches SET status = 'live', parent_match_id = ? WHERE id = ?`, [createdMatchId, id]);
+
+    res.json({ message: "Match started, live scoring enabled", match_id: createdMatchId });
   } catch (err) {
     console.error("❌ Error in startTournamentMatch:", err);
     res.status(500).json({ error: "Server error" });
@@ -218,6 +278,14 @@ const endTournamentMatch = async (req, res) => {
        WHERE id = ?`,
       [winner_id, id]
     );
+
+    // If linked to an actual match, mark it completed as well
+    if (match[0].parent_match_id) {
+      await pool.query(
+        `UPDATE matches SET status = 'completed', winner_team_id = ? WHERE id = ?`,
+        [winner_id, match[0].parent_match_id]
+      );
+    }
 
     // ✅ Knockout progression
     const round = match[0].round;
@@ -295,10 +363,11 @@ const deleteTournamentMatch = async (req, res) => {
 };
 
 module.exports = {
+  getAllTournamentMatches,
   createTournamentMatches,
   getTournamentMatches,
   updateTournamentMatch,
   startTournamentMatch,
   endTournamentMatch,
-  deleteTournamentMatch,
+  deleteTournamentMatch
 };

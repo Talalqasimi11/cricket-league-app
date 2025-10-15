@@ -46,17 +46,16 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
       messageColor = Colors.redAccent;
     }
 
+    // Ensure we always have screens to display to avoid index errors.
     final List<Widget> screens = [
-      // ScorecardScreen(teamA: widget.teamA, teamB: widget.teamB),
-      // MatchStatisticsScreen(
-      //   teamA: widget.teamA,
-      //   teamB: widget.teamB,
-      //   teamABatting: widget.teamABatting,
-      //   teamABowling: widget.teamABowling,
-      //   teamBBatting: widget.teamBBatting,
-      //   teamBBowling: widget.teamBBowling,
-      // ),
+      _ScorecardTab(teamA: widget.teamA, teamB: widget.teamB),
+      _StatsTab(teamA: widget.teamA, teamB: widget.teamB),
     ];
+
+    // Clamp index to valid range just in case.
+    final int effectiveIndex = (_selectedIndex >= 0 && _selectedIndex < screens.length)
+        ? _selectedIndex
+        : 0;
 
     return Scaffold(
       backgroundColor: const Color(0xFF122118),
@@ -74,11 +73,11 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
           const SizedBox(height: 20),
           _buildMessage(message, messageColor),
           const SizedBox(height: 20),
-          Expanded(child: screens[_selectedIndex]),
+          Expanded(child: screens[effectiveIndex]),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
+        currentIndex: effectiveIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
         backgroundColor: const Color(0xFF1A2C22),
         selectedItemColor: const Color(0xFF38e07b),
@@ -96,7 +95,7 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         border: Border.all(color: color, width: 2),
         borderRadius: BorderRadius.circular(12),
       ),
@@ -113,6 +112,64 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
               message,
               style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScorecardTab extends StatelessWidget {
+  final String teamA;
+  final String teamB;
+  const _ScorecardTab({required this.teamA, required this.teamB});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.scoreboard, color: Colors.white70, size: 48),
+          const SizedBox(height: 12),
+          Text(
+            'Scorecard',
+            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$teamA vs $teamB',
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatsTab extends StatelessWidget {
+  final String teamA;
+  final String teamB;
+  const _StatsTab({required this.teamA, required this.teamB});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.bar_chart, color: Colors.white70, size: 48),
+          const SizedBox(height: 12),
+          Text(
+            'Match Stats',
+            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$teamA vs $teamB',
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
         ],
       ),

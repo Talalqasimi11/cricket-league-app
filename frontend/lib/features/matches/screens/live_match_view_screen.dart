@@ -1,23 +1,94 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../../../core/api_client.dart';
 
-class LiveMatchViewScreen extends StatelessWidget {
-  final String teamA;
-  final String teamB;
-  final String overs;
-  final String score;
-  final String currentOvers;
-  final List<Map<String, String>> ballByBall;
-  // ✅ New field
+class LiveMatchViewScreen extends StatefulWidget {
+  final String matchId;
+  const LiveMatchViewScreen({super.key, required this.matchId});
 
-  const LiveMatchViewScreen({
-    super.key,
-    required this.teamA,
-    required this.teamB,
-    required this.overs,
-    required this.score,
-    required this.currentOvers,
-    required this.ballByBall,
-  });
+  @override
+  State<LiveMatchViewScreen> createState() => _LiveMatchViewScreenState();
+}
+
+class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
+  bool _loading = true;
+  String teamA = 'Team A';
+  String teamB = 'Team B';
+  String overs = '0';
+  String score = '0/0';
+  String currentOvers = '0.0';
+  List<Map<String, String>> ballByBall = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLive();
+  }
+
+  Future<void> _fetchLive() async {
+    setState(() => _loading = true);
+    try {
+      final resp = await http.get(Uri.parse('${ApiClient.baseUrl}/api/viewer/live-score/${widget.matchId}'));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final innings = (data['innings'] as List?) ?? [];
+        final balls = (data['balls'] as List?) ?? [];
+        // pick last innings as current if any
+        if (innings.isNotEmpty) {
+          final last = innings.last as Map<String, dynamic>;
+          final runs = (last['runs'] ?? 0).toString();
+          final wkts = (last['wickets'] ?? 0).toString();
+          final ov = (last['overs'] ?? 0).toString();
+          final batName = (last['batting_team_name'] ?? 'Team A').toString();
+          final bowlName = (last['bowling_team_name'] ?? 'Team B').toString();
+          setState(() {
+            teamA = batName;
+            teamB = bowlName;
+            score = '$runs/$wkts';
+            currentOvers = ov;
+            overs = ov; // if total overs not provided, show current overs
+          });
+        }
+        // map balls into viewer log
+        final mapped = balls.map<Map<String, String>>((b) {
+          final m = b as Map<String, dynamic>;
+          final overNo = (m['over_number'] ?? '').toString();
+          final ballNo = (m['ball_number'] ?? '').toString();
+          final runs = (m['runs'] ?? '').toString();
+          final wicketType = (m['wicket_type'] ?? '').toString();
+          final result = wicketType.isNotEmpty ? 'W' : runs;
+          final bowler = (m['bowler_name'] ?? '').toString();
+          final batsman = (m['batsman_name'] ?? '').toString();
+          final commentary = wicketType.isNotEmpty ? 'Wicket: $wicketType' : 'Runs: $runs';
+          return {
+            'over': '$overNo.$ballNo',
+            'bowler': bowler,
+            'batsman': batsman,
+            'commentary': commentary,
+            'result': result,
+          };
+        }).toList();
+        setState(() {
+          ballByBall = mapped;
+        });
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to load live score (${resp.statusCode})')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading live score: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,17 +106,32 @@ class LiveMatchViewScreen extends StatelessWidget {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'View Scorecard',
+            icon: const Icon(Icons.scoreboard, color: Colors.white),
+            onPressed: () {
+              Navigator.pushNamed(
+                context,
+                '/matches/scorecard',
+                arguments: {'matchId': widget.matchId},
+              );
+            },
+          ),
+        ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
           // 🏏 Match Info Card
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: const Color(0xFF1a3d27),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.green.withOpacity(0.2)),
+              border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -70,7 +156,7 @@ class LiveMatchViewScreen extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.2),
+                        color: Colors.green.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Text(
@@ -85,27 +171,15 @@ class LiveMatchViewScreen extends StatelessWidget {
                   ],
                 ),
 
-                // Placeholder Team Logos
+// Team Logos simplified (no network fetch for web safety)
                 Row(
                   children: const [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: Colors.grey,
-                      backgroundImage: NetworkImage(
-                        "https://via.placeholder.com/150/000000/FFFFFF/?text=A",
-                      ),
-                    ),
+                    CircleAvatar(radius: 20, backgroundColor: Colors.grey, child: Icon(Icons.shield, color: Colors.white)),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 8),
                       child: Text("vs", style: TextStyle(color: Colors.grey, fontSize: 16)),
                     ),
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: Colors.grey,
-                      backgroundImage: NetworkImage(
-                        "https://via.placeholder.com/150/000000/FFFFFF/?text=B",
-                      ),
-                    ),
+                    CircleAvatar(radius: 20, backgroundColor: Colors.grey, child: Icon(Icons.shield, color: Colors.white)),
                   ],
                 ),
               ],
@@ -120,7 +194,7 @@ class LiveMatchViewScreen extends StatelessWidget {
             decoration: BoxDecoration(
               color: const Color(0xFF1a3d27),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.green.withOpacity(0.2)),
+              border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
             ),
             child: Column(
               children: [
@@ -154,7 +228,7 @@ class LiveMatchViewScreen extends StatelessWidget {
                       height: 40,
                       width: 1,
                       margin: const EdgeInsets.symmetric(horizontal: 20),
-                      color: Colors.grey.withOpacity(0.3),
+                      color: Colors.grey.withValues(alpha: 0.3),
                     ),
                     Column(
                       children: [
@@ -236,7 +310,7 @@ class LiveMatchViewScreen extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1a3d27).withOpacity(0.7),
+        color: const Color(0xFF1a3d27).withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -244,7 +318,7 @@ class LiveMatchViewScreen extends StatelessWidget {
           // Over bubble
           CircleAvatar(
             radius: 16,
-            backgroundColor: result == "W" ? Colors.red.withOpacity(0.2) : const Color(0xFF1a3d27),
+        backgroundColor: result == "W" ? Colors.red.withValues(alpha: 0.2) : const Color(0xFF1a3d27),
             child: Text(
               over,
               style: TextStyle(

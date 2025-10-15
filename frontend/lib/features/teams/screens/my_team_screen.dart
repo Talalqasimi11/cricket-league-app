@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import '../../../core/api_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'team_dashboard_screen.dart';
-import '../../auth/screens/login_screen.dart';
 import '../models/player.dart';
 
 class MyTeamScreen extends StatefulWidget {
@@ -20,9 +19,34 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
   final storage = const FlutterSecureStorage();
 
   bool _isLoading = true;
+  String _error = '';
+
+  // Simplified state variables
   Map<String, dynamic>? _teamData;
   List<Player> _players = [];
-  List<Map<String, dynamic>> _matches = [];
+  final List<Map<String, dynamic>> _matches = []; // This remains for future use
+
+  // --- Simplified Getters for Team Data ---
+  // These getters are now much simpler, assuming a more consistent API response.
+  // The Player model already handles variations in keys like 'id' vs '_id'.
+
+  String get teamName => _teamData?['team_name']?.toString() ?? 'Team Name';
+  String? get teamLogoUrl => _teamData?['team_logo']?.toString();
+  int get trophies => _teamData?['trophies'] is int ? _teamData!['trophies'] : 0;
+  String get teamId => _teamData?['id']?.toString() ?? '';
+  int get matchesWon => _teamData?['matches_won'] is int ? _teamData!['matches_won'] : 0;
+  String get ownerName =>
+      _teamData?['owner_name']?.toString() ??
+      _teamData?['captain_name']?.toString() ??
+      'Owner Name';
+  String get ownerPhone =>
+      _teamData?['owner_phone']?.toString() ??
+      _teamData?['captain_phone']?.toString() ??
+      '';
+  String? get ownerImage =>
+      _teamData?['owner_image']?.toString() ??
+      _teamData?['captain_image']?.toString();
+
 
   @override
   void initState() {
@@ -30,55 +54,68 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
     _fetchTeamData();
   }
 
+  /// Fetches both team and player data.
   Future<void> _fetchTeamData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+
     final token = await storage.read(key: 'jwt_token');
+    if (token == null) {
+      _logout();
+      return;
+    }
 
     try {
-      // 1) Get my team
-      final responseTeam = await http.get(
-        Uri.parse('${ApiClient.baseUrl}/api/teams/my-team'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
+      // It's better if the backend provides one endpoint for team + players.
+      // For now, we fetch them in parallel.
+      final responses = await Future.wait([
+        http.get(
+          Uri.parse('${ApiClient.baseUrl}/api/teams/my-team'),
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+        http.get(
+          Uri.parse('${ApiClient.baseUrl}/api/players/my-players'),
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      ]);
 
-      if (responseTeam.statusCode == 200) {
-        final team = jsonDecode(responseTeam.body);
-        _teamData = team is Map<String, dynamic> ? team : null;
+      // Process Team Response
+      final teamResponse = responses[0];
+      if (teamResponse.statusCode == 200) {
+        _teamData = jsonDecode(teamResponse.body) as Map<String, dynamic>;
+      } else if (teamResponse.statusCode != 404) {
+        // Only show error if it's not a "not found" error
+        throw 'Failed to load team: ${teamResponse.statusCode}';
+      }
+
+      // Process Players Response
+      final playersResponse = responses[1];
+      if (playersResponse.statusCode == 200) {
+        final playersList = jsonDecode(playersResponse.body) as List;
+        _players = playersList.map((p) => Player.fromJson(p)).toList();
       } else {
-        final err = jsonDecode(responseTeam.body);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(err['error'] ?? 'Failed to fetch team')),
-        );
+        throw 'Failed to load players: ${playersResponse.statusCode}';
       }
 
-      // 2) Get my players
-      final responsePlayers = await http.get(
-        Uri.parse('${ApiClient.baseUrl}/api/players/my-players'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-      if (responsePlayers.statusCode == 200) {
-        final players = jsonDecode(responsePlayers.body) as List;
-        _players = players.map((p) => Player.fromJson(p)).toList();
-      }
-
-      setState(() {});
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) {
+        setState(() => _error = e.toString());
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error)));
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
+
   void _logout() async {
     await storage.delete(key: 'jwt_token');
-    Navigator.pushReplacementNamed(context, '/login');
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
 
   @override
@@ -97,203 +134,167 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // Profile avatar + name + email
-                Column(
-                  children: [
-                    Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 56,
-                          backgroundImage: NetworkImage(
-                            _teamData?['captain_image'] ??
-                                'https://lh3.googleusercontent.com/a-/profile.png',
-                          ),
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              icon: const Icon(
-                                Icons.edit,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                              onPressed: () {
-                                // TODO: change profile picture
-                              },
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _teamData?['captain_name'] ?? 'Captain Name',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                      ),
-                    ),
-                    Text(
-                      _teamData?['captain_phone'] ?? '',
-                      style: const TextStyle(color: Colors.grey, fontSize: 14),
-                    ),
-                  ],
-                ),
+          : _error.isNotEmpty && _teamData == null
+              ? Center(child: Text(_error, style: const TextStyle(color: Colors.red)))
+              : RefreshIndicator(
+                  onRefresh: _fetchTeamData,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // Profile Section
+                      _buildProfileSection(),
+                      const SizedBox(height: 24),
 
-                const SizedBox(height: 24),
+                      // My Teams Section
+                      _buildMyTeamSection(),
+                      const SizedBox(height: 24),
 
-                // My Teams Section
-                const Text(
-                  "My Teams",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
+                      // My Matches Section
+                      _buildMyMatchesSection(),
+                      const SizedBox(height: 32),
+
+                      // Logout Button
+                      _buildLogoutButton(),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Card(
-                  color: Colors.grey.shade800,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ListTile(
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        _teamData?['team_logo'] ??
-                            "https://picsum.photos/200/200",
-                        width: 50,
-                        height: 50,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    title: Text(
-                      _teamData?['team_name'] ?? "Team Name",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    subtitle: Text(
-                      "Matches Won: ${_teamData?['matches_won'] ?? 0}",
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                    trailing: const Icon(
-                      Icons.arrow_forward_ios,
-                      color: Colors.grey,
-                    ),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => TeamDashboardScreen(
-                            teamName: _teamData?['team_name'] ?? '',
-                            teamLogoUrl: _teamData?['team_logo'] ?? '',
-                            trophies: _teamData?['trophies'] ?? 0,
-                            players: _players,
-                            teamId: '',
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
+    );
+  }
 
-                const SizedBox(height: 24),
+  Widget _buildProfileSection() {
+    return Column(
+      children: [
+        CircleAvatar(
+          radius: 56,
+          backgroundColor: Colors.grey.shade700,
+          backgroundImage: ownerImage != null ? NetworkImage(ownerImage!) : null,
+          child: ownerImage == null
+              ? const Icon(Icons.person, color: Colors.white54, size: 40)
+              : null,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          ownerName,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
+        Text(
+          ownerPhone,
+          style: const TextStyle(color: Colors.grey, fontSize: 14),
+        ),
+      ],
+    );
+  }
 
-                // My Matches Section
-                const Text(
-                  "My Matches",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ..._matches.map((match) {
-                  return Card(
-                    color: Colors.grey.shade800,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.network(
-                              match['opponent_logo'] ??
-                                  "https://picsum.photos/200/201",
-                              width: 50,
-                              height: 50,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                          title: Text(
-                            "${_teamData?['team_name']} vs ${match['opponent_name']}",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          subtitle: Text(
-                            match['result'] == 'won' ? "Won" : "Lost",
-                            style: TextStyle(
-                              color: match['result'] == 'won'
-                                  ? Colors.green
-                                  : Colors.red,
-                            ),
-                          ),
-                          trailing: const Icon(
-                            Icons.arrow_forward_ios,
-                            color: Colors.grey,
-                          ),
-                          onTap: () {
-                            // TODO: Navigate to match details
-                          },
-                        ),
-                        const Divider(color: Colors.grey),
-                      ],
-                    ),
-                  );
-                }),
-
-                const SizedBox(height: 32),
-
-                // Logout button
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade800,
-                    minimumSize: const Size(double.infinity, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: _logout,
-                  child: const Text(
-                    "Logout",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+  Widget _buildMyTeamSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "My Teams",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_teamData != null)
+          Card(
+            color: Colors.grey.shade800,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: ListTile(
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  teamLogoUrl ?? "https://picsum.photos/200",
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 50,
+                    height: 50,
+                    color: Colors.grey.shade700,
+                    child: const Icon(Icons.shield, color: Colors.white54),
                   ),
                 ),
-
-                const SizedBox(height: 80),
-              ],
+              ),
+              title: Text(
+                teamName,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                "Matches Won: $matchesWon",
+                style: const TextStyle(color: Colors.grey),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, color: Colors.grey),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TeamDashboardScreen(
+                      teamName: teamName,
+                      teamLogoUrl: teamLogoUrl,
+                      trophies: trophies,
+                      players: _players,
+                      teamId: teamId,
+                    ),
+                  ),
+                );
+              },
             ),
+          )
+        else
+          const Text(
+            "You are not part of a team yet.",
+            style: TextStyle(color: Colors.grey),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMyMatchesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "My Matches",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_matches.isEmpty)
+          const Text(
+            "No recent matches found.",
+            style: TextStyle(color: Colors.grey),
+          )
+        else
+          ..._matches.map((match) {
+            // Your match card logic here
+            return Card();
+          }),
+      ],
+    );
+  }
+
+  Widget _buildLogoutButton() {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.green.shade800,
+        minimumSize: const Size(double.infinity, 48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      onPressed: _logout,
+      child: const Text(
+        "Logout",
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      ),
     );
   }
 }

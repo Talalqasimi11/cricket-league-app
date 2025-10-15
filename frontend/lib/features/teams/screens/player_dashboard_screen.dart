@@ -4,8 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
-// ✅ Import Player model
+import '../../../core/api_client.dart';
 import '../models/player.dart';
 
 class PlayerDashboardScreen extends StatefulWidget {
@@ -20,7 +19,7 @@ class PlayerDashboardScreen extends StatefulWidget {
 class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
   final storage = const FlutterSecureStorage();
   late Player _player;
-  bool _loading = false;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -28,43 +27,61 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
     _player = widget.player;
   }
 
-  /// 🔹 Update Player on Backend
+  /// Updates the player on the backend.
+  /// NOTE: It's a better practice for the API to identify the player
+  /// via the URL (e.g., PUT /api/players/{playerId}) rather than the body.
   Future<void> _updatePlayer(Player updatedPlayer) async {
-    setState(() => _loading = true);
+    setState(() => _isLoading = true);
     final token = await storage.read(key: 'jwt_token');
 
-    final response = await http.put(
-      Uri.parse("http://localhost:5000/api/players/${updatedPlayer.id}"),
-      headers: {"Authorization": "Bearer $token", "Content-Type": "application/json"},
-      body: jsonEncode(updatedPlayer.toJson()),
-    );
+    try {
+      final response = await http.put(
+        // The player ID should ideally be in the URL.
+        Uri.parse("${ApiClient.baseUrl}/api/players/update/${_player.id}"),
+        headers: {
+          "Authorization": "Bearer $token",
+          "Content-Type": "application/json",
+        },
+        body: jsonEncode(updatedPlayer.toJson()),
+      );
 
-    setState(() => _loading = false);
-
-    if (response.statusCode == 200) {
-      setState(() => _player = updatedPlayer);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("✅ Player info updated")));
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("❌ Failed: ${response.body}")));
+      if (response.statusCode == 200) {
+        // Update the local state with the successfully saved player data.
+        setState(() {
+          _player = Player.fromJson(jsonDecode(response.body));
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("✅ Player info updated")),
+          );
+        }
+      } else {
+        throw 'Failed to update player: ${response.body}';
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("❌ Error: $e")));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
-        backgroundColor: Colors.white.withOpacity(0.9),
+        backgroundColor: Colors.white,
         elevation: 1,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () =>
+              Navigator.pop(context, _player), // Return updated player
         ),
         title: const Text(
           "Player Dashboard",
@@ -72,190 +89,219 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
         ),
         centerTitle: true,
       ),
-      body: _loading
+      body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  // 🔹 Player Image + Name
-                  Column(
-                    children: [
-                      CircleAvatar(radius: 60, backgroundColor: Colors.grey[300]),
-                      const SizedBox(height: 10),
-                      Text(
-                        _player.playerName,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      Text(_player.playerRole, style: const TextStyle(color: Colors.grey)),
-                    ],
-                  ),
+                  _buildPlayerHeader(),
                   const SizedBox(height: 20),
-
-                  // 🔹 Stats Grid
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    children: [
-                      _buildStatCard(Icons.sports_cricket, "Runs", _player.runs.toString()),
-                      _buildStatCard(
-                        Icons.leaderboard,
-                        "Batting Avg",
-                        _player.battingAverage.toStringAsFixed(2),
-                      ),
-                      _buildStatCard(
-                        Icons.trending_up,
-                        "Strike Rate",
-                        _player.strikeRate.toStringAsFixed(2),
-                      ),
-                      _buildStatCard(Icons.sports, "Wickets", _player.wickets.toString()),
-                    ],
-                  ),
+                  _buildStatsGrid(),
                   const SizedBox(height: 20),
-
-                  // 🔹 Edit Button
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF16a34a),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      minimumSize: const Size(double.infinity, 50),
-                    ),
-                    icon: const Icon(Icons.edit, color: Colors.white),
-                    label: const Text(
-                      "Edit Player Info",
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    onPressed: () => _showEditPlayerDialog(_player),
-                  ),
+                  _buildEditButton(),
                 ],
               ),
             ),
     );
   }
 
-  /// 🔹 Card builder for stats
-  Widget _buildStatCard(IconData? icon, String title, String value) {
+  Widget _buildPlayerHeader() {
+    return Column(
+      children: [
+        const CircleAvatar(
+          radius: 60,
+          backgroundColor: Colors.green,
+          child: Icon(Icons.person, size: 60, color: Colors.white),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          _player.playerName,
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        ),
+        Text(
+          _player.playerRole,
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatsGrid() {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      crossAxisSpacing: 16,
+      mainAxisSpacing: 16,
+      children: [
+        _buildStatCard(Icons.sports_cricket, "Runs", _player.runs.toString()),
+        _buildStatCard(
+          Icons.leaderboard,
+          "Batting Avg",
+          _player.battingAverage.toStringAsFixed(2),
+        ),
+        _buildStatCard(
+          Icons.trending_up,
+          "Strike Rate",
+          _player.strikeRate.toStringAsFixed(2),
+        ),
+        _buildStatCard(Icons.sports, "Wickets", _player.wickets.toString()),
+      ],
+    );
+  }
+
+  Widget _buildEditButton() {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.green,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        minimumSize: const Size(double.infinity, 50),
+      ),
+      icon: const Icon(Icons.edit, color: Colors.white),
+      label: const Text(
+        "Edit Player Info",
+        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+      ),
+      onPressed: () => _showEditPlayerDialog(_player),
+    );
+  }
+
+  Widget _buildStatCard(IconData icon, String title, String value) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (icon != null) Icon(icon, size: 40, color: Colors.green),
+          Icon(icon, size: 40, color: Colors.green),
           const SizedBox(height: 8),
           Text(
             value,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
-          Text(title, style: const TextStyle(color: Colors.grey)),
+          Text(title, style: TextStyle(color: Colors.grey.shade600)),
         ],
       ),
     );
   }
 
-  /// 🔹 Popup dialog for editing player info
   void _showEditPlayerDialog(Player player) {
+    final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: player.playerName);
     final roleController = TextEditingController(text: player.playerRole);
     final runsController = TextEditingController(text: player.runs.toString());
-    final avgController = TextEditingController(text: player.battingAverage.toString());
-    final strikeController = TextEditingController(text: player.strikeRate.toString());
-    final wicketsController = TextEditingController(text: player.wickets.toString());
+    final avgController = TextEditingController(
+      text: player.battingAverage.toString(),
+    );
+    final strikeController = TextEditingController(
+      text: player.strikeRate.toString(),
+    );
+    final wicketsController = TextEditingController(
+      text: player.wickets.toString(),
+    );
 
     showDialog(
       context: context,
       builder: (_) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                "Edit Player Info",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-              const SizedBox(height: 20),
-              CircleAvatar(radius: 50, backgroundColor: Colors.grey[300]),
-              const SizedBox(height: 20),
-
-              // 🔹 Input fields
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: "Player Name"),
-              ),
-              TextField(
-                controller: roleController,
-                decoration: const InputDecoration(labelText: "Role"),
-              ),
-              TextField(
-                controller: runsController,
-                decoration: const InputDecoration(labelText: "Runs"),
-                keyboardType: TextInputType.number,
-              ),
-              TextField(
-                controller: avgController,
-                decoration: const InputDecoration(labelText: "Batting Avg"),
-                keyboardType: TextInputType.number,
-              ),
-              TextField(
-                controller: strikeController,
-                decoration: const InputDecoration(labelText: "Strike Rate"),
-                keyboardType: TextInputType.number,
-              ),
-              TextField(
-                controller: wicketsController,
-                decoration: const InputDecoration(labelText: "Wickets"),
-                keyboardType: TextInputType.number,
-              ),
-
-              const SizedBox(height: 20),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text("Cancel"),
-                    ),
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  "Edit Player Info",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: "Player Name"),
+                  validator: (v) => v!.isEmpty ? 'Required' : null,
+                ),
+                TextFormField(
+                  controller: roleController,
+                  decoration: const InputDecoration(labelText: "Role"),
+                  validator: (v) => v!.isEmpty ? 'Required' : null,
+                ),
+                TextFormField(
+                  controller: runsController,
+                  decoration: const InputDecoration(labelText: "Runs"),
+                  keyboardType: TextInputType.number,
+                ),
+                TextFormField(
+                  controller: avgController,
+                  decoration: const InputDecoration(labelText: "Batting Avg"),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        final updated = Player(
-                          id: player.id,
-                          playerName: nameController.text,
-                          playerRole: roleController.text,
-                          runs: int.tryParse(runsController.text) ?? 0,
-                          matchesPlayed: player.matchesPlayed,
-                          hundreds: player.hundreds,
-                          fifties: player.fifties,
-                          battingAverage: double.tryParse(avgController.text) ?? 0,
-                          strikeRate: double.tryParse(strikeController.text) ?? 0,
-                          wickets: int.tryParse(wicketsController.text) ?? 0,
-                        );
-                        Navigator.pop(context);
-                        _updatePlayer(updated);
-                      },
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF16a34a)),
-                      child: const Text("Save Changes"),
-                    ),
+                ),
+                TextFormField(
+                  controller: strikeController,
+                  decoration: const InputDecoration(labelText: "Strike Rate"),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
-                ],
-              ),
-            ],
+                ),
+                TextFormField(
+                  controller: wicketsController,
+                  decoration: const InputDecoration(labelText: "Wickets"),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text("Cancel"),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          if (!formKey.currentState!.validate()) return;
+                          final updated = Player(
+                            id: player.id,
+                            playerName: nameController.text.trim(),
+                            playerRole: roleController.text.trim(),
+                            runs: int.tryParse(runsController.text) ?? 0,
+                            matchesPlayed: player.matchesPlayed,
+                            hundreds: player.hundreds,
+                            fifties: player.fifties,
+                            battingAverage:
+                                double.tryParse(avgController.text) ?? 0.0,
+                            strikeRate:
+                                double.tryParse(strikeController.text) ?? 0.0,
+                            wickets: int.tryParse(wicketsController.text) ?? 0,
+                          );
+                          Navigator.pop(context);
+                          _updatePlayer(updated);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                        ),
+                        child: const Text("Save"),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

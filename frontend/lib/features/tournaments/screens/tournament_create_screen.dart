@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/tournament_model.dart';
+import 'dart:convert';
+import '../../../core/api_client.dart';
 import 'tournament_team_registration_screen.dart';
 
 class CreateTournamentScreen extends StatefulWidget {
@@ -36,34 +37,54 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
     }
   }
 
-  void _onSave() {
+  Future<void> _onSave() async {
     if (_formKey.currentState!.validate()) {
-      // Build new tournament object
-      final newTournament = TournamentModel(
-        id: UniqueKey().toString(),
-        name: _tournamentNameController.text,
-        status: "upcoming",
-        type: "Knockout",
-        dateRange:
-            "${_startDate?.day}-${_startDate?.month}-${_startDate?.year} to ${_endDate?.day}-${_endDate?.month}-${_endDate?.year}",
-        location: _locationController.text,
-        overs: int.tryParse(_selectedOvers) ?? 20,
-        teams: [],
-        matches: [],
-      );
+      if (_startDate == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select start date')));
+        return;
+      }
 
-      // Show snackbar
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Tournament Saved! Now register teams...")));
+      try {
+        final resp = await ApiClient.instance.post(
+          '/api/tournaments/create',
+          body: {
+            // Prefer snake_case for backend, but include fallbacks if server expects different keys.
+            'tournament_name': _tournamentNameController.text,
+            'name': _tournamentNameController.text,
+            'start_date': _startDate!.toIso8601String(),
+            'end_date': _endDate?.toIso8601String(),
+            'location': _locationController.text,
+            'overs': int.tryParse(_selectedOvers) ?? 10,
+          },
+        );
 
-      // ✅ Pass the full TournamentModel to RegisterTeamsScreen
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => RegisterTeamsScreen(tournamentName: newTournament.name)),
-      );
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        if (resp.statusCode == 201 || resp.statusCode == 200) {
+          final tournamentId = (data['tournamentId'] ?? data['id'] ?? data['_id'] ?? data['tournament_id'])?.toString() ?? '';
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tournament created. Add teams next.')));
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => RegisterTeamsScreen(
+                tournamentName: _tournamentNameController.text,
+                tournamentId: tournamentId.isNotEmpty ? tournamentId : null,
+              ),
+            ),
+          );
+        } else {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(data['error']?.toString() ?? 'Failed to create tournament')),
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     }
   }
+
 
   void _onCancel() {
     Navigator.pop(context);

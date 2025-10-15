@@ -42,7 +42,7 @@ class PlayerDashboardScreen extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           CircleAvatar(
-            backgroundColor: primary.withOpacity(0.12),
+            backgroundColor: primary.withValues(alpha: 0.12),
             radius: 26,
             child: Icon(icon, size: 30, color: primary),
           ),
@@ -71,7 +71,7 @@ class PlayerDashboardScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
-        backgroundColor: Colors.white.withOpacity(0.85),
+        backgroundColor: Colors.white.withValues(alpha: 0.85),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
@@ -152,7 +152,7 @@ class PlayerDashboardScreen extends StatelessWidget {
           if (i == 0) Navigator.popUntil(context, (r) => r.isFirst);
           // other tabs: placeholder actions or navigation to those tabs
         },
-        backgroundColor: Colors.white.withOpacity(0.95),
+        backgroundColor: Colors.white.withValues(alpha: 0.95),
         selectedColor: primary,
         unselectedColor: textSecondary,
       ),

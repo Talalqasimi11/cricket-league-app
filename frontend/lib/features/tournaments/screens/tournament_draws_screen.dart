@@ -1,6 +1,7 @@
 // lib/features/tournaments/screens/tournament_draws_screen.dart
 
 import 'dart:math';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 // ✅ Models import
@@ -10,14 +11,19 @@ import '../models/tournament_model.dart';
 import 'tournament_details_creator_screen.dart';
 import 'tournament_details_viewer_screen.dart';
 
+import 'package:http/http.dart' as http;
+import '../../../core/api_client.dart';
+
 class TournamentDrawsScreen extends StatefulWidget {
   final String tournamentName;
+  final String tournamentId; // ✅ NEW: required to persist to backend
   final List<String> teams;
   final bool isCreator;
 
   const TournamentDrawsScreen({
     super.key,
     required this.tournamentName,
+    required this.tournamentId,
     required this.teams,
     this.isCreator = false,
   });
@@ -29,6 +35,35 @@ class TournamentDrawsScreen extends StatefulWidget {
 class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
   bool _autoDraw = true;
   List<MatchModel> _matches = [];
+  final Map<String, Map<String, int?>> _nameToIds = {}; // ✅ name -> { teamId, ttId }
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTournamentTeams();
+  }
+
+  Future<void> _fetchTournamentTeams() async {
+    try {
+      final resp = await http.get(Uri.parse('${ApiClient.baseUrl}/api/tournament-teams/${widget.tournamentId}'));
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        final List<dynamic> rows = decoded is Map<String, dynamic> && decoded.containsKey('data')
+            ? List<dynamic>.from(decoded['data'] as List)
+            : List<dynamic>.from(decoded as List);
+        // Map registered team names -> team_id; temp teams get null id
+        for (final r in rows) {
+          final m = r as Map<String, dynamic>;
+          final name = (m['team_name'] ?? m['temp_team_name'] ?? '').toString();
+          if (name.isEmpty) continue;
+          _nameToIds[name] = {
+            'teamId': m['team_id'] == null ? null : int.tryParse(m['team_id'].toString()),
+            'ttId': int.tryParse(m['id']?.toString() ?? ''),
+          };
+        }
+      }
+    } catch (_) {}
+  }
 
   void _generateAutoDraws() {
     final teams = List<String>.from(widget.teams);
@@ -179,36 +214,79 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
           Expanded(
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700),
-              onPressed: _matches.isEmpty
-                  ? null
-                  : () {
-                      final updatedTournament = TournamentModel(
-                        id: UniqueKey().toString(),
-                        name: widget.tournamentName,
-                        status: "upcoming",
-                        type: "Knockout",
-                        dateRange: "TBD",
-                        location: "Unknown",
-                        overs: 20,
-                        teams: widget.teams,
-                        matches: _matches,
-                      );
-
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => widget.isCreator
-                              ? TournamentDetailsCaptainScreen(tournament: updatedTournament)
-                              : TournamentDetailsViewerScreen(tournament: updatedTournament),
-                        ),
-                      );
-                    },
+              onPressed: _matches.isEmpty ? null : _persistMatches,
               child: const Text('Save & Publish'),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _persistMatches() async {
+    try {
+      // Build payload for manual creation
+      final List<Map<String, dynamic>> matches = _matches.map((m) {
+        final map1 = _nameToIds[m.teamA];
+        final map2 = _nameToIds[m.teamB];
+        final t1 = map1?['teamId'];
+        final t2 = map2?['teamId'];
+        final tt1 = map1?['ttId'];
+        final tt2 = map2?['ttId'];
+        return {
+          'team1_id': t1, // may be null for temp teams
+          'team2_id': t2, // may be null for temp teams
+          'team1_tt_id': tt1,
+          'team2_tt_id': tt2,
+          'round': 'round_1',
+          'match_date': m.scheduledAt?.toIso8601String(),
+          'location': null,
+        };
+      }).toList();
+
+      final resp = await ApiClient.instance.post(
+        '/api/tournament-matches/create',
+        body: {
+          'tournament_id': widget.tournamentId,
+          'mode': 'manual',
+          'matches': matches,
+        },
+      );
+
+      if (!mounted) return;
+      if (resp.statusCode == 200 || resp.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Matches published')));
+        // Navigate to details view
+        final updatedTournament = TournamentModel(
+          id: widget.tournamentId,
+          name: widget.tournamentName,
+          status: 'upcoming',
+          type: 'Knockout',
+          dateRange: 'TBD',
+          location: 'Unknown',
+          overs: 20,
+          teams: widget.teams,
+          matches: _matches,
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => widget.isCreator
+                ? TournamentDetailsCaptainScreen(tournament: updatedTournament)
+                : TournamentDetailsViewerScreen(tournament: updatedTournament),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to publish (${resp.statusCode})')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
   }
 
   @override

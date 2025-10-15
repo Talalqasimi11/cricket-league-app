@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../home/home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -24,7 +23,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
     // navigate after 3s
     Timer(const Duration(seconds: 3), () {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
+      Navigator.pushReplacementNamed(context, '/home');
     });
   }
 
@@ -39,7 +38,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     const primaryGreen = Color(0xFF38E07B);
     const darkGreen = Color(0xFF122118);
     const mediumGreen = Color(0xFF366348);
-    const lightGreen = Color(0xFF96C5A9);
 
     return Scaffold(
       backgroundColor: darkGreen,

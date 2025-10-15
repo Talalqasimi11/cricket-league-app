@@ -46,31 +46,33 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final data = jsonDecode(response.body);
 
+      if (!mounted) return; // ensure widget is alive after await
+
       if (response.statusCode == 200) {
         _jwtToken = data['token']; // store token in memory
         if (_jwtToken != null) {
           await storage.write(key: 'jwt_token', value: _jwtToken);
         }
 
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Login successful")));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Login successful")),
+        );
 
         // Navigate to Home screen
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/');
-        }
+        Navigator.pushReplacementNamed(context, '/home');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data['error'] ?? "Login failed")),
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Server error: $e")));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Server error: $e")),
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -153,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: _isLoading ? null : _login,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF36E27B),
-                    foregroundColor: Colors.black,
+                    foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -180,7 +182,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: _register,
                   style: OutlinedButton.styleFrom(
                     backgroundColor: const Color(0xFFE8F3EC),
-                    foregroundColor: Colors.black,
+                    foregroundColor: Colors.white,
                     side: BorderSide.none,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

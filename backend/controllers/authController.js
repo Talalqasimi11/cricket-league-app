@@ -6,7 +6,7 @@ require("dotenv").config();
 // REGISTER CAPTAIN
 // ========================
 const registerCaptain = async (req, res) => {
-  const { phone_number, password, team_name, team_location } = req.body;
+  const { phone_number, password, team_name, team_location, captain_name, owner_name, team_logo_url } = req.body; // ✅ ADDED team_logo_url
 
   if (!phone_number || !password || !team_name || !team_location) {
     return res.status(400).json({ error: "All fields are required" });
@@ -22,21 +22,22 @@ const registerCaptain = async (req, res) => {
       return res.status(200).json({ error: "Phone number already registered" });
     }
 
-    // Step 1: Create captain (user)
+    // Step 1: Create owner (user)
     const [userResult] = await pool.query(
-      "INSERT INTO users (phone_number, password_hash) VALUES (?, ?)",
-      [phone_number, password] // plain password stored in password_hash for now
+      "INSERT INTO users (phone_number, password_hash, captain_name) VALUES (?, ?, ?)",
+      [phone_number, password, owner_name || captain_name || null]
     );
 
-    const captainId = userResult.insertId;
+    const ownerId = userResult.insertId;
 
-    // Step 2: Create team linked with captain
+    // Step 2: Create team linked with owner (also set historical captain_id for back-compat)
+    // ✅ ADDED team_logo_url to the INSERT statement
     await pool.query(
-      "INSERT INTO teams (team_name, team_location, matches_played, matches_won, trophies, captain_id) VALUES (?, ?, 0, 0, 0, ?)",
-      [team_name, team_location, captainId]
+      "INSERT INTO teams (team_name, team_location, team_logo_url, matches_played, matches_won, trophies, owner_id, owner_name, owner_phone, captain_id) VALUES (?, ?, ?, 0, 0, 0, ?, ?, ?, ?)",
+      [team_name, team_location, team_logo_url || null, ownerId, owner_name || captain_name || phone_number, phone_number, ownerId]
     );
 
-    res.status(201).json({ message: "Captain and team registered successfully" });
+    res.status(201).json({ message: "Owner and team registered successfully" });
   } catch (err) {
     console.error("❌ Error in registerCaptain:", err);
     res.status(500).json({ error: "Server error", details: err.message });
@@ -61,7 +62,7 @@ const loginCaptain = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: "Captain not found" });
+      return res.status(404).json({ error: "User not found" });
     }
 
     const user = rows[0];
@@ -82,7 +83,7 @@ const loginCaptain = async (req, res) => {
     res.json({
       message: "Login successful",
       token,
-      captain: {
+      user: {
         id: user.id,
         phone_number: user.phone_number,
       },

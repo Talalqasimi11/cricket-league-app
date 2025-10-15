@@ -30,9 +30,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   /// Send OTP to the phone number
   void _sendOtp() async {
     if (_phoneController.text.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Enter phone number first")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Enter phone number first")),
+      );
       return;
     }
 
@@ -47,6 +47,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       final data = jsonDecode(response.body);
 
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
         setState(() => _isOtpSent = true);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -58,29 +60,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Server error: $e")));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Server error: $e")),
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   /// Register user after verifying OTP
   void _register() async {
     if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Passwords do not match")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Passwords do not match")),
+      );
       return;
     }
-
-    // if (_otpController.text.isEmpty) {
-    //   ScaffoldMessenger.of(
-    //     context,
-    //   ).showSnackBar(const SnackBar(content: Text("Enter OTP to continue")));
-    //   return;
-    // }
 
     setState(() => _isLoading = true);
 
@@ -91,7 +87,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         body: jsonEncode({
           "phone_number": _phoneController.text,
           "password": _passwordController.text,
-          "otp": _otpController.text,
+          // store as owner; send captain_name for backward compatibility if backend still expects it
+          "owner_name": _captainNameController.text,
           "captain_name": _captainNameController.text,
           "team_name": _teamNameController.text,
           "team_location": _locationController.text,
@@ -99,6 +96,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       final data = jsonDecode(response.body);
+
+      if (!mounted) return;
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -111,11 +110,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Server error: $e")));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Server error: $e")),
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -159,10 +159,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Captain Name
+            // Owner Name
             TextField(
               controller: _captainNameController,
-              decoration: _inputDecoration("Captain Name", Icons.person),
+              decoration: _inputDecoration("Owner Name", Icons.person),
             ),
             const SizedBox(height: 16),
 
@@ -190,25 +190,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 16),
             ],
 
-            // Send OTP Button
-            if (!_isOtpSent)
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: OutlinedButton(
-                  onPressed: _isLoading ? null : _sendOtp,
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE8F3EC),
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator()
-                      : const Text("Send OTP"),
-                ),
-              ),
+            // Send OTP Button removed as requested
+            const SizedBox.shrink(),
 
             const SizedBox(height: 20),
 
@@ -219,8 +202,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _register,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF36E27B),
-                  foregroundColor: Colors.black,
+                  backgroundColor: const Color(0xFF15803D),
+                  foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),

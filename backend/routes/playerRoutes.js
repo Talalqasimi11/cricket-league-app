@@ -1,7 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
-const { addPlayer, getMyPlayers, updatePlayer, deletePlayer } = require("../controllers/playerController");
+const { addPlayer, getMyPlayers, updatePlayer, deletePlayer, getPlayersByTeamId } = require("../controllers/playerController");
+
+// Public
+router.get("/by-team/:team_id", getPlayersByTeamId);
 
 // Protected routes
 router.post("/add", verifyToken, addPlayer);

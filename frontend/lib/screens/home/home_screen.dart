@@ -1,10 +1,13 @@
 // lib/features/home/screens/home_screen.dart
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../../widgets/bottom_nav.dart';
 import '../../features/tournaments/screens/tournaments_screen.dart';
-import '../team/viewer/team_dashboard_screen.dart'; // ✅ keep team dashboard
-import '../../features/teams/screens/my_team_screen.dart'; // ✅ add My Team screen
-import '../../features/matches/screens/matches_screen.dart'; // ✅ add Matches screen import
+import '../../features/teams/screens/my_team_screen.dart'; // ✅ My Team screen
+import '../../features/matches/screens/matches_screen.dart'; // ✅ Matches screen
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../core/api_client.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,31 +18,56 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
-  final List<Map<String, dynamic>> _teams = [
-    {
-      "name": "Titans XI",
-      "trophies": 3,
-    
-    },
-    {
-      "name": "Warriors CC",
-      "trophies": 2,
-      "image": "https://via.placeholder.com/300x300.png?text=Warriors+CC",
-    },
-    {
-      "name": "Strikers United",
-      "trophies": 1,
-      "image": "https://via.placeholder.com/300x300.png?text=Strikers+United",
-    },
-    {
-      "name": "Raptors CC",
-      "trophies": 4,
-      "image": "https://via.placeholder.com/300x300.png?text=Raptors+CC",
-    },
-  ];
+  bool _loading = false;
+  List<Map<String, dynamic>> _teams = [];
 
-  void _onNavTapped(int index) {
+  @override
+  void initState() {
+    super.initState();
+    _fetchTeams();
+  }
+
+  Future<void> _fetchTeams() async {
+    setState(() => _loading = true);
+    try {
+      final resp = await http.get(Uri.parse('${ApiClient.baseUrl}/api/teams/all'));
+      if (resp.statusCode == 200) {
+        final List<dynamic> list = List<dynamic>.from(jsonDecode(resp.body));
+        setState(() {
+          _teams = list.map((e) => e as Map<String, dynamic>).toList();
+        });
+      } else {
+        // keep list empty and show message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to load teams (${resp.statusCode})')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading teams: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+void _onNavTapped(int index) async {
+    // If "My Team" tab is tapped, check auth and redirect to login if needed
+    if (index == 3) {
+      final token = await _storage.read(key: 'jwt_token');
+      if (!mounted) return;
+      if (token == null || token.isEmpty) {
+        Navigator.pushNamed(context, '/login');
+        return; // do not switch tab
+      }
+    }
+    if (!mounted) return;
     setState(() {
       _selectedIndex = index;
     });
@@ -71,24 +99,25 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            itemCount: _teams.length,
-            itemBuilder: (context, index) {
-              final t = _teams[index];
-              return GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TeamDashboardScreen(
-                        teamName: t['name'] as String,
-                        imageUrl: t['image'] as String,
-                        trophies: t['trophies'] as int,
-                      ),
-                    ),
-                  );
-                },
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  itemCount: _teams.length,
+                  itemBuilder: (context, index) {
+                    final t = _teams[index];
+final String name = (t['team_name'] as String?) ?? 'Unknown Team';
+                    final int trophies = (t['trophies'] as int?) ?? 0;
+                    final String? teamId = (t['id']?.toString());
+                    return GestureDetector(
+                      onTap: () {
+                        if (teamId == null) return;
+                        Navigator.pushNamed(
+                          context,
+                          '/team/view',
+                          arguments: {'teamId': teamId, 'teamName': name},
+                        );
+                      },
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
@@ -101,17 +130,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: ListTile(
                     contentPadding: const EdgeInsets.all(12),
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(t['image'], width: 56, height: 56, fit: BoxFit.cover),
+leading: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.shield, color: Color(0xFF15803D)),
                     ),
-                    title: Text(t['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Row(
                       children: [
                         const Icon(Icons.emoji_events, size: 16, color: Color(0xFF20DF6C)),
                         const SizedBox(width: 6),
                         Text(
-                          '${t['trophies']} Trophies',
+                          '$trophies Trophies',
                           style: const TextStyle(color: Color(0xFF20DF6C)),
                         ),
                       ],

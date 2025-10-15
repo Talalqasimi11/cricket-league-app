@@ -1,69 +1,54 @@
 import 'package:flutter/material.dart';
-import '../../player/viewer/player_dashboard_screen.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../../../core/api_client.dart';
 import '../../../widgets/bottom_nav.dart';
 
-class TeamDashboardScreen extends StatelessWidget {
-  final String teamName;
-  final String imageUrl;
-  final int trophies;
+class TeamDashboardScreen extends StatefulWidget {
+  final String teamId;
+  final String? teamName;
+  const TeamDashboardScreen({super.key, required this.teamId, this.teamName});
 
-  const TeamDashboardScreen({
-    super.key,
-    required this.teamName,
-    required this.imageUrl,
-    required this.trophies,
-  });
+  @override
+  State<TeamDashboardScreen> createState() => _TeamDashboardScreenState();
+}
+
+class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
+  bool _loading = true;
+  String teamName = '';
+  String imageUrl = '';
+  int trophies = 0;
+  List<Map<String, dynamic>> players = [];
+
+  @override
+  void initState() {
+    super.initState();
+    teamName = widget.teamName ?? '';
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    setState(() => _loading = true);
+    try {
+      final teamResp = await http.get(Uri.parse('${ApiClient.baseUrl}/api/teams/${widget.teamId}'));
+      if (teamResp.statusCode == 200) {
+        final t = jsonDecode(teamResp.body) as Map<String, dynamic>;
+        teamName = (t['team_name'] ?? teamName).toString();
+        trophies = (t['trophies'] ?? 0) is int ? t['trophies'] : int.tryParse(t['trophies'].toString()) ?? 0;
+        imageUrl = (t['team_logo'] ?? '').toString();
+      }
+      final pResp = await http.get(Uri.parse('${ApiClient.baseUrl}/api/players/by-team/${widget.teamId}'));
+      if (pResp.statusCode == 200) {
+        players = List<Map<String, dynamic>>.from(jsonDecode(pResp.body));
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    // sample players list (viewer)
-    final players = [
-      {
-        "name": "Arjun Sharma",
-        "role": "Captain",
-        "image": "https://via.placeholder.com/150",
-        "runs": 980,
-        "avg": 34.2,
-        "sr": 115.5,
-        "wickets": 12,
-      },
-      {
-        "name": "Rohan Verma",
-        "role": "Batsman",
-        "image": "https://via.placeholder.com/150",
-        "runs": 720,
-        "avg": 28.8,
-        "sr": 108.7,
-        "wickets": 4,
-      },
-      {
-        "name": "Karan Patel",
-        "role": "Bowler",
-        "image": "https://via.placeholder.com/150",
-        "runs": 240,
-        "avg": 12.6,
-        "sr": 60.2,
-        "wickets": 34,
-      },
-      {
-        "name": "Vikram Singh",
-        "role": "All-rounder",
-        "image": "https://via.placeholder.com/150",
-        "runs": 430,
-        "avg": 25.3,
-        "sr": 95.1,
-        "wickets": 18,
-      },
-      {
-        "name": "Siddharth Kapoor",
-        "role": "Wicketkeeper",
-        "image": "https://via.placeholder.com/150",
-        "runs": 330,
-        "avg": 22.0,
-        "sr": 92.4,
-        "wickets": 2,
-      },
-    ];
+    // Use players fetched from backend
+    final players = this.players;
 
     return Scaffold(
       backgroundColor: const Color(0xFF122118),
@@ -80,18 +65,35 @@ class TeamDashboardScreen extends StatelessWidget {
         ),
         centerTitle: true,
       ),
-      body: SafeArea(
-        bottom: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : SafeArea(
+              bottom: false,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
               // Team header
               Column(
                 children: [
                   Stack(
                     children: [
-                      CircleAvatar(radius: 56, backgroundImage: NetworkImage(imageUrl)),
+SizedBox(
+                        height: 112,
+                        width: 112,
+                        child: ClipOval(
+                          child: Image.network(
+                            imageUrl.isNotEmpty ? imageUrl : 'https://picsum.photos/200',
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stack) {
+                              return Container(
+                                color: const Color(0xFF2A3C32),
+                                child: const Icon(Icons.shield, color: Colors.white54, size: 44),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
                       Positioned(
                         bottom: -2,
                         right: -2,
@@ -147,26 +149,25 @@ class TeamDashboardScreen extends StatelessWidget {
                     ),
                     child: ListTile(
                       onTap: () {
-                        Navigator.push(
+                        Navigator.pushNamed(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) => PlayerDashboardScreen(
-                              playerName: p['name'] as String,
-                              role: p['role'] as String,
-                              teamName: teamName,
-                              imageUrl: p['image'] as String,
-                              runs: p['runs'] as int,
-                              battingAvg: (p['avg'] as num).toDouble(),
-                              strikeRate: (p['sr'] as num).toDouble(),
-                              wickets: p['wickets'] as int,
-                            ),
-                          ),
+                          '/player/view',
+                          arguments: {
+                            'playerName': (p['player_name'] ?? p['name'] ?? '').toString(),
+                            'role': (p['player_role'] ?? p['role'] ?? '').toString(),
+                            'teamName': teamName,
+                            'imageUrl': (p['image'] ?? 'https://picsum.photos/200').toString(),
+                            'runs': int.tryParse(p['runs']?.toString() ?? '') ?? 0,
+                            'battingAvg': double.tryParse(p['batting_average']?.toString() ?? p['avg']?.toString() ?? '') ?? 0,
+                            'strikeRate': double.tryParse(p['strike_rate']?.toString() ?? p['sr']?.toString() ?? '') ?? 0,
+                            'wickets': int.tryParse(p['wickets']?.toString() ?? '') ?? 0,
+                          },
                         );
                       },
-                      leading: CircleAvatar(backgroundImage: NetworkImage(p['image'] as String)),
-                      title: Text(p['name'] as String, style: const TextStyle(color: Colors.white)),
+leading: const CircleAvatar(radius: 20, child: Icon(Icons.person)),
+                      title: Text((p['player_name'] ?? p['name'] ?? '').toString(), style: const TextStyle(color: Colors.white)),
                       subtitle: Text(
-                        p['role'] as String,
+                        (p['player_role'] ?? p['role'] ?? '').toString(),
                         style: const TextStyle(color: Color(0xFF95C6A9)),
                       ),
                     ),
@@ -176,25 +177,7 @@ class TeamDashboardScreen extends StatelessWidget {
 
               const SizedBox(height: 18),
               // Start match button (viewer should not start — but placed visually as in HTML)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF20DF6C),
-                    foregroundColor: const Color(0xFF122118),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () {
-                    // viewer flow: show info snackbar (can't start)
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Only the captain can start a match')),
-                    );
-                  },
-                  icon: const Icon(Icons.sports_cricket),
-                  label: const Text('Start Match', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ),
+              const SizedBox.shrink(),
             ],
           ),
         ),

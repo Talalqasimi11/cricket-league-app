@@ -8,20 +8,28 @@ const createTournament = async (req, res) => {
     return res.status(400).json({ error: "All fields are required" });
   }
 
+  const conn = await pool.getConnection();
   try {
-    const [result] = await pool.query(
+    await conn.beginTransaction();
+
+    const [result] = await conn.query(
       `INSERT INTO tournaments (tournament_name, start_date, location, created_by)
        VALUES (?, ?, ?, ?)`,
       [tournament_name, start_date, location, req.user.id]
     );
+
+    await conn.commit();
 
     res.status(201).json({
       message: "Tournament created successfully",
       tournamentId: result.insertId,
     });
   } catch (err) {
+    await conn.rollback();
     console.error("❌ Error in createTournament:", err);
     res.status(500).json({ error: "Server error" });
+  } finally {
+    conn.release();
   }
 };
 
@@ -29,7 +37,7 @@ const createTournament = async (req, res) => {
 const getTournaments = async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT t.*, u.username AS creator_name,
+      SELECT t.*, u.phone_number AS creator_name,
              (SELECT COUNT(*) FROM tournament_teams tt WHERE tt.tournament_id = t.id) AS total_teams
       FROM tournaments t
       JOIN users u ON t.created_by = u.id

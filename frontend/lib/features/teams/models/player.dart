@@ -1,3 +1,5 @@
+// lib/features/teams/models/player.dart
+
 class Player {
   final int id;
   final String playerName;
@@ -23,21 +25,52 @@ class Player {
     required this.wickets,
   });
 
+  // --- Private Static Helpers for Robust JSON Parsing ---
+  // These methods are designed to prevent crashes if the API sends data
+  // in an unexpected format (e.g., a number as a string).
+
+  /// Safely converts a dynamic value to an integer.
+  static int _toInt(dynamic v, {int fallback = 0}) {
+    if (v == null) return fallback;
+    if (v is int) return v;
+    if (v is double) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? fallback;
+    return fallback;
+  }
+
+  /// Safely converts a dynamic value to a double.
+  static double _toDouble(dynamic v, {double fallback = 0.0}) {
+    if (v == null) return fallback;
+    if (v is double) return v;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? fallback;
+    return fallback;
+  }
+
+  /// Safely converts a dynamic value to a string.
+  static String _toString(dynamic v, {String fallback = ''}) {
+    return v?.toString() ?? fallback;
+  }
+
+  /// Creates a Player instance from a JSON map.
+  /// This factory handles multiple possible key names from the API (e.g., 'player_name' or 'name')
+  /// to make the frontend more resilient to backend inconsistencies.
   factory Player.fromJson(Map<String, dynamic> json) {
     return Player(
-      id: json['id'],
-      playerName: json['player_name'],
-      playerRole: json['player_role'],
-      runs: json['runs'] ?? 0,
-      matchesPlayed: json['matches_played'] ?? 0,
-      hundreds: json['hundreds'] ?? 0,
-      fifties: json['fifties'] ?? 0,
-      battingAverage: (json['batting_average'] ?? 0).toDouble(),
-      strikeRate: (json['strike_rate'] ?? 0).toDouble(),
-      wickets: json['wickets'] ?? 0,
+      id: _toInt(json['id'] ?? json['_id']),
+      playerName: _toString(json['player_name'] ?? json['name']),
+      playerRole: _toString(json['player_role'] ?? json['role']),
+      runs: _toInt(json['runs']),
+      matchesPlayed: _toInt(json['matches_played'] ?? json['matches']),
+      hundreds: _toInt(json['hundreds']),
+      fifties: _toInt(json['fifties']),
+      battingAverage: _toDouble(json['batting_average'] ?? json['avg']),
+      strikeRate: _toDouble(json['strike_rate'] ?? json['sr']),
+      wickets: _toInt(json['wickets']),
     );
   }
 
+  /// Converts a Player instance to a JSON map for sending to the API.
   Map<String, dynamic> toJson() {
     return {
       'id': id,
