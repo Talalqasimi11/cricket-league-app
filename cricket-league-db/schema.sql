@@ -151,31 +151,32 @@ CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     phone_number VARCHAR(20) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    team_id INT UNIQUE
+    captain_name VARCHAR(100) NULL -- Display name for the user/captain
 ) ENGINE=InnoDB;
 
 -- 2. Teams
+-- Each team is owned by one user. The `owner_id` links to the users table.
 CREATE TABLE teams (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    captain_id INT NOT NULL UNIQUE,
+    owner_id INT NOT NULL,
     team_name VARCHAR(100) NOT NULL,
     team_location VARCHAR(100) NOT NULL,
+    team_logo_url VARCHAR(255) NULL,
     matches_played INT DEFAULT 0,
     matches_won INT DEFAULT 0,
     trophies INT DEFAULT 0,
-    CONSTRAINT fk_captain FOREIGN KEY (captain_id) REFERENCES users(id) ON DELETE CASCADE
+    -- Foreign key to the user who owns the team
+    CONSTRAINT fk_team_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- Link user.team_id → teams.id
-ALTER TABLE users
-    ADD CONSTRAINT fk_user_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL;
-
 -- 3. Players
+-- Players belong to a team. If a team is deleted, its players are also deleted.
 CREATE TABLE players (
     id INT AUTO_INCREMENT PRIMARY KEY,
     team_id INT NOT NULL,
     player_name VARCHAR(100) NOT NULL,
     player_role ENUM('Batsman','Bowler','All-Rounder','Wicket-Keeper') NOT NULL,
+    player_image_url VARCHAR(255) NULL,
     runs INT DEFAULT 0,
     matches_played INT DEFAULT 0,
     hundreds INT DEFAULT 0,
@@ -187,6 +188,7 @@ CREATE TABLE players (
 ) ENGINE=InnoDB;
 
 -- 4. Tournaments
+-- Tournaments are created by a user.
 CREATE TABLE tournaments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tournament_name VARCHAR(100) NOT NULL,
@@ -197,40 +199,37 @@ CREATE TABLE tournaments (
     CONSTRAINT fk_tournament_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- 5. Tournament Teams (registered + temporary teams)
+-- 5. Tournament Teams
+-- This table links teams to tournaments. It can include registered teams or temporary teams.
 CREATE TABLE tournament_teams (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tournament_id INT NOT NULL,
-    team_id INT NULL,
-    temp_team_name VARCHAR(100),
+    team_id INT NULL, -- Link to a registered team
+    temp_team_name VARCHAR(100), -- For teams not registered in the system
     temp_team_location VARCHAR(100),
-    CONSTRAINT fk_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-    CONSTRAINT fk_registered_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL
+    CONSTRAINT fk_tt_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tt_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- 6. Matches
+-- This table holds records of individual matches, usually within a tournament.
 CREATE TABLE matches (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tournament_id INT NOT NULL,
     team1_id INT NULL,
     team2_id INT NULL,
-    tournament_team1_id INT NULL,
-    tournament_team2_id INT NULL,
     overs INT NOT NULL,
     match_datetime DATETIME NOT NULL,
     status ENUM('not_started','live','completed','abandoned') DEFAULT 'not_started',
     winner_team_id INT NULL,
-    winner_tournament_team_id INT NULL,
     CONSTRAINT fk_match_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
     CONSTRAINT fk_match_team1 FOREIGN KEY (team1_id) REFERENCES teams(id) ON DELETE SET NULL,
     CONSTRAINT fk_match_team2 FOREIGN KEY (team2_id) REFERENCES teams(id) ON DELETE SET NULL,
-    CONSTRAINT fk_match_tournament_team1 FOREIGN KEY (tournament_team1_id) REFERENCES tournament_teams(id) ON DELETE SET NULL,
-    CONSTRAINT fk_match_tournament_team2 FOREIGN KEY (tournament_team2_id) REFERENCES tournament_teams(id) ON DELETE SET NULL,
-    CONSTRAINT fk_match_winner_team FOREIGN KEY (winner_team_id) REFERENCES teams(id) ON DELETE SET NULL,
-    CONSTRAINT fk_match_winner_tournament_team FOREIGN KEY (winner_tournament_team_id) REFERENCES tournament_teams(id) ON DELETE SET NULL
+    CONSTRAINT fk_match_winner_team FOREIGN KEY (winner_team_id) REFERENCES teams(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- 7. Match Innings
+-- Stores the summary for each innings of a match.
 CREATE TABLE match_innings (
     id INT AUTO_INCREMENT PRIMARY KEY,
     match_id INT NOT NULL,
@@ -245,6 +244,7 @@ CREATE TABLE match_innings (
 ) ENGINE=InnoDB;
 
 -- 8. Player Match Stats
+-- Records the performance of each player in a specific match.
 CREATE TABLE player_match_stats (
     id INT AUTO_INCREMENT PRIMARY KEY,
     match_id INT NOT NULL,
@@ -258,11 +258,12 @@ CREATE TABLE player_match_stats (
     runs_conceded INT DEFAULT 0,
     catches INT DEFAULT 0,
     stumpings INT DEFAULT 0,
-    CONSTRAINT fk_player_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
-    CONSTRAINT fk_match_player FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    CONSTRAINT fk_stats_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+    CONSTRAINT fk_stats_player FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- 9. Ball-by-Ball
+-- Stores the detailed record of every ball bowled in a match.
 CREATE TABLE ball_by_ball (
     id INT AUTO_INCREMENT PRIMARY KEY,
     match_id INT NOT NULL,
