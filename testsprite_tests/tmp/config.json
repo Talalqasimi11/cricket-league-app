@@ -1,0 +1,19 @@
+{
+  "status": "commited",
+  "type": "backend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:5000",
+  "backendAuthType": "basic token",
+  "backendUsername": "1",
+  "backendPassword": "1",
+  "executionArgs": {
+    "projectName": "cricket-league-app",
+    "projectPath": "C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app",
+    "testIds": [],
+    "additionalInstruction": "Please test all the main API endpoints including authentication, team management, tournament management, live scoring, and statistics. Focus on testing both success and failure scenarios, including proper error handling and validation. Test the health check endpoint first to verify system status.",
+    "envs": {
+      "API_KEY": "sk-user-Xa-DGiggfDyxro-pJu-sVK0Dv5ZxY24qw2OR8gGNw3u3UhbWps5iGBXns6Pnz9TFSM6BxtjzPjg4dga4KxBTEs4R8r_K1IkkjXvqcbWJ5mE6sSm9kIe5ElQ3SnV2IX4G1pQ"
+    }
+  },
+  "proxy": "http://ea51ba53-0e57-4b6e-990a-ba61c51a332b:271wms4GjTHAYycSR1uIsOq2mao9mkKJ@tun.testsprite.com:8080"
+}

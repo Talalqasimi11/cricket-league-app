@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const authMiddleware = require("../middleware/authMiddleware");
+const { verifyToken: authMiddleware } = require("../middleware/authMiddleware");
 const {
   startInnings,
   addBall,
@@ -19,5 +19,8 @@ router.post("/end-innings", authMiddleware, endInnings);
 
 // Get live score
 router.get("/:match_id", getLiveScore);
+
+// Optional alias routes for consolidation
+router.post('/deliveries', authMiddleware, addBall);
 
 module.exports = router;

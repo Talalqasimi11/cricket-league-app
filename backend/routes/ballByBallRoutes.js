@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const BallByBallController = require("../controllers/BallByBallController");
-const verifyToken = require("../middleware/authMiddleware");
+const { verifyToken } = require("../middleware/authMiddleware");
 
 // Record a delivery (scorer only)
 router.post("/", verifyToken, BallByBallController.addDelivery);

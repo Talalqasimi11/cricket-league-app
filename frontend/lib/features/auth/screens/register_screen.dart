@@ -22,59 +22,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _otpController = TextEditingController();
 
-  bool _isOtpSent = false;
+  final bool _isOtpSent = false;
   bool _isLoading = false;
 
   final String baseUrl = "${ApiClient.baseUrl}/api/auth"; // Backend base URL
 
-  /// Send OTP to the phone number
-  void _sendOtp() async {
-    if (_phoneController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Enter phone number first")),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final response = await http.post(
-        Uri.parse("$baseUrl/send-otp"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"phone_number": _phoneController.text}),
-      );
-
-      final data = jsonDecode(response.body);
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        setState(() => _isOtpSent = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? "OTP sent successfully")),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? "Failed to send OTP")),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Server error: $e")),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
+  // removed unused _sendOtp function
 
   /// Register user after verifying OTP
   void _register() async {
     if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Passwords do not match")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Passwords do not match")));
       return;
     }
 
@@ -111,9 +71,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Server error: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Server error: $e")));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

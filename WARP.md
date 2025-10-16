@@ -117,16 +117,34 @@ The MySQL schema supports:
 
 ## Environment Configuration
 
-### Backend Environment Variables (`.env` file)
+### Backend Environment Variables (`backend/.env`)
 
 ```
-DB_HOST=your_mysql_host
-DB_USER=your_mysql_user  
-DB_PASS=your_mysql_password
-DB_NAME=cricket_league_db
+DB_HOST=localhost
+DB_USER=root
+DB_PASS=your_password
+DB_NAME=cricket_league
 PORT=5000
-JWT_SECRET=your_jwt_secret_key
+
+JWT_SECRET=your_long_random_secret_at_least_32_chars
+JWT_REFRESH_SECRET=your_long_random_refresh_secret_at_least_32_chars
+JWT_AUD=cric-league-app
+JWT_ISS=cric-league-auth
+
+# Explicit CORS origins (comma-separated). No wildcard when credentials are used.
+CORS_ORIGINS=http://localhost:3000,http://localhost:5000
+
+# Cookie flags
+NODE_ENV=development
+COOKIE_SECURE=false
+# Optional refresh rotation on /api/auth/refresh
+ROTATE_REFRESH_ON_USE=false
 ```
+
+Auth Notes:
+- Mobile clients send `refresh_token` in the body to `/api/auth/refresh` because cookies are not used.
+- Refresh tokens currently last 7 days; rotation is supported behind `ROTATE_REFRESH_ON_USE`.
+- Cookies are `httpOnly`, `sameSite=lax`, and `secure` only in production.
 
 ### Frontend Configuration
 

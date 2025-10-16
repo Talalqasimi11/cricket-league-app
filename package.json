@@ -1,0 +1,35 @@
+{
+  "name": "cricket-league-app-tests",
+  "version": "1.0.0",
+  "description": "TestSprite test suite for Cricket League App",
+  "main": "test-cricket-app.js",
+  "scripts": {
+    "test": "node test-cricket-app.js",
+    "test:full": "npm run test:setup && npm run test && npm run test:cleanup",
+    "test:setup": "node test-setup.js",
+    "test:cleanup": "node test-cleanup.js",
+    "test:backend": "cd backend && npm test",
+    "test:frontend": "cd frontend && flutter test",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && flutter run",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && flutter pub get"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.7",
+    "mysql2": "^3.6.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "testsprite": "^1.0.0"
+  },
+  "keywords": [
+    "cricket",
+    "league",
+    "testing",
+    "testsprite",
+    "api-testing",
+    "e2e-testing"
+  ],
+  "author": "Cricket League App Team",
+  "license": "MIT"
+}

@@ -1,6 +1,6 @@
 -- Add owner and captain fields to teams table, and migrate existing data (MySQL-compatible, idempotent)
 
--- Add owner_id
+-- Add owner_id (initially nullable for migration, will be made NOT NULL after data migration)
 SET @col_exists := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'teams' AND COLUMN_NAME = 'owner_id');
 SET @sql := IF(@col_exists = 0, 'ALTER TABLE teams ADD COLUMN owner_id INT NULL AFTER trophies', 'SELECT 1');
@@ -53,6 +53,12 @@ SET t.owner_id = COALESCE(t.owner_id, t.captain_id),
     t.owner_name = COALESCE(t.owner_name, u.captain_name, u.phone_number),
     t.owner_phone = COALESCE(t.owner_phone, u.phone_number)
 WHERE t.owner_id IS NULL;
+
+-- Set default owner_id for any remaining NULL values (fallback to team id)
+UPDATE teams SET owner_id = id WHERE owner_id IS NULL;
+
+-- Now make owner_id NOT NULL to match schema definition
+ALTER TABLE teams MODIFY COLUMN owner_id INT NOT NULL;
 
 -- Add constraint to ensure captain and vice are different (if supported and not present)
 SET @chk_exists := (

@@ -2,8 +2,8 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../../../core/api_client.dart';
+import '../../../core/json_utils.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'team_dashboard_screen.dart';
 import '../models/player.dart';
@@ -30,11 +30,11 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
   // These getters are now much simpler, assuming a more consistent API response.
   // The Player model already handles variations in keys like 'id' vs '_id'.
 
-  String get teamName => _teamData?['team_name']?.toString() ?? 'Team Name';
+  String get teamName => asType<String>(_teamData?['team_name'], 'Team Name');
   String? get teamLogoUrl => _teamData?['team_logo']?.toString();
-  int get trophies => _teamData?['trophies'] is int ? _teamData!['trophies'] : 0;
-  String get teamId => _teamData?['id']?.toString() ?? '';
-  int get matchesWon => _teamData?['matches_won'] is int ? _teamData!['matches_won'] : 0;
+  int get trophies => asType<int>(_teamData?['trophies'], 0);
+  String get teamId => asType<String>(_teamData?['id'], '');
+  int get matchesWon => asType<int>(_teamData?['matches_won'], 0);
   String get ownerName =>
       _teamData?['owner_name']?.toString() ??
       _teamData?['captain_name']?.toString() ??
@@ -46,7 +46,6 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
   String? get ownerImage =>
       _teamData?['owner_image']?.toString() ??
       _teamData?['captain_image']?.toString();
-
 
   @override
   void initState() {
@@ -71,12 +70,12 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
       // It's better if the backend provides one endpoint for team + players.
       // For now, we fetch them in parallel.
       final responses = await Future.wait([
-        http.get(
-          Uri.parse('${ApiClient.baseUrl}/api/teams/my-team'),
+        ApiClient.instance.get(
+          '/api/teams/my-team',
           headers: {'Authorization': 'Bearer $token'},
         ),
-        http.get(
-          Uri.parse('${ApiClient.baseUrl}/api/players/my-players'),
+        ApiClient.instance.get(
+          '/api/players/my-players',
           headers: {'Authorization': 'Bearer $token'},
         ),
       ]);
@@ -98,11 +97,12 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
       } else {
         throw 'Failed to load players: ${playersResponse.statusCode}';
       }
-
     } catch (e) {
       if (mounted) {
         setState(() => _error = e.toString());
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_error)));
       }
     } finally {
       if (mounted) {
@@ -111,101 +111,104 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
     }
   }
 
-  void _logout() async {
-    await storage.delete(key: 'jwt_token');
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
-    }
-  }
+  // removed duplicate simple logout; consolidated into the full logout at bottom
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.grey.shade900,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.grey.shade900,
-        elevation: 0,
-        title: const Text("Profile", style: TextStyle(color: Colors.white)),
+        title: const Text("Profile"),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error.isNotEmpty && _teamData == null
-              ? Center(child: Text(_error, style: const TextStyle(color: Colors.red)))
-              : RefreshIndicator(
-                  onRefresh: _fetchTeamData,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // Profile Section
-                      _buildProfileSection(),
-                      const SizedBox(height: 24),
+          ? Center(
+              child: Text(
+                _error,
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _fetchTeamData,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // Profile Section
+                  _buildProfileSection(),
+                  const SizedBox(height: 24),
 
-                      // My Teams Section
-                      _buildMyTeamSection(),
-                      const SizedBox(height: 24),
+                  // My Teams Section
+                  _buildMyTeamSection(),
+                  const SizedBox(height: 24),
 
-                      // My Matches Section
-                      _buildMyMatchesSection(),
-                      const SizedBox(height: 32),
+                  // My Matches Section
+                  _buildMyMatchesSection(),
+                  const SizedBox(height: 32),
 
-                      // Logout Button
-                      _buildLogoutButton(),
-                    ],
-                  ),
-                ),
+                  // Logout Button
+                  _buildLogoutButton(),
+                ],
+              ),
+            ),
     );
   }
 
   Widget _buildProfileSection() {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return Column(
       children: [
         CircleAvatar(
           radius: 56,
-          backgroundColor: Colors.grey.shade700,
-          backgroundImage: ownerImage != null ? NetworkImage(ownerImage!) : null,
+          backgroundColor: cs.surfaceContainerHighest,
+          backgroundImage: ownerImage != null
+              ? NetworkImage(ownerImage!)
+              : null,
           child: ownerImage == null
-              ? const Icon(Icons.person, color: Colors.white54, size: 40)
+              ? Icon(Icons.person, color: cs.onSurface, size: 40)
               : null,
         ),
         const SizedBox(height: 12),
         Text(
           ownerName,
-          style: const TextStyle(
-            color: Colors.white,
+          style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
-            fontSize: 20,
           ),
         ),
         Text(
           ownerPhone,
-          style: const TextStyle(color: Colors.grey, fontSize: 14),
+          style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurface),
         ),
       ],
     );
   }
 
   Widget _buildMyTeamSection() {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           "My Teams",
-          style: TextStyle(
-            color: Colors.white,
+          style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
-            fontSize: 18,
           ),
         ),
         const SizedBox(height: 12),
         if (_teamData != null)
           Card(
-            color: Colors.grey.shade800,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            color: cs.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: ListTile(
               leading: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -217,20 +220,24 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
                   errorBuilder: (_, __, ___) => Container(
                     width: 50,
                     height: 50,
-                    color: Colors.grey.shade700,
-                    child: const Icon(Icons.shield, color: Colors.white54),
+                    color: cs.surfaceContainerHighest,
+                    child: Icon(Icons.shield, color: cs.onSurface),
                   ),
                 ),
               ),
               title: Text(
                 teamName,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               subtitle: Text(
                 "Matches Won: $matchesWon",
-                style: const TextStyle(color: Colors.grey),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.onSurface),
               ),
-              trailing: const Icon(Icons.arrow_forward_ios, color: Colors.grey),
+              trailing: Icon(Icons.arrow_forward_ios, color: cs.onSurface),
               onTap: () {
                 Navigator.push(
                   context,
@@ -248,31 +255,33 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
             ),
           )
         else
-          const Text(
+          Text(
             "You are not part of a team yet.",
-            style: TextStyle(color: Colors.grey),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: cs.onSurface),
           ),
       ],
     );
   }
 
   Widget _buildMyMatchesSection() {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           "My Matches",
-          style: TextStyle(
-            color: Colors.white,
+          style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
-            fontSize: 18,
           ),
         ),
         const SizedBox(height: 12),
         if (_matches.isEmpty)
-          const Text(
+          Text(
             "No recent matches found.",
-            style: TextStyle(color: Colors.grey),
+            style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurface),
           )
         else
           ..._matches.map((match) {
@@ -286,15 +295,29 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
   Widget _buildLogoutButton() {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.green.shade800,
         minimumSize: const Size(double.infinity, 48),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       onPressed: _logout,
       child: const Text(
         "Logout",
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        style: TextStyle(fontWeight: FontWeight.bold),
       ),
     );
+  }
+
+  void _logout() async {
+    try {
+      final rt = await storage.read(key: 'refresh_token');
+      await ApiClient.instance.post(
+        '/api/auth/logout',
+        body: rt != null ? {'refresh_token': rt} : null,
+      );
+    } catch (_) {}
+    await storage.delete(key: 'jwt_token');
+    await storage.delete(key: 'refresh_token');
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
 }

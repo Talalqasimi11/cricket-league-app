@@ -1,8 +1,6 @@
 // In frontend/lib/features/auth/screens/login_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/api_client.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,14 +11,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _apiService = ApiService();
   bool _isLoading = false;
-  String? _jwtToken; // store token in memory
-  final storage = const FlutterSecureStorage();
-
-  final String baseUrl = "${ApiClient.baseUrl}/api/auth"; // Backend base URL
 
   /// Login function
   void _login() async {
@@ -29,7 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (phone.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Email and password are required")),
+        const SnackBar(content: Text("Phone and password are required")),
       );
       return;
     }
@@ -37,70 +30,44 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final token = await _apiService.login(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
-
-      // --- SUCCESS ---
-      print("Login successful! Token: $token");
-      // TODO: Securely store the token and navigate to the home screen.
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Login Successful!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      final data = jsonDecode(response.body);
-
-      if (!mounted) return; // ensure widget is alive after await
-
-      if (response.statusCode == 200) {
-        _jwtToken = data['token']; // store token in memory
-        if (_jwtToken != null) {
-          await storage.write(key: 'jwt_token', value: _jwtToken);
-        }
-
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Login successful")),
-        );
-
-        // Navigate to Home screen
-        Navigator.pushReplacementNamed(context, '/home');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? "Login failed")),
-        );
+      final data =
+          await ApiClient.instance.postJson(
+                '/api/auth/login',
+                body: {'phone_number': phone, 'password': password},
+              )
+              as Map<String, dynamic>;
+      final token = data['token']?.toString();
+      final refresh = data['refresh_token']?.toString();
+      if (token == null || token.isEmpty) {
+        throw Exception('Invalid response: missing token');
       }
+      await ApiClient.instance.setToken(token);
+      if (refresh != null && refresh.isNotEmpty) {
+        await ApiClient.instance.setRefreshToken(refresh);
+      }
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Server error: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Login failed: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _navigateToRegister() {
-    // TODO: Implement navigation to your RegisterScreen
-    // Navigator.pushNamed(context, '/register');
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Navigate to Register Screen")),
-    );
+    Navigator.pushNamed(context, '/register');
   }
 
   void _handleForgotPassword() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Forgot password feature coming soon")),
-    );
+    Navigator.pushNamed(context, '/forgot-password');
   }
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -137,11 +104,11 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Email
+              // Phone
               TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: _inputDecoration("Email", Icons.email),
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: _inputDecoration("Phone number", Icons.phone),
               ),
               const SizedBox(height: 16),
 
@@ -170,14 +137,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _handleLogin,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF36E27B),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  onPressed: _isLoading ? null : _login,
+                  style: ElevatedButton.styleFrom(),
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text(
@@ -197,14 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 height: 50,
                 child: OutlinedButton(
                   onPressed: _navigateToRegister,
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE8F3EC),
-                    foregroundColor: Colors.white,
-                    side: BorderSide.none,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  style: OutlinedButton.styleFrom(),
                   child: const Text(
                     "Register",
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),

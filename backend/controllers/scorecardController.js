@@ -11,10 +11,12 @@ const getMatchScorecard = async (req, res) => {
     const [match] = await pool.query(
       `SELECT m.id, m.team1_id, t1.team_name AS team1_name,
               m.team2_id, t2.team_name AS team2_name,
-              m.overs, m.status, m.winner
+              m.overs, m.status, m.winner_team_id,
+              tw.team_name AS winner_team_name
        FROM matches m
        LEFT JOIN teams t1 ON m.team1_id = t1.id
        LEFT JOIN teams t2 ON m.team2_id = t2.id
+       LEFT JOIN teams tw ON m.winner_team_id = tw.id
        WHERE m.id = ?`,
       [match_id]
     );
@@ -70,7 +72,11 @@ const getMatchScorecard = async (req, res) => {
     });
 
     res.json({
-      match: matchInfo,
+      match: {
+        ...matchInfo,
+        winner_team_id: matchInfo.winner_team_id || null,
+        winner_team_name: matchInfo.winner_team_name || null,
+      },
       scorecard,
     });
   } catch (err) {

@@ -1,0 +1,744 @@
+{
+  "tech_stack": [
+    "JavaScript",
+    "Node.js",
+    "Express.js",
+    "MySQL",
+    "JWT",
+    "Flutter",
+    "Dart"
+  ],
+  "features": [
+    {
+      "name": "Authentication API",
+      "description": "Complete user authentication system with JWT tokens, password reset, and account management",
+      "files": [
+        "backend/routes/authRoutes.js",
+        "backend/controllers/authController.js",
+        "backend/middleware/authMiddleware.js"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Authentication API",
+          "version": "1.0.0",
+          "description": "Cricket League App Authentication endpoints"
+        },
+        "servers": [
+          {
+            "url": "http://localhost:5000/api/auth",
+            "description": "Development server"
+          }
+        ],
+        "paths": {
+          "/register": {
+            "post": {
+              "summary": "Register new captain",
+              "description": "Register a new team captain with phone number and password",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "required": ["phone_number", "password", "team_name", "team_location"],
+                      "properties": {
+                        "phone_number": {"type": "string", "description": "Phone number in E.164 format"},
+                        "password": {"type": "string", "minLength": 8, "description": "Password (minimum 8 characters)"},
+                        "team_name": {"type": "string", "description": "Name of the team"},
+                        "team_location": {"type": "string", "description": "Location of the team"},
+                        "captain_name": {"type": "string", "description": "Name of the captain"},
+                        "owner_name": {"type": "string", "description": "Name of the team owner"},
+                        "team_logo_url": {"type": "string", "format": "uri", "description": "URL of team logo"}
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "201": {
+                  "description": "Registration successful",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "message": {"type": "string", "example": "Owner and team registered successfully"}
+                        }
+                      }
+                    }
+                  }
+                },
+                "400": {
+                  "description": "Bad request - validation error",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "error": {"type": "string", "example": "All fields are required"}
+                        }
+                      }
+                    }
+                  }
+                },
+                "409": {
+                  "description": "Conflict - phone number already exists",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "error": {"type": "string", "example": "Phone number already registered"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/login": {
+            "post": {
+              "summary": "Login captain",
+              "description": "Authenticate captain with phone number and password",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "required": ["phone_number", "password"],
+                      "properties": {
+                        "phone_number": {"type": "string", "description": "Phone number"},
+                        "password": {"type": "string", "description": "Password"}
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "Login successful",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "message": {"type": "string", "example": "Login successful"},
+                          "token": {"type": "string", "description": "JWT access token"},
+                          "refresh_token": {"type": "string", "description": "JWT refresh token"},
+                          "user": {
+                            "type": "object",
+                            "properties": {
+                              "id": {"type": "integer"},
+                              "phone_number": {"type": "string"}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "401": {
+                  "description": "Unauthorized - invalid credentials",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "error": {"type": "string", "example": "Invalid credentials"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/refresh": {
+            "post": {
+              "summary": "Refresh access token",
+              "description": "Get new access token using refresh token",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "required": ["refresh_token"],
+                      "properties": {
+                        "refresh_token": {"type": "string", "description": "JWT refresh token"}
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "Token refreshed successfully",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "token": {"type": "string", "description": "New JWT access token"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/logout": {
+            "post": {
+              "summary": "Logout user",
+              "description": "Revoke refresh token and logout user",
+              "responses": {
+                "200": {
+                  "description": "Logout successful",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "message": {"type": "string", "example": "Logged out"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Team Management API",
+      "description": "Team and player management system for cricket teams",
+      "files": [
+        "backend/routes/teamRoutes.js",
+        "backend/controllers/teamController.js",
+        "backend/routes/playerRoutes.js",
+        "backend/controllers/playerController.js"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Team Management API",
+          "version": "1.0.0",
+          "description": "Cricket League App Team and Player management endpoints"
+        },
+        "servers": [
+          {
+            "url": "http://localhost:5000/api",
+            "description": "Development server"
+          }
+        ],
+        "paths": {
+          "/teams/all": {
+            "get": {
+              "summary": "Get all teams",
+              "description": "Get list of all teams (public endpoint)",
+              "responses": {
+                "200": {
+                  "description": "List of teams",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {"type": "integer"},
+                            "team_name": {"type": "string"},
+                            "team_location": {"type": "string"},
+                            "matches_played": {"type": "integer"},
+                            "matches_won": {"type": "integer"},
+                            "trophies": {"type": "integer"}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/teams/my-team": {
+            "get": {
+              "summary": "Get my team",
+              "description": "Get authenticated user's team",
+              "security": [{"bearerAuth": []}],
+              "responses": {
+                "200": {
+                  "description": "Team information",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "id": {"type": "integer"},
+                          "team_name": {"type": "string"},
+                          "team_location": {"type": "string"},
+                          "owner_id": {"type": "integer"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/players/add": {
+            "post": {
+              "summary": "Add player",
+              "description": "Add new player to team",
+              "security": [{"bearerAuth": []}],
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "required": ["player_name", "player_role"],
+                      "properties": {
+                        "player_name": {"type": "string"},
+                        "player_role": {"type": "string", "enum": ["batsman", "bowler", "all-rounder", "wicket-keeper"]},
+                        "player_image_url": {"type": "string", "format": "uri"}
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "201": {
+                  "description": "Player added successfully",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "message": {"type": "string", "example": "Player added successfully"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "components": {
+          "securitySchemes": {
+            "bearerAuth": {
+              "type": "http",
+              "scheme": "bearer",
+              "bearerFormat": "JWT"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Tournament Management API",
+      "description": "Tournament creation, management, and match scheduling system",
+      "files": [
+        "backend/routes/tournamentRoutes.js",
+        "backend/controllers/tournamentController.js",
+        "backend/routes/tournamentMatchRoutes.js",
+        "backend/controllers/tournamentMatchController.js"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Tournament Management API",
+          "version": "1.0.0",
+          "description": "Cricket League App Tournament management endpoints"
+        },
+        "servers": [
+          {
+            "url": "http://localhost:5000/api",
+            "description": "Development server"
+          }
+        ],
+        "paths": {
+          "/tournaments/create": {
+            "post": {
+              "summary": "Create tournament",
+              "description": "Create new cricket tournament",
+              "security": [{"bearerAuth": []}],
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "required": ["tournament_name", "location", "start_date"],
+                      "properties": {
+                        "tournament_name": {"type": "string"},
+                        "location": {"type": "string"},
+                        "start_date": {"type": "string", "format": "date"}
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "201": {
+                  "description": "Tournament created successfully",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "message": {"type": "string", "example": "Tournament created successfully"},
+                          "id": {"type": "integer"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/tournaments/": {
+            "get": {
+              "summary": "Get tournaments",
+              "description": "Get list of all tournaments",
+              "responses": {
+                "200": {
+                  "description": "List of tournaments",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {"type": "integer"},
+                            "tournament_name": {"type": "string"},
+                            "location": {"type": "string"},
+                            "start_date": {"type": "string", "format": "date"},
+                            "status": {"type": "string", "enum": ["not_started", "live", "completed", "abandoned"]}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "components": {
+          "securitySchemes": {
+            "bearerAuth": {
+              "type": "http",
+              "scheme": "bearer",
+              "bearerFormat": "JWT"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Live Scoring API",
+      "description": "Real-time cricket match scoring and ball-by-ball recording system",
+      "files": [
+        "backend/routes/liveScoreRoutes.js",
+        "backend/controllers/liveScoreController.js",
+        "backend/routes/ballByBallRoutes.js",
+        "backend/controllers/BallByBallController.js"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Live Scoring API",
+          "version": "1.0.0",
+          "description": "Cricket League App Live scoring and ball-by-ball recording endpoints"
+        },
+        "servers": [
+          {
+            "url": "http://localhost:5000/api",
+            "description": "Development server"
+          }
+        ],
+        "paths": {
+          "/live/start-innings": {
+            "post": {
+              "summary": "Start innings",
+              "description": "Start new innings for a match",
+              "security": [{"bearerAuth": []}],
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "required": ["match_id", "batting_team_id", "bowling_team_id", "overs"],
+                      "properties": {
+                        "match_id": {"type": "integer"},
+                        "batting_team_id": {"type": "integer"},
+                        "bowling_team_id": {"type": "integer"},
+                        "overs": {"type": "integer"}
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "201": {
+                  "description": "Innings started successfully",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "message": {"type": "string", "example": "Innings started successfully"},
+                          "innings_id": {"type": "integer"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/live/ball": {
+            "post": {
+              "summary": "Add ball",
+              "description": "Record ball-by-ball delivery",
+              "security": [{"bearerAuth": []}],
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "required": ["match_id", "innings_id", "over_number", "ball_number", "striker_id", "bowler_id"],
+                      "properties": {
+                        "match_id": {"type": "integer"},
+                        "innings_id": {"type": "integer"},
+                        "over_number": {"type": "integer"},
+                        "ball_number": {"type": "integer"},
+                        "striker_id": {"type": "integer"},
+                        "bowler_id": {"type": "integer"},
+                        "runs_scored": {"type": "integer", "default": 0},
+                        "extras": {"type": "string", "enum": ["none", "wide", "no-ball", "bye", "leg-bye"], "default": "none"},
+                        "wicket": {"type": "boolean", "default": false},
+                        "dismissal_type": {"type": "string", "enum": ["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "none"], "default": "none"},
+                        "fielder_id": {"type": "integer"}
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "201": {
+                  "description": "Ball recorded successfully",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "message": {"type": "string", "example": "Ball recorded successfully"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/live/{match_id}": {
+            "get": {
+              "summary": "Get live score",
+              "description": "Get current live score for match",
+              "parameters": [
+                {
+                  "name": "match_id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "integer"}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "Live score data",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "match_id": {"type": "integer"},
+                          "current_innings": {"type": "object"},
+                          "score": {"type": "object"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "components": {
+          "securitySchemes": {
+            "bearerAuth": {
+              "type": "http",
+              "scheme": "bearer",
+              "bearerFormat": "JWT"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Statistics API",
+      "description": "Player and team statistics and analytics system",
+      "files": [
+        "backend/routes/playerStatsRoutes.js",
+        "backend/controllers/playerStatsController.js",
+        "backend/routes/teamTournamentSummaryRoutes.js",
+        "backend/controllers/teamTournamentSummaryController.js"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Statistics API",
+          "version": "1.0.0",
+          "description": "Cricket League App Statistics and analytics endpoints"
+        },
+        "servers": [
+          {
+            "url": "http://localhost:5000/api",
+            "description": "Development server"
+          }
+        ],
+        "paths": {
+          "/player-stats/{tournament_id}/top-runs": {
+            "get": {
+              "summary": "Get top run scorers",
+              "description": "Get top run scorers for tournament",
+              "parameters": [
+                {
+                  "name": "tournament_id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "integer"}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "List of top run scorers",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "player_id": {"type": "integer"},
+                            "player_name": {"type": "string"},
+                            "runs": {"type": "integer"},
+                            "matches_played": {"type": "integer"},
+                            "batting_average": {"type": "number"}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/tournament-summary/{tournament_id}": {
+            "get": {
+              "summary": "Get tournament summary",
+              "description": "Get tournament points table and summary",
+              "parameters": [
+                {
+                  "name": "tournament_id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "integer"}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "Tournament summary",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "team_id": {"type": "integer"},
+                            "team_name": {"type": "string"},
+                            "matches_played": {"type": "integer"},
+                            "matches_won": {"type": "integer"},
+                            "points": {"type": "integer"}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Health Check API",
+      "description": "System health monitoring and status endpoints",
+      "files": [
+        "backend/index.js"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Health Check API",
+          "version": "1.0.0",
+          "description": "Cricket League App Health check endpoints"
+        },
+        "servers": [
+          {
+            "url": "http://localhost:5000",
+            "description": "Development server"
+          }
+        ],
+        "paths": {
+          "/health": {
+            "get": {
+              "summary": "Health check",
+              "description": "Check system health and database connectivity",
+              "responses": {
+                "200": {
+                  "description": "System is healthy",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "status": {"type": "string", "example": "ok"},
+                          "version": {"type": "string", "example": "dev"},
+                          "db": {"type": "string", "enum": ["up", "down"]}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

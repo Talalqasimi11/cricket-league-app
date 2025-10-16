@@ -1,21 +1,27 @@
 const db = require("../config/db");
+const live = require("./liveScoreController");
 
 // Insert a new delivery
-exports.addDelivery = async (req, res) => {
-  const { match_id, innings_id, over_number, ball_number, batsman_id, bowler_id, runs_scored, extra_type, is_wicket, dismissal_type, fielder_id } = req.body;
-
+exports.addDelivery = async (req, res, next) => {
+  // Delegate to live scoring controller to keep single write path
   try {
-    const [result] = await db.query(
-      `INSERT INTO ball_by_ball 
-       (match_id, innings_id, over_number, ball_number, batsman_id, bowler_id, runs_scored, extra_type, is_wicket, dismissal_type, fielder_id) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [match_id, innings_id, over_number, ball_number, batsman_id, bowler_id, runs_scored, extra_type, is_wicket, dismissal_type, fielder_id]
-    );
-
-    res.status(201).json({ message: "Delivery recorded successfully", delivery_id: result.insertId });
+    const body = req.body || {};
+    req.body = {
+      match_id: body.match_id,
+      inning_id: body.innings_id, // adapter: innings_id -> inning_id
+      over_number: body.over_number,
+      ball_number: body.ball_number,
+      batsman_id: body.batsman_id,
+      bowler_id: body.bowler_id,
+      runs: body.runs_scored,
+      extras: body.extra_type,
+      wicket_type: body.is_wicket ? (body.dismissal_type || 'wicket') : null,
+      out_player_id: body.fielder_id || null,
+    };
+    return live.addBall(req, res, next);
   } catch (err) {
-    console.error("Error adding delivery:", err);
-    res.status(500).json({ error: "Failed to record delivery" });
+    console.error("Error adapting delivery:", err);
+    return res.status(500).json({ error: "Failed to record delivery" });
   }
 };
 
