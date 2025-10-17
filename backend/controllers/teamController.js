@@ -1,29 +1,37 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 // 📌 Get owner's own team (backward compatible with historical captain_id)
 const getMyTeam = async (req, res) => {
+  console.log("🚀 getMyTeam called!");
   try {
-    const [rows] = await pool.query(
-      `SELECT 
-         t.*, 
-         COALESCE(u_owner.phone_number, u_cap.phone_number) AS owner_phone,
-         COALESCE(u_owner.captain_name, u_cap.captain_name, u_owner.phone_number, u_cap.phone_number) AS owner_name,
-         pc.player_name AS captain_name,
-         pv.player_name AS vice_captain_name
-       FROM teams t
-       LEFT JOIN users u_owner ON t.owner_id = u_owner.id
-       LEFT JOIN users u_cap ON t.captain_id = u_cap.id
-       LEFT JOIN players pc ON t.captain_player_id = pc.id
-       LEFT JOIN players pv ON t.vice_captain_player_id = pv.id
-       WHERE (t.owner_id = ? OR t.captain_id = ?)
-       LIMIT 1`,
-      [req.user.id, req.user.id]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({ error: "No team found for this owner" });
+    if (!req.user || !req.user.id) {
+      console.log("❌ No user in request:", req.user);
+      return res.status(401).json({ error: "Authentication required" });
     }
 
+    console.log("🔍 getMyTeam - User ID:", req.user.id, "Type:", typeof req.user.id);
+    console.log("🔍 getMyTeam - User object:", req.user);
+
+    const [rows] = await db.query(
+      `SELECT 
+         t.*, 
+         u.phone_number AS owner_phone
+       FROM teams t
+       LEFT JOIN users u ON t.owner_id = u.id
+       WHERE t.owner_id = ?
+       LIMIT 1`,
+      [req.user.id]
+    );
+
+    console.log("🔍 getMyTeam - Query result length:", rows.length);
+    console.log("🔍 getMyTeam - Query result:", rows);
+
+    if (rows.length === 0) {
+      console.log("❌ No team found for user ID:", req.user.id);
+      return res.status(404).json({ error: "Team not found" });
+    }
+
+    console.log("✅ Team found for user ID:", req.user.id);
     res.json(rows[0]);
   } catch (err) {
     console.error("❌ Error in getMyTeam:", err);
@@ -41,7 +49,7 @@ const updateMyTeam = async (req, res) => {
 
   try {
     // ✅ Single UPDATE using ownership in WHERE and validating captain/vice via EXISTS; includes team_logo_url
-    const [result] = await pool.query(
+    const [result] = await db.query(
       `UPDATE teams t
        SET 
          t.team_name = ?,
@@ -82,7 +90,7 @@ const updateMyTeam = async (req, res) => {
 // 📌 Get all teams (public)
 const getAllTeams = async (req, res) => {
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       "SELECT id, team_name, team_location, team_logo_url, matches_played, matches_won, trophies FROM teams" // ✅ ADDED team_logo_url
     );
     res.json(rows);
@@ -96,7 +104,7 @@ const getAllTeams = async (req, res) => {
 const getTeamById = async (req, res) => {
   try {
     const { id } = req.params;
-    const [rows] = await pool.query("SELECT * FROM teams WHERE id = ?", [id]);
+    const [rows] = await db.query("SELECT * FROM teams WHERE id = ?", [id]);
     if (rows.length === 0) return res.status(404).json({ error: "Team not found" });
     res.json(rows[0]);
   } catch (err) {

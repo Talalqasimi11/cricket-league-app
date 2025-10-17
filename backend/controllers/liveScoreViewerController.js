@@ -1,4 +1,4 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 /**
  * 📌 Get live score of a match (for viewers)
@@ -8,7 +8,7 @@ const getLiveScoreViewer = async (req, res) => {
 
   try {
     // Innings info
-    const [innings] = await pool.query(
+    const [innings] = await db.query(
       `SELECT mi.id, mi.inning_number, mi.batting_team_id, mi.bowling_team_id, 
               mi.runs, mi.wickets, mi.overs,
               bt.team_name AS batting_team_name,
@@ -23,7 +23,7 @@ const getLiveScoreViewer = async (req, res) => {
     );
 
     // Ball-by-ball info
-    const [balls] = await pool.query(
+    const [balls] = await db.query(
       `SELECT b.id, b.over_number, b.ball_number, b.runs, b.extras, b.wicket_type,
               bats.player_name AS batsman_name,
               bowl.player_name AS bowler_name,
@@ -38,7 +38,7 @@ const getLiveScoreViewer = async (req, res) => {
     );
 
     // Player stats
-    const [players] = await pool.query(
+    const [players] = await db.query(
       `SELECT pms.player_id, p.player_name, p.player_role,
               pms.runs, pms.balls_faced, pms.wickets, pms.balls_bowled, pms.runs_conceded
        FROM player_match_stats pms

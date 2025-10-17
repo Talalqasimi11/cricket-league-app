@@ -1,7 +1,6 @@
 // lib/features/auth/screens/register_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../../../core/api_client.dart';
 import 'dart:convert';
 
@@ -17,7 +16,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
-  final TextEditingController _captainNameController = TextEditingController();
   final TextEditingController _teamNameController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _otpController = TextEditingController();
@@ -25,7 +23,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final bool _isOtpSent = false;
   bool _isLoading = false;
 
-  final String baseUrl = "${ApiClient.baseUrl}/api/auth"; // Backend base URL
+  // Backend base URL will be handled by ApiClient instance methods
 
   // removed unused _sendOtp function
 
@@ -41,18 +39,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await http.post(
-        Uri.parse("$baseUrl/register"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
+      final response = await ApiClient.instance.post(
+        "/api/auth/register",
+        body: {
           "phone_number": _phoneController.text,
           "password": _passwordController.text,
-          // store as owner; send captain_name for backward compatibility if backend still expects it
-          "owner_name": _captainNameController.text,
-          "captain_name": _captainNameController.text,
           "team_name": _teamNameController.text,
           "team_location": _locationController.text,
-        }),
+        },
       );
 
       final data = jsonDecode(response.body);
@@ -116,13 +110,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 "Confirm Password",
                 Icons.lock_outline,
               ),
-            ),
-            const SizedBox(height: 16),
-
-            // Owner Name
-            TextField(
-              controller: _captainNameController,
-              decoration: _inputDecoration("Owner Name", Icons.person),
             ),
             const SizedBox(height: 16),
 

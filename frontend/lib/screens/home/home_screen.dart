@@ -124,7 +124,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     final String teamId = asType<String>(t['id'], '');
                     return GestureDetector(
                       onTap: () {
-                        if (teamId == null) return;
                         Navigator.pushNamed(
                           context,
                           '/team/view',

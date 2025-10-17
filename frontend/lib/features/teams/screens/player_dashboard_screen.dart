@@ -2,7 +2,6 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/api_client.dart';
 import '../models/player.dart';
@@ -35,14 +34,11 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
     final token = await storage.read(key: 'jwt_token');
 
     try {
-      final response = await http.put(
+      final response = await ApiClient.instance.put(
         // The player ID should ideally be in the URL.
-        Uri.parse("${ApiClient.baseUrl}/api/players/update/${_player.id}"),
-        headers: {
-          "Authorization": "Bearer $token",
-          "Content-Type": "application/json",
-        },
-        body: jsonEncode(updatedPlayer.toJson()),
+        "/api/players/update/${_player.id}",
+        headers: {"Authorization": "Bearer $token"},
+        body: updatedPlayer.toJson(),
       );
 
       if (response.statusCode == 200) {

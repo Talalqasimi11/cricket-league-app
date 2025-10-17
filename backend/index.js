@@ -46,7 +46,25 @@ app.use(pinoHttp({
   }
 }));
 // Configure CORS: allow credentials and restrict origins explicitly via CORS_ORIGINS
-const allowedOrigins = (process.env.CORS_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
+let allowedOrigins = (process.env.CORS_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
+
+// For development, auto-add common localhost origins if empty
+if (process.env.NODE_ENV !== 'production' && allowedOrigins.length === 0) {
+  allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5000',
+    'http://localhost:8080', // Flutter web dev server
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5000',
+    'http://127.0.0.1:8080', // Flutter web dev server alternative
+    'http://10.0.2.2:5000', // Android emulator
+  ];
+  console.log('⚠️  Development mode: Auto-adding localhost origins for CORS');
+}
+
+console.log('✅ CORS allowed origins:', allowedOrigins.length > 0 ? allowedOrigins.join(', ') : 'none (production requires CORS_ORIGINS)');
+console.log('💡 For physical devices, add your computer\'s IP (e.g., http://192.168.1.100:5000) to CORS_ORIGINS env var');
+
 app.use(cors({
   origin: (origin, callback) => {
     // Explicit allowlist only; when credentials are used, wildcard is not allowed
@@ -59,14 +77,6 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Rate limiter for login
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
 // ✅ Routes
 app.use("/api/tournament-summary", teamTournamentSummaryRoutes);
 app.use("/api/player-stats", playerStatsRoutes);
@@ -77,11 +87,8 @@ app.use("/api/viewer/live-score", liveScoreViewerRoutes);
 const scorecardRoutes = require("./routes/scorecardRoutes");
 app.use("/api/viewer/scorecard", scorecardRoutes);
 
-// Mount auth with rate-limited login
-app.use("/api/auth", (req, res, next) => {
-  if (req.path === '/login') return loginLimiter(req, res, next);
-  return next();
-}, authRoutes);
+// Mount auth routes (rate limiting is handled in authRoutes.js)
+app.use("/api/auth", authRoutes);
 app.use("/api/teams", teamRoutes);
 // app.use("/api/matches", matchRoutes);
 app.use("/api/players", playerRoutes);

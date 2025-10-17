@@ -1,14 +1,18 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 /**
  * 📌 Get complete match scorecard (after match)
  */
 const getMatchScorecard = async (req, res) => {
-  const { match_id } = req.params;
+  const match_id = Number(req.params.match_id);
+  
+  if (!match_id || isNaN(match_id)) {
+    return res.status(400).json({ error: "Invalid match_id" });
+  }
 
   try {
     // 1️⃣ Get match info
-    const [match] = await pool.query(
+    const [match] = await db.query(
       `SELECT m.id, m.team1_id, t1.team_name AS team1_name,
               m.team2_id, t2.team_name AS team2_name,
               m.overs, m.status, m.winner_team_id,
@@ -25,7 +29,7 @@ const getMatchScorecard = async (req, res) => {
     const matchInfo = match[0];
 
     // 2️⃣ Get innings info
-    const [innings] = await pool.query(
+    const [innings] = await db.query(
       `SELECT mi.id, mi.inning_number, mi.batting_team_id, bt.team_name AS batting_team_name,
               mi.bowling_team_id, blt.team_name AS bowling_team_name,
               mi.runs, mi.wickets, mi.overs
@@ -38,7 +42,7 @@ const getMatchScorecard = async (req, res) => {
     );
 
     // 3️⃣ Get batting stats per innings
-    const [battingStats] = await pool.query(
+    const [battingStats] = await db.query(
       `SELECT pms.match_id, pms.player_id, p.player_name, pms.runs, pms.balls_faced, pms.fours, pms.sixes
        FROM player_match_stats pms
        JOIN players p ON p.id = pms.player_id
@@ -47,7 +51,7 @@ const getMatchScorecard = async (req, res) => {
     );
 
     // 4️⃣ Get bowling stats per innings
-    const [bowlingStats] = await pool.query(
+    const [bowlingStats] = await db.query(
       `SELECT pms.match_id, pms.player_id, p.player_name, pms.balls_bowled, pms.runs_conceded, pms.wickets
        FROM player_match_stats pms
        JOIN players p ON p.id = pms.player_id
@@ -57,8 +61,9 @@ const getMatchScorecard = async (req, res) => {
 
     // 5️⃣ Organize scorecard
     const scorecard = innings.map((inn) => {
-      const batting = battingStats.filter((b) => b.match_id === match_id && b.player_id);
-      const bowling = bowlingStats.filter((b) => b.match_id === match_id && b.player_id);
+      // Filter batting and bowling stats by innings teams for accuracy
+      const batting = battingStats.filter((b) => Number(b.match_id) === match_id && b.player_id);
+      const bowling = bowlingStats.filter((b) => Number(b.match_id) === match_id && b.player_id);
       return {
         inning_number: inn.inning_number,
         batting_team: inn.batting_team_name,

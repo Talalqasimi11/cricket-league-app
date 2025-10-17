@@ -46,13 +46,13 @@ SET @idx_exists := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
 SET @sql := IF(@idx_exists = 0, 'CREATE INDEX idx_teams_vice_captain_player_id ON teams (vice_captain_player_id)', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- Migrate existing captain_id-based ownership to owner fields
-UPDATE teams t
-LEFT JOIN users u ON t.captain_id = u.id
-SET t.owner_id = COALESCE(t.owner_id, t.captain_id),
-    t.owner_name = COALESCE(t.owner_name, u.captain_name, u.phone_number),
-    t.owner_phone = COALESCE(t.owner_phone, u.phone_number)
-WHERE t.owner_id IS NULL;
+-- Migrate existing captain_id-based ownership to owner fields (only if captain_id column exists)
+SET @col_exists := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'teams' AND COLUMN_NAME = 'captain_id');
+SET @sql := IF(@col_exists > 0, 
+  'UPDATE teams t LEFT JOIN users u ON t.captain_id = u.id SET t.owner_id = COALESCE(t.owner_id, t.captain_id), t.owner_name = COALESCE(t.owner_name, u.captain_name, u.phone_number), t.owner_phone = COALESCE(t.owner_phone, u.phone_number) WHERE t.owner_id IS NULL', 
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- Set default owner_id for any remaining NULL values (fallback to team id)
 UPDATE teams SET owner_id = id WHERE owner_id IS NULL;

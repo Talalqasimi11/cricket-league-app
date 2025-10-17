@@ -35,10 +35,7 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
   int get trophies => asType<int>(_teamData?['trophies'], 0);
   String get teamId => asType<String>(_teamData?['id'], '');
   int get matchesWon => asType<int>(_teamData?['matches_won'], 0);
-  String get ownerName =>
-      _teamData?['owner_name']?.toString() ??
-      _teamData?['captain_name']?.toString() ??
-      'Owner Name';
+  String get ownerName => 'Team Owner';
   String get ownerPhone =>
       _teamData?['owner_phone']?.toString() ??
       _teamData?['captain_phone']?.toString() ??

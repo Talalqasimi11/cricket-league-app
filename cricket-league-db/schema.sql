@@ -9,8 +9,7 @@
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     phone_number VARCHAR(20) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    captain_name VARCHAR(100) NULL -- Display name for the user/captain
+    password_hash VARCHAR(255) NOT NULL
 ) ENGINE=InnoDB;
 
 -- Refresh Tokens table (auth)
@@ -51,6 +50,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 
 -- 2. Teams
 -- Each team is owned by one user. The `owner_id` links to the users table.
+-- Only one player can be captain per team, assigned by the user.
 CREATE TABLE IF NOT EXISTS teams (
     id INT AUTO_INCREMENT PRIMARY KEY,
     owner_id INT NOT NULL,
@@ -60,8 +60,18 @@ CREATE TABLE IF NOT EXISTS teams (
     matches_played INT DEFAULT 0,
     matches_won INT DEFAULT 0,
     trophies INT DEFAULT 0,
+    captain_player_id INT NULL,
+    vice_captain_player_id INT NULL,
     -- Foreign key to the user who owns the team
-    CONSTRAINT fk_team_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+    CONSTRAINT fk_team_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
+    -- Foreign key to the captain player (must be from this team)
+    CONSTRAINT fk_team_captain FOREIGN KEY (captain_player_id) REFERENCES players(id) ON DELETE SET NULL,
+    -- Foreign key to the vice-captain player (must be from this team)
+    CONSTRAINT fk_team_vice_captain FOREIGN KEY (vice_captain_player_id) REFERENCES players(id) ON DELETE SET NULL,
+    -- Ensure captain and vice-captain are different
+    CONSTRAINT teams_captain_vice_distinct CHECK (captain_player_id IS NULL OR vice_captain_player_id IS NULL OR captain_player_id <> vice_captain_player_id),
+    -- Ensure only one team per captain
+    CONSTRAINT uq_teams_captain_player_id UNIQUE (captain_player_id)
 ) ENGINE=InnoDB;
 
 -- 3. Players
@@ -84,12 +94,13 @@ CREATE TABLE IF NOT EXISTS players (
 
 -- 4. Tournaments
 -- Tournaments are created by a user.
+-- Note: 'upcoming' and 'not_started' are treated as synonyms; 'upcoming' added via migrations
 CREATE TABLE IF NOT EXISTS tournaments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tournament_name VARCHAR(100) NOT NULL,
     location VARCHAR(100) NOT NULL,
     start_date DATE NOT NULL,
-    status ENUM('not_started','live','completed','abandoned') NOT NULL DEFAULT 'not_started',
+    status ENUM('upcoming','not_started','live','completed','abandoned') NOT NULL DEFAULT 'not_started',
     created_by INT NOT NULL,
     CONSTRAINT fk_tournament_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

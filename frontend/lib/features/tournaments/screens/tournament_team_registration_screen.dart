@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../../core/api_client.dart';
 import 'tournament_draws_screen.dart';
@@ -8,7 +7,11 @@ class RegisterTeamsScreen extends StatefulWidget {
   final String tournamentName;
   final String? tournamentId;
 
-  const RegisterTeamsScreen({super.key, required this.tournamentName, this.tournamentId});
+  const RegisterTeamsScreen({
+    super.key,
+    required this.tournamentName,
+    this.tournamentId,
+  });
 
   @override
   State<RegisterTeamsScreen> createState() => _RegisterTeamsScreenState();
@@ -29,7 +32,9 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
   Future<void> _fetchTeams() async {
     setState(() => _loading = true);
     try {
-      final resp = await http.get(Uri.parse('${ApiClient.baseUrl}/api/tournament-teams/${widget.tournamentId}'));
+      final resp = await ApiClient.instance.get(
+        '/api/tournament-teams/${widget.tournamentId}',
+      );
       if (resp.statusCode == 200) {
         final decoded = jsonDecode(resp.body);
         List<dynamic> list;
@@ -63,7 +68,10 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
         elevation: 0,
         title: Text(
           "Add Teams to ${widget.tournamentName}",
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         centerTitle: true,
         leading: IconButton(
@@ -92,7 +100,10 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(30),
-                  borderSide: const BorderSide(color: Color(0xFF20DF6C), width: 2),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF20DF6C),
+                    width: 2,
+                  ),
                 ),
               ),
               onChanged: (_) => setState(() {}),
@@ -112,25 +123,35 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                   context: context,
                   builder: (_) => AlertDialog(
                     backgroundColor: const Color(0xFF1A2C22),
-                    title: const Text('Add Team', style: TextStyle(color: Colors.white)),
+                    title: const Text(
+                      'Add Team',
+                      style: TextStyle(color: Colors.white),
+                    ),
                     content: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         TextField(
                           controller: nameController,
                           style: const TextStyle(color: Colors.white),
-                          decoration: const InputDecoration(labelText: 'Team name'),
+                          decoration: const InputDecoration(
+                            labelText: 'Team name',
+                          ),
                         ),
                         const SizedBox(height: 8),
                         TextField(
                           controller: locController,
                           style: const TextStyle(color: Colors.white),
-                          decoration: const InputDecoration(labelText: 'Location'),
+                          decoration: const InputDecoration(
+                            labelText: 'Location',
+                          ),
                         ),
                       ],
                     ),
                     actions: [
-                      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
                       ElevatedButton(
                         onPressed: () => Navigator.pop(context, {
                           'name': nameController.text.trim(),
@@ -145,26 +166,29 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                 final loc = added?['location'] ?? '';
                 if (name.isEmpty) return;
                 try {
-                  final resp = await http.post(
-                    Uri.parse('${ApiClient.baseUrl}/api/tournament-teams/add'),
-                    headers: const {'Content-Type': 'application/json'},
-                    body: jsonEncode({
+                  final resp = await ApiClient.instance.post(
+                    '/api/tournament-teams/add',
+                    body: {
                       'tournament_id': widget.tournamentId,
                       'temp_team_name': name,
                       'temp_team_location': loc.isEmpty ? 'Unknown' : loc,
-                    }),
+                    },
                   );
                   if (resp.statusCode == 200 || resp.statusCode == 201) {
                     _fetchTeams();
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to add team (${resp.statusCode})')),
+                      SnackBar(
+                        content: Text(
+                          'Failed to add team (${resp.statusCode})',
+                        ),
+                      ),
                     );
                   }
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('Error: $e')));
                 }
               },
               borderRadius: BorderRadius.circular(12),
@@ -183,7 +207,11 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                         color: const Color(0xFF1A2C22),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.add, size: 30, color: Color(0xFF20DF6C)),
+                      child: const Icon(
+                        Icons.add,
+                        size: 30,
+                        color: Color(0xFF20DF6C),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     const Column(
@@ -191,11 +219,17 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                       children: [
                         Text(
                           "Add unregistered team",
-                          style: TextStyle(color: Color(0xFF20DF6C), fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            color: Color(0xFF20DF6C),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         Text(
                           "Quickly add a team's basic details",
-                          style: TextStyle(fontSize: 13, color: Color(0xFF95C6A9)),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF95C6A9),
+                          ),
                         ),
                       ],
                     ),
@@ -205,7 +239,7 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
             ),
           ),
 
-// 📋 Team List
+          // 📋 Team List
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -214,10 +248,17 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                     itemCount: teams.length,
                     itemBuilder: (context, index) {
                       final team = teams[index];
-                      final teamName = (team["team_name"] ?? team["temp_team_name"] ?? team["name"] ?? "").toString();
+                      final teamName =
+                          (team["team_name"] ??
+                                  team["temp_team_name"] ??
+                                  team["name"] ??
+                                  "")
+                              .toString();
 
                       if (_searchController.text.isNotEmpty &&
-                          !teamName.toLowerCase().contains(_searchController.text.toLowerCase())) {
+                          !teamName.toLowerCase().contains(
+                            _searchController.text.toLowerCase(),
+                          )) {
                         return const SizedBox.shrink();
                       }
 
@@ -226,16 +267,23 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
 
                       return GestureDetector(
                         onTap: () {
-                          setState(() => team["selected"] = !(team["selected"] as bool));
+                          setState(
+                            () =>
+                                team["selected"] = !(team["selected"] as bool),
+                          );
                         },
                         child: Container(
                           margin: const EdgeInsets.only(bottom: 10),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: team["selected"] ? const Color(0xFF1A3826) : const Color(0xFF1A2C22),
+                            color: team["selected"]
+                                ? const Color(0xFF1A3826)
+                                : const Color(0xFF1A2C22),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: team["selected"] ? const Color(0xFF20DF6C) : Colors.transparent,
+                              color: team["selected"]
+                                  ? const Color(0xFF20DF6C)
+                                  : Colors.transparent,
                             ),
                           ),
                           child: Row(
@@ -247,7 +295,10 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                                   color: const Color(0xFF1A2C22),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: const Icon(Icons.shield, color: Color(0xFF20DF6C)),
+                                child: const Icon(
+                                  Icons.shield,
+                                  color: Color(0xFF20DF6C),
+                                ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -263,7 +314,10 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                                     ),
                                     const Text(
                                       "Registered",
-                                      style: TextStyle(color: Color(0xFF95C6A9), fontSize: 13),
+                                      style: TextStyle(
+                                        color: Color(0xFF95C6A9),
+                                        fontSize: 13,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -271,10 +325,14 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                               Checkbox(
                                 value: team["selected"] as bool,
                                 onChanged: (val) {
-                                  setState(() => team["selected"] = val ?? false);
+                                  setState(
+                                    () => team["selected"] = val ?? false,
+                                  );
                                 },
                                 activeColor: const Color(0xFF20DF6C),
-                                side: const BorderSide(color: Color(0xFF366348)),
+                                side: const BorderSide(
+                                  color: Color(0xFF366348),
+                                ),
                               ),
                             ],
                           ),
@@ -295,7 +353,9 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF20DF6C),
               foregroundColor: const Color(0xFF122118),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
               minimumSize: const Size.fromHeight(56),
             ),
             onPressed: selectedCount > 0

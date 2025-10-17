@@ -11,7 +11,6 @@ import '../models/tournament_model.dart';
 import 'tournament_details_creator_screen.dart';
 import 'tournament_details_viewer_screen.dart';
 
-import 'package:http/http.dart' as http;
 import '../../../core/api_client.dart';
 
 class TournamentDrawsScreen extends StatefulWidget {
@@ -35,7 +34,8 @@ class TournamentDrawsScreen extends StatefulWidget {
 class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
   bool _autoDraw = true;
   List<MatchModel> _matches = [];
-  final Map<String, Map<String, int?>> _nameToIds = {}; // ✅ name -> { teamId, ttId }
+  final Map<String, Map<String, int?>> _nameToIds =
+      {}; // ✅ name -> { teamId, ttId }
 
   @override
   void initState() {
@@ -45,10 +45,13 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
 
   Future<void> _fetchTournamentTeams() async {
     try {
-      final resp = await http.get(Uri.parse('${ApiClient.baseUrl}/api/tournament-teams/${widget.tournamentId}'));
+      final resp = await ApiClient.instance.get(
+        '/api/tournament-teams/${widget.tournamentId}',
+      );
       if (resp.statusCode == 200) {
         final decoded = jsonDecode(resp.body);
-        final List<dynamic> rows = decoded is Map<String, dynamic> && decoded.containsKey('data')
+        final List<dynamic> rows =
+            decoded is Map<String, dynamic> && decoded.containsKey('data')
             ? List<dynamic>.from(decoded['data'] as List)
             : List<dynamic>.from(decoded as List);
         // Map registered team names -> team_id; temp teams get null id
@@ -57,7 +60,9 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
           final name = (m['team_name'] ?? m['temp_team_name'] ?? '').toString();
           if (name.isEmpty) continue;
           _nameToIds[name] = {
-            'teamId': m['team_id'] == null ? null : int.tryParse(m['team_id'].toString()),
+            'teamId': m['team_id'] == null
+                ? null
+                : int.tryParse(m['team_id'].toString()),
             'ttId': int.tryParse(m['id']?.toString() ?? ''),
           };
         }
@@ -71,12 +76,19 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
     final List<MatchModel> pairs = [];
 
     for (int i = 0; i + 1 < teams.length; i += 2) {
-      pairs.add(MatchModel(id: 'm${i ~/ 2 + 1}', teamA: teams[i], teamB: teams[i + 1]));
+      pairs.add(
+        MatchModel(id: 'm${i ~/ 2 + 1}', teamA: teams[i], teamB: teams[i + 1]),
+      );
     }
 
     if (teams.length.isOdd) {
       pairs.add(
-        MatchModel(id: 'm${pairs.length + 1}', teamA: teams.last, teamB: 'BYE', status: 'planned'),
+        MatchModel(
+          id: 'm${pairs.length + 1}',
+          teamA: teams.last,
+          teamB: 'BYE',
+          status: 'planned',
+        ),
       );
     }
 
@@ -97,22 +109,31 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
             children: [
               DropdownButtonFormField<String>(
                 hint: const Text("Select Team A"),
-                items: widget.teams.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                items: widget.teams
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                    .toList(),
                 onChanged: (val) => selectedA = val,
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 hint: const Text("Select Team B"),
-                items: widget.teams.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                items: widget.teams
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                    .toList(),
                 onChanged: (val) => selectedB = val,
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
             ElevatedButton(
               onPressed: () {
-                if (selectedA != null && selectedB != null && selectedA != selectedB) {
+                if (selectedA != null &&
+                    selectedB != null &&
+                    selectedA != selectedB) {
                   setState(() {
                     _matches.add(
                       MatchModel(
@@ -135,7 +156,9 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
   }
 
   Future<void> _pickDateForMatch(int idx) async {
-    final initial = _matches[idx].scheduledAt ?? DateTime.now().add(const Duration(days: 1));
+    final initial =
+        _matches[idx].scheduledAt ??
+        DateTime.now().add(const Duration(days: 1));
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -150,7 +173,13 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
     );
     if (time == null) return;
 
-    final picked = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final picked = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
     setState(() {
       _matches[idx].scheduledAt = picked;
     });
@@ -186,9 +215,11 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
           onPressed: _matches.isEmpty
               ? null
               : () {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('Bracket view coming soon...')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Bracket view coming soon...'),
+                    ),
+                  );
                 },
           child: const Text('View Bracket'),
         ),
@@ -213,7 +244,9 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+              ),
               onPressed: _matches.isEmpty ? null : _persistMatches,
               child: const Text('Save & Publish'),
             ),
@@ -255,7 +288,9 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
 
       if (!mounted) return;
       if (resp.statusCode == 200 || resp.statusCode == 201) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Matches published')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Matches published')));
         // Navigate to details view
         final updatedTournament = TournamentModel(
           id: widget.tournamentId,
@@ -283,9 +318,9 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -340,7 +375,10 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
                           .map(
                             (t) => Container(
                               margin: const EdgeInsets.symmetric(horizontal: 6),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.grey.shade200,
                                 borderRadius: BorderRadius.circular(20),
@@ -371,7 +409,10 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     itemCount: _matches.length,
                     itemBuilder: (context, i) => _matchTile(_matches[i], i),
                   ),

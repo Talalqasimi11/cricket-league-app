@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../../core/api_client.dart';
 
@@ -29,7 +28,9 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
   Future<void> _fetchLive() async {
     setState(() => _loading = true);
     try {
-      final resp = await http.get(Uri.parse('${ApiClient.baseUrl}/api/viewer/live-score/${widget.matchId}'));
+      final resp = await ApiClient.instance.get(
+        '/api/viewer/live-score/${widget.matchId}',
+      );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final innings = (data['innings'] as List?) ?? [];
@@ -60,7 +61,9 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
           final result = wicketType.isNotEmpty ? 'W' : runs;
           final bowler = (m['bowler_name'] ?? '').toString();
           final batsman = (m['batsman_name'] ?? '').toString();
-          final commentary = wicketType.isNotEmpty ? 'Wicket: $wicketType' : 'Runs: $runs';
+          final commentary = wicketType.isNotEmpty
+              ? 'Wicket: $wicketType'
+              : 'Runs: $runs';
           return {
             'over': '$overNo.$ballNo',
             'bowler': bowler,
@@ -75,15 +78,17 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to load live score (${resp.statusCode})')),
+            SnackBar(
+              content: Text('Failed to load live score (${resp.statusCode})'),
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading live score: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading live score: $e')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -125,150 +130,190 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-          // 🏏 Match Info Card
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1a3d27),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Match Title + Overs
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "$teamA vs $teamB",
-                      style: const TextStyle(
-                        color: Color(0xFF36e27b),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                // 🏏 Match Info Card
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1a3d27),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.green.withValues(alpha: 0.2),
                     ),
-                    Text(
-                      "$overs Overs Match",
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Match Title + Overs
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "$teamA vs $teamB",
+                            style: const TextStyle(
+                              color: Color(0xFF36e27b),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            "$overs Overs Match",
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              "LIVE",
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      child: const Text(
-                        "LIVE",
+
+                      // Team Logos simplified (no network fetch for web safety)
+                      Row(
+                        children: const [
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: Colors.grey,
+                            child: Icon(Icons.shield, color: Colors.white),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              "vs",
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: Colors.grey,
+                            child: Icon(Icons.shield, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // 📊 Scorecard
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1a3d27),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.green.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text(
+                        "Batting Team",
                         style: TextStyle(
-                          color: Colors.green,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 12),
+
+                      // Score + Overs
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Column(
+                            children: [
+                              Text(
+                                score,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const Text(
+                                "Runs / Wickets",
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            height: 40,
+                            width: 1,
+                            margin: const EdgeInsets.symmetric(horizontal: 20),
+                            color: Colors.grey.withValues(alpha: 0.3),
+                          ),
+                          Column(
+                            children: [
+                              Text(
+                                currentOvers,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const Text(
+                                "Overs",
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
 
-// Team Logos simplified (no network fetch for web safety)
-                Row(
-                  children: const [
-                    CircleAvatar(radius: 20, backgroundColor: Colors.grey, child: Icon(Icons.shield, color: Colors.white)),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: Text("vs", style: TextStyle(color: Colors.grey, fontSize: 16)),
-                    ),
-                    CircleAvatar(radius: 20, backgroundColor: Colors.grey, child: Icon(Icons.shield, color: Colors.white)),
-                  ],
-                ),
-              ],
-            ),
-          ),
+                const SizedBox(height: 20),
 
-          const SizedBox(height: 20),
-
-          // 📊 Scorecard
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1a3d27),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
-            ),
-            child: Column(
-              children: [
+                // 📒 Ball-by-Ball Log
                 const Text(
-                  "Batting Team",
-                  style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+                  "Ball-by-Ball Log",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 12),
 
-                // Score + Overs
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Column(
-                      children: [
-                        Text(
-                          score,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 36,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Text(
-                          "Runs / Wickets",
-                          style: TextStyle(color: Colors.grey, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      height: 40,
-                      width: 1,
-                      margin: const EdgeInsets.symmetric(horizontal: 20),
-                      color: Colors.grey.withValues(alpha: 0.3),
-                    ),
-                    Column(
-                      children: [
-                        Text(
-                          currentOvers,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 36,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Text("Overs", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
-                  ],
+                ...ballByBall.map(
+                  (ball) => _buildBallLog(
+                    over: ball["over"] ?? "",
+                    bowler: ball["bowler"] ?? "",
+                    batsman: ball["batsman"] ?? "",
+                    commentary: ball["commentary"] ?? "",
+                    result: ball["result"] ?? "",
+                  ),
                 ),
               ],
             ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // 📒 Ball-by-Ball Log
-          const Text(
-            "Ball-by-Ball Log",
-            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-
-          ...ballByBall.map(
-            (ball) => _buildBallLog(
-              over: ball["over"] ?? "",
-              bowler: ball["bowler"] ?? "",
-              batsman: ball["batsman"] ?? "",
-              commentary: ball["commentary"] ?? "",
-              result: ball["result"] ?? "",
-            ),
-          ),
-        ],
-      ),
 
       // 🔽 Bottom Navigation
       bottomNavigationBar: BottomNavigationBar(
@@ -277,9 +322,18 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: "Matches"),
-          BottomNavigationBarItem(icon: Icon(Icons.emoji_events), label: "Tournaments"),
-          BottomNavigationBarItem(icon: Icon(Icons.query_stats), label: "Stats"),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.sports_cricket),
+            label: "Matches",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.emoji_events),
+            label: "Tournaments",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.query_stats),
+            label: "Stats",
+          ),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
         ],
       ),
@@ -318,7 +372,9 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
           // Over bubble
           CircleAvatar(
             radius: 16,
-        backgroundColor: result == "W" ? Colors.red.withValues(alpha: 0.2) : const Color(0xFF1a3d27),
+            backgroundColor: result == "W"
+                ? Colors.red.withValues(alpha: 0.2)
+                : const Color(0xFF1a3d27),
             child: Text(
               over,
               style: TextStyle(
@@ -337,9 +393,15 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
               children: [
                 Text(
                   "$bowler to $batsman",
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                Text(commentary, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                Text(
+                  commentary,
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
               ],
             ),
           ),

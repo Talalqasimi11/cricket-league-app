@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../../core/api_client.dart';
 
@@ -24,7 +23,9 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
   Future<void> _fetch() async {
     setState(() => _loading = true);
     try {
-      final resp = await http.get(Uri.parse('${ApiClient.baseUrl}/api/viewer/scorecard/${widget.matchId}'));
+      final resp = await ApiClient.instance.get(
+        '/api/viewer/scorecard/${widget.matchId}',
+      );
       if (resp.statusCode == 200) {
         data = jsonDecode(resp.body) as Map<String, dynamic>;
       }
@@ -50,7 +51,8 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
           : ListView(
               padding: const EdgeInsets.all(12),
               children: [
-                if (data == null) const Text('No data', style: TextStyle(color: Colors.white)),
+                if (data == null)
+                  const Text('No data', style: TextStyle(color: Colors.white)),
                 if (data != null) ...[
                   _section('Innings', data!['innings'] as List<dynamic>?),
                   const SizedBox(height: 12),
@@ -74,9 +76,21 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 8),
-          ...rows.map((r) => Text(r.toString(), style: const TextStyle(color: Colors.white70))),
+          ...rows.map(
+            (r) => Text(
+              r.toString(),
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
         ],
       ),
     );

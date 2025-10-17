@@ -38,9 +38,9 @@ exports.getDeliveriesByMatch = async (req, res) => {
        FROM ball_by_ball b
        LEFT JOIN players p1 ON b.batsman_id = p1.id
        LEFT JOIN players p2 ON b.bowler_id = p2.id
-       LEFT JOIN players p3 ON b.fielder_id = p3.id
+       LEFT JOIN players p3 ON COALESCE(b.out_player_id, b.fielder_id) = p3.id
        WHERE b.match_id = ?
-       ORDER BY innings_id, over_number, ball_number ASC`,
+       ORDER BY COALESCE(b.inning_id, b.innings_id), b.over_number, b.ball_number ASC`,
       [match_id]
     );
 
@@ -64,9 +64,9 @@ exports.getDeliveriesByInnings = async (req, res) => {
        FROM ball_by_ball b
        LEFT JOIN players p1 ON b.batsman_id = p1.id
        LEFT JOIN players p2 ON b.bowler_id = p2.id
-       LEFT JOIN players p3 ON b.fielder_id = p3.id
-       WHERE b.innings_id = ?
-       ORDER BY over_number, ball_number ASC`,
+       LEFT JOIN players p3 ON COALESCE(b.out_player_id, b.fielder_id) = p3.id
+       WHERE COALESCE(b.inning_id, b.innings_id) = ?
+       ORDER BY b.over_number, b.ball_number ASC`,
       [innings_id]
     );
 

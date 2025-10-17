@@ -1,4 +1,4 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 /**
  * 📌 Finalize Match
@@ -9,7 +9,7 @@ const finalizeMatch = async (req, res) => {
 
   try {
     // 1️⃣ Fetch match
-    const [[match]] = await pool.query("SELECT * FROM matches WHERE id = ?", [match_id]);
+    const [[match]] = await db.query("SELECT * FROM matches WHERE id = ?", [match_id]);
     if (!match) return res.status(404).json({ error: "Match not found" });
 
     if (match.status === "completed") {
@@ -17,7 +17,7 @@ const finalizeMatch = async (req, res) => {
     }
 
     // 2️⃣ Get innings scores
-    const [innings] = await pool.query(
+    const [innings] = await db.query(
       "SELECT * FROM match_innings WHERE match_id = ? ORDER BY inning_number ASC",
       [match_id]
     );
@@ -38,7 +38,7 @@ const finalizeMatch = async (req, res) => {
     }
 
     // 3️⃣ Update match record
-    await pool.query(
+    await db.query(
       "UPDATE matches SET status = 'completed', winner_team_id = ? WHERE id = ?",
       [winnerTeamId, match_id]
     );
@@ -49,7 +49,7 @@ const finalizeMatch = async (req, res) => {
 
       for (const teamId of teams) {
         // Matches played +1
-        await pool.query(
+        await db.query(
           `INSERT INTO team_tournament_summary (tournament_id, team_id, matches_played, matches_won) 
            VALUES (?, ?, 1, ?) 
            ON DUPLICATE KEY UPDATE 
@@ -61,13 +61,13 @@ const finalizeMatch = async (req, res) => {
     }
 
     // 5️⃣ Update players permanent stats (from player_match_stats)
-    const [playerStats] = await pool.query(
+    const [playerStats] = await db.query(
       "SELECT * FROM player_match_stats WHERE match_id = ?",
       [match_id]
     );
 
     for (const stat of playerStats) {
-      await pool.query(
+      await db.query(
         `UPDATE players 
          SET 
            runs = runs + ?, 

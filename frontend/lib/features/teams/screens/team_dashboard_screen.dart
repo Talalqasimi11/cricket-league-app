@@ -2,7 +2,6 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../../../core/api_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/player.dart';
@@ -61,8 +60,14 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
     try {
       // Fetch team and players in parallel for efficiency
       final responses = await Future.wait([
-        http.get(Uri.parse('${ApiClient.baseUrl}/api/teams/my-team'), headers: {'Authorization': 'Bearer $token'}),
-        http.get(Uri.parse('${ApiClient.baseUrl}/api/players/my-players'), headers: {'Authorization': 'Bearer $token'}),
+        ApiClient.instance.get(
+          '/api/teams/my-team',
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+        ApiClient.instance.get(
+          '/api/players/my-players',
+          headers: {'Authorization': 'Bearer $token'},
+        ),
       ]);
 
       final teamResponse = responses[0];
@@ -88,12 +93,15 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       }
 
       if (teamResponse.statusCode != 200 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not refresh team data.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not refresh team data.')),
+        );
       }
-
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error: $e")));
       }
     } finally {
       if (mounted) {
@@ -106,16 +114,27 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   Future<void> _addPlayer(String name, String role) async {
     final token = await storage.read(key: 'jwt_token');
     final placeholderId = DateTime.now().millisecondsSinceEpoch * -1;
-    final placeholder = Player(id: placeholderId, playerName: name, playerRole: role, runs: 0, matchesPlayed: 0, hundreds: 0, fifties: 0, battingAverage: 0, strikeRate: 0, wickets: 0);
-    
+    final placeholder = Player(
+      id: placeholderId,
+      playerName: name,
+      playerRole: role,
+      runs: 0,
+      matchesPlayed: 0,
+      hundreds: 0,
+      fifties: 0,
+      battingAverage: 0,
+      strikeRate: 0,
+      wickets: 0,
+    );
+
     // Optimistic UI update
     setState(() => players.add(placeholder));
 
     try {
-      final response = await http.post(
-        Uri.parse('${ApiClient.baseUrl}/api/players/add'),
-        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
-        body: jsonEncode({'player_name': name, 'player_role': role}),
+      final response = await ApiClient.instance.post(
+        '/api/players/add',
+        headers: {'Authorization': 'Bearer $token'},
+        body: {'player_name': name, 'player_role': role},
       );
 
       if (response.statusCode == 201) {
@@ -132,24 +151,31 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       // Revert on failure
       setState(() => players.removeWhere((p) => p.id == placeholderId));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
 
   /// Edits the team details.
-  Future<void> _editTeam(String newName, String newLocation, {int? captainId, int? viceCaptainId}) async {
+  Future<void> _editTeam(
+    String newName,
+    String newLocation, {
+    int? captainId,
+    int? viceCaptainId,
+  }) async {
     final token = await storage.read(key: 'jwt_token');
     try {
-      final response = await http.put(
-        Uri.parse('${ApiClient.baseUrl}/api/teams/update'),
-        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
-        body: jsonEncode({
+      final response = await ApiClient.instance.put(
+        '/api/teams/update',
+        headers: {'Authorization': 'Bearer $token'},
+        body: {
           'team_name': newName,
           'team_location': newLocation,
           if (captainId != null) 'captain_player_id': captainId,
           if (viceCaptainId != null) 'vice_captain_player_id': viceCaptainId,
-        }),
+        },
       );
 
       if (response.statusCode == 200) {
@@ -160,20 +186,32 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           captainPlayerId = captainId ?? captainPlayerId;
           viceCaptainPlayerId = viceCaptainId ?? viceCaptainPlayerId;
         });
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Team Updated")));
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text("✅ Team Updated")));
+        }
       } else {
         throw 'Failed to update team: ${response.body}';
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     }
   }
-  
+
   // NOTE: A "Delete Team" endpoint was not found in the backend code provided.
   // This function is a placeholder.
   Future<void> _deleteTeam() async {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Delete functionality is not yet implemented in the backend."))
+      const SnackBar(
+        content: Text(
+          "Delete functionality is not yet implemented in the backend.",
+        ),
+      ),
     );
   }
 
@@ -184,9 +222,18 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF122118),
         elevation: 0,
-        title: Text(teamName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          teamName,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         centerTitle: true,
-        leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => Navigator.pop(context)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: _isLoading && players.isEmpty
           ? const Center(child: CircularProgressIndicator())
@@ -212,17 +259,36 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       CircleAvatar(
         radius: 60,
         backgroundColor: Colors.grey.shade800,
-        backgroundImage: teamLogoUrl.isNotEmpty ? NetworkImage(teamLogoUrl) : null,
-        child: teamLogoUrl.isEmpty ? const Icon(Icons.shield, color: Colors.white54, size: 60) : null,
+        backgroundImage: teamLogoUrl.isNotEmpty
+            ? NetworkImage(teamLogoUrl)
+            : null,
+        child: teamLogoUrl.isEmpty
+            ? const Icon(Icons.shield, color: Colors.white54, size: 60)
+            : null,
       ),
       const SizedBox(height: 8),
-      Text(teamName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-      Text("$trophies Trophies", style: const TextStyle(color: Color(0xFF95C6A9))),
+      Text(
+        teamName,
+        style: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
+      Text(
+        "$trophies Trophies",
+        style: const TextStyle(color: Color(0xFF95C6A9)),
+      ),
     ],
   );
 
   Widget _buildPlayersList() => players.isEmpty
-      ? const Center(child: Text("No players in this team yet.", style: TextStyle(color: Colors.grey)))
+      ? const Center(
+          child: Text(
+            "No players in this team yet.",
+            style: TextStyle(color: Colors.grey),
+          ),
+        )
       : ListView.builder(
           itemCount: players.length,
           itemBuilder: (context, index) {
@@ -233,19 +299,38 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
               color: const Color(0xFF1A2C22),
               margin: const EdgeInsets.only(bottom: 10),
               child: ListTile(
-                leading: const CircleAvatar(radius: 24, child: Icon(Icons.person)),
-                title: Text(player.playerName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                leading: const CircleAvatar(
+                  radius: 24,
+                  child: Icon(Icons.person),
+                ),
+                title: Text(
+                  player.playerName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 subtitle: Text(
                   "${player.playerRole}\nRuns: ${player.runs} | Avg: ${player.battingAverage.toStringAsFixed(1)}",
-                  style: const TextStyle(color: Color(0xFF95C6A9), fontSize: 12),
+                  style: const TextStyle(
+                    color: Color(0xFF95C6A9),
+                    fontSize: 12,
+                  ),
                 ),
                 trailing: isCaptain
-                  ? const Chip(label: Text('C'), backgroundColor: Colors.amber)
-                  : isViceCaptain ? const Chip(label: Text('VC')) : null,
+                    ? const Chip(
+                        label: Text('C'),
+                        backgroundColor: Colors.amber,
+                      )
+                    : isViceCaptain
+                    ? const Chip(label: Text('VC'))
+                    : null,
                 onTap: () async {
                   final updatedPlayer = await Navigator.push<Player>(
                     context,
-                    MaterialPageRoute(builder: (_) => PlayerDashboardScreen(player: player)),
+                    MaterialPageRoute(
+                      builder: (_) => PlayerDashboardScreen(player: player),
+                    ),
                   );
                   if (updatedPlayer != null) {
                     setState(() {
@@ -266,18 +351,30 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           children: [
             Expanded(
               child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF15803D), padding: const EdgeInsets.symmetric(vertical: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF15803D),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
                 icon: const Icon(Icons.person_add, color: Colors.white),
-                label: const Text("Add Player", style: TextStyle(color: Colors.white)),
+                label: const Text(
+                  "Add Player",
+                  style: TextStyle(color: Colors.white),
+                ),
                 onPressed: () => _showAddPlayerDialog(context),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF15803D), padding: const EdgeInsets.symmetric(vertical: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF15803D),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
                 icon: const Icon(Icons.edit, color: Colors.white),
-                label: const Text("Edit Team", style: TextStyle(color: Colors.white)),
+                label: const Text(
+                  "Edit Team",
+                  style: TextStyle(color: Colors.white),
+                ),
                 onPressed: () => _showEditTeamDialog(context),
               ),
             ),
@@ -306,18 +403,26 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: "Player Name")),
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: "Player Name"),
+            ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: selectedRole,
               decoration: const InputDecoration(labelText: "Role"),
-              items: roles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+              items: roles
+                  .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                  .toList(),
               onChanged: (value) => selectedRole = value,
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
           ElevatedButton(
             onPressed: () {
               final name = nameController.text.trim();
@@ -340,48 +445,90 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
 
     showDialog(
       context: context,
-      builder: (_) => StatefulBuilder(builder: (context, setStateDialog) {
-        return AlertDialog(
-          title: const Text("Edit Team"),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameController, decoration: const InputDecoration(labelText: "Team Name")),
-                TextField(controller: locationController, decoration: const InputDecoration(labelText: "Team Location")),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                  initialValue: tempCaptainId,
-                  decoration: const InputDecoration(labelText: "Captain"),
-                  items: players.map((p) => DropdownMenuItem<int>(value: p.id, child: Text(p.playerName))).toList(),
-                  onChanged: (v) => setStateDialog(() => tempCaptainId = v),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                  initialValue: tempViceCaptainId,
-                  decoration: const InputDecoration(labelText: "Vice Captain"),
-                  items: players.map((p) => DropdownMenuItem<int>(value: p.id, child: Text(p.playerName))).toList(),
-                  onChanged: (v) => setStateDialog(() => tempViceCaptainId = v),
-                ),
-              ],
+      builder: (_) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: const Text("Edit Team"),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: "Team Name"),
+                  ),
+                  TextField(
+                    controller: locationController,
+                    decoration: const InputDecoration(
+                      labelText: "Team Location",
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    initialValue: tempCaptainId,
+                    decoration: const InputDecoration(labelText: "Captain"),
+                    items: players
+                        .map(
+                          (p) => DropdownMenuItem<int>(
+                            value: p.id,
+                            child: Text(p.playerName),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setStateDialog(() => tempCaptainId = v),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    initialValue: tempViceCaptainId,
+                    decoration: const InputDecoration(
+                      labelText: "Vice Captain",
+                    ),
+                    items: players
+                        .map(
+                          (p) => DropdownMenuItem<int>(
+                            value: p.id,
+                            child: Text(p.playerName),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) =>
+                        setStateDialog(() => tempViceCaptainId = v),
+                  ),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-            ElevatedButton(
-              onPressed: () {
-                if (tempCaptainId != null && tempCaptainId == tempViceCaptainId) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Captain and Vice Captain must be different.')));
-                  return;
-                }
-                _editTeam(nameController.text.trim(), locationController.text.trim(), captainId: tempCaptainId, viceCaptainId: tempViceCaptainId);
-                Navigator.pop(context);
-              },
-              child: const Text("Save"),
-            ),
-          ],
-        );
-      }),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (tempCaptainId != null &&
+                      tempCaptainId == tempViceCaptainId) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Captain and Vice Captain must be different.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                  _editTeam(
+                    nameController.text.trim(),
+                    locationController.text.trim(),
+                    captainId: tempCaptainId,
+                    viceCaptainId: tempViceCaptainId,
+                  );
+                  Navigator.pop(context);
+                },
+                child: const Text("Save"),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

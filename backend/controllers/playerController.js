@@ -1,4 +1,4 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 // Allowed cricket roles (to avoid DB enum/length errors)
 const ALLOWED_ROLES = ["Batsman", "Bowler", "All-rounder", "Wicket-keeper", "Wicketkeeper"];
@@ -20,7 +20,7 @@ const addPlayer = async (req, res) => {
 
   try {
     // get captain's team
-    const [teamRows] = await pool.query(
+    const [teamRows] = await db.query(
       "SELECT id FROM teams WHERE owner_id = ? OR captain_id = ?",
       [req.user.id, req.user.id]
     );
@@ -33,7 +33,7 @@ const addPlayer = async (req, res) => {
 
     // insert player (all stats default 0)
     // ✅ ADDED player_image_url to INSERT statement
-    const [result] = await pool.query(
+    const [result] = await db.query(
       `INSERT INTO players 
        (player_name, player_role, player_image_url, runs, matches_played, hundreds, fifties, batting_average, strike_rate, wickets, team_id) 
        VALUES (?, ?, ?, 0, 0, 0, 0, 0, 0, 0, ?)`,
@@ -41,7 +41,7 @@ const addPlayer = async (req, res) => {
     );
 
     // ✅ Return full created player object for RESTful response
-    const [rows] = await pool.query(`SELECT * FROM players WHERE id = ?`, [result.insertId]);
+    const [rows] = await db.query(`SELECT * FROM players WHERE id = ?`, [result.insertId]);
     res.status(201).json(rows[0]);
   } catch (err) {
     console.error("❌ Error in addPlayer:", err);
@@ -52,7 +52,7 @@ const addPlayer = async (req, res) => {
 // 📌 Get all players of captain's team
 const getMyPlayers = async (req, res) => {
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT p.* FROM players p 
        JOIN teams t ON p.team_id = t.id 
        WHERE (t.owner_id = ? OR t.captain_id = ?)`,
@@ -87,7 +87,7 @@ const updatePlayer = async (req, res) => {
 
   try {
     // ✅ Single UPDATE with ownership check via JOIN; also updates player_image_url
-    const [result] = await pool.query(
+    const [result] = await db.query(
       `UPDATE players p
        JOIN teams t ON p.team_id = t.id
        SET p.player_name = ?, p.player_role = ?, p.player_image_url = ?, p.runs = ?, p.matches_played = ?, 
@@ -100,7 +100,7 @@ const updatePlayer = async (req, res) => {
       return res.status(403).json({ error: "Not allowed to update this player or player not found" });
     }
 
-    const [updated] = await pool.query(
+    const [updated] = await db.query(
       `SELECT p.* FROM players p JOIN teams t ON p.team_id = t.id WHERE p.id = ? AND (t.owner_id = ? OR t.captain_id = ?)`,
       [playerId, req.user.id, req.user.id]
     );
@@ -121,7 +121,7 @@ const deletePlayer = async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT p.id 
        FROM players p 
        JOIN teams t ON p.team_id = t.id 
@@ -133,7 +133,7 @@ const deletePlayer = async (req, res) => {
       return res.status(403).json({ error: "Not allowed to delete this player" });
     }
 
-    await pool.query("DELETE FROM players WHERE id = ?", [playerId]);
+    await db.query("DELETE FROM players WHERE id = ?", [playerId]);
 
     res.json({ message: "Player deleted successfully" });
   } catch (err) {
@@ -146,7 +146,7 @@ const deletePlayer = async (req, res) => {
 const getPlayersByTeamId = async (req, res) => {
   try {
     const { team_id } = req.params;
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT * FROM players WHERE team_id = ? ORDER BY id DESC`,
       [team_id]
     );

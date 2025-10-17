@@ -1,4 +1,4 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 // 📌 Add a team to a tournament (registered OR temporary)
 const addTournamentTeam = async (req, res) => {
@@ -13,7 +13,7 @@ const addTournamentTeam = async (req, res) => {
 
   try {
     // ✅ Check ownership
-    const [tournament] = await pool.query(
+    const [tournament] = await db.query(
       "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
       [tournament_id, req.user.id]
     );
@@ -28,7 +28,7 @@ const addTournamentTeam = async (req, res) => {
 
     // ✅ Prevent duplicate registered team
     if (team_id) {
-      const [exists] = await pool.query(
+      const [exists] = await db.query(
         "SELECT id FROM tournament_teams WHERE tournament_id = ? AND team_id = ?",
         [tournament_id, team_id]
       );
@@ -39,7 +39,7 @@ const addTournamentTeam = async (req, res) => {
 
     // ✅ Prevent duplicate temporary team
     if (temp_team_name && temp_team_location) {
-      const [exists] = await pool.query(
+      const [exists] = await db.query(
         "SELECT id FROM tournament_teams WHERE tournament_id = ? AND temp_team_name = ? AND temp_team_location = ?",
         [tournament_id, temp_team_name, temp_team_location]
       );
@@ -49,7 +49,7 @@ const addTournamentTeam = async (req, res) => {
     }
 
     // ✅ Insert
-    const [result] = await pool.query(
+    const [result] = await db.query(
       `INSERT INTO tournament_teams (tournament_id, team_id, temp_team_name, temp_team_location) 
        VALUES (?, ?, ?, ?)`,
       [tournament_id, team_id || null, temp_team_name || null, temp_team_location || null]
@@ -71,7 +71,7 @@ const getTournamentTeams = async (req, res) => {
   const { tournament_id } = req.params;
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT tt.id, 
               tt.tournament_id, 
               t.team_name, 
@@ -101,7 +101,7 @@ const updateTournamentTeam = async (req, res) => {
 
   try {
     // ✅ Ownership
-    const [tournament] = await pool.query(
+    const [tournament] = await db.query(
       "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
       [tournament_id, req.user.id]
     );
@@ -113,7 +113,7 @@ const updateTournamentTeam = async (req, res) => {
     }
 
     // ✅ Ensure team exists & is temporary
-    const [team] = await pool.query(
+    const [team] = await db.query(
       "SELECT * FROM tournament_teams WHERE id = ? AND tournament_id = ?",
       [id, tournament_id]
     );
@@ -125,7 +125,7 @@ const updateTournamentTeam = async (req, res) => {
     }
 
     // ✅ Prevent duplicates
-    const [exists] = await pool.query(
+    const [exists] = await db.query(
       `SELECT id FROM tournament_teams 
        WHERE tournament_id = ? AND temp_team_name = ? AND temp_team_location = ? AND id != ?`,
       [tournament_id, temp_team_name, temp_team_location, id]
@@ -134,7 +134,7 @@ const updateTournamentTeam = async (req, res) => {
       return res.status(400).json({ success: false, error: "Another temporary team with same name & location exists" });
     }
 
-    await pool.query(
+    await db.query(
       "UPDATE tournament_teams SET temp_team_name = ?, temp_team_location = ? WHERE id = ?",
       [temp_team_name, temp_team_location, id]
     );
@@ -156,7 +156,7 @@ const deleteTournamentTeam = async (req, res) => {
 
   try {
     // ✅ Ownership
-    const [tournament] = await pool.query(
+    const [tournament] = await db.query(
       "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
       [tournament_id, req.user.id]
     );
@@ -168,7 +168,7 @@ const deleteTournamentTeam = async (req, res) => {
     }
 
     // ✅ Prevent deletion if team already in matches
-    const [used] = await pool.query(
+    const [used] = await db.query(
       "SELECT id FROM matches WHERE (team1_tournament_team_id = ? OR team2_tournament_team_id = ?) AND tournament_id = ? LIMIT 1",
       [id, id, tournament_id]
     );
@@ -176,7 +176,7 @@ const deleteTournamentTeam = async (req, res) => {
       return res.status(400).json({ success: false, error: "Cannot delete team, matches already exist" });
     }
 
-    await pool.query("DELETE FROM tournament_teams WHERE id = ?", [id]);
+    await db.query("DELETE FROM tournament_teams WHERE id = ?", [id]);
 
     res.json({ success: true, message: "Tournament team deleted successfully" });
   } catch (err) {

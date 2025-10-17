@@ -16,6 +16,7 @@ import 'features/teams/screens/my_team_screen.dart';
 import 'screens/team/viewer/team_dashboard_screen.dart' as viewer;
 import 'screens/player/viewer/player_dashboard_screen.dart' as player_view;
 import 'screens/settings/account_screen.dart';
+import 'screens/settings/developer_settings_screen.dart';
 import 'screens/support/contact_screen.dart';
 import 'screens/support/feedback_screen.dart';
 
@@ -58,6 +59,8 @@ class AppBootstrap extends StatelessWidget {
               '/tournaments/create': (context) =>
                   const CreateTournamentScreen(),
               '/account': (context) => const AccountScreen(),
+              '/developer-settings': (context) =>
+                  const DeveloperSettingsScreen(),
               '/contact': (context) => const ContactScreen(),
               '/feedback': (context) => const FeedbackScreen(),
             },

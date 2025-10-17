@@ -1,4 +1,4 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 // Create Tournament
 const createTournament = async (req, res) => {
@@ -8,9 +8,17 @@ const createTournament = async (req, res) => {
     return res.status(400).json({ error: "All fields are required" });
   }
 
-  const conn = await pool.getConnection();
+  // Check if user is authenticated
+  if (!req.user || !req.user.id) {
+    console.error("❌ No authenticated user in createTournament");
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
+  const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
+
+    console.log(`Creating tournament: ${tournament_name} by user ${req.user.id}`);
 
     const [result] = await conn.query(
       `INSERT INTO tournaments (tournament_name, start_date, location, created_by)
@@ -27,7 +35,9 @@ const createTournament = async (req, res) => {
   } catch (err) {
     await conn.rollback();
     console.error("❌ Error in createTournament:", err);
-    res.status(500).json({ error: "Server error" });
+    console.error("❌ Error details:", err.message);
+    console.error("❌ SQL State:", err.sqlState);
+    res.status(500).json({ error: "Server error", details: err.message });
   } finally {
     conn.release();
   }
@@ -36,7 +46,7 @@ const createTournament = async (req, res) => {
 // Get all tournaments with details
 const getTournaments = async (req, res) => {
   try {
-    const [rows] = await pool.query(`
+    const [rows] = await db.query(`
       SELECT t.*, u.phone_number AS creator_name,
              (SELECT COUNT(*) FROM tournament_teams tt WHERE tt.tournament_id = t.id) AS total_teams
       FROM tournaments t
@@ -59,7 +69,7 @@ const updateTournament = async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
       [tournamentId, req.user.id]
     );
@@ -81,7 +91,7 @@ const updateTournament = async (req, res) => {
 
     values.push(tournamentId);
 
-    await pool.query(
+    await db.query(
       `UPDATE tournaments SET ${updates.join(", ")} WHERE id = ?`,
       values
     );
@@ -102,7 +112,7 @@ const deleteTournament = async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
       [tournamentId, req.user.id]
     );
@@ -111,7 +121,7 @@ const deleteTournament = async (req, res) => {
       return res.status(403).json({ error: "Not allowed to delete this tournament" });
     }
 
-    await pool.query("DELETE FROM tournaments WHERE id = ?", [tournamentId]);
+    await db.query("DELETE FROM tournaments WHERE id = ?", [tournamentId]);
 
     res.json({ message: "Tournament deleted successfully" });
   } catch (err) {

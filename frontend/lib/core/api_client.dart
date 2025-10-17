@@ -1,24 +1,134 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 
 class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
 
+  // Cached base URL for synchronous access
+  String? _cachedBaseUrl;
+  bool _isInitialized = false;
+
   // Platform-aware base URL detection
   static String get baseUrl {
+    return instance._cachedBaseUrl ?? instance.getPlatformDefaultUrl();
+  }
+
+  // Initialize the cached base URL at app startup
+  Future<void> init() async {
+    if (_isInitialized) return;
+    _cachedBaseUrl = await getConfiguredBaseUrl();
+    _isInitialized = true;
+  }
+
+  String getPlatformDefaultUrl() {
+    // Platform-aware detection using web-safe methods
+    if (kIsWeb) {
+      // For web platform
+      return 'http://localhost:5000';
+    } else {
+      // For mobile and desktop platforms
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        return 'http://10.0.2.2:5000'; // Android emulator
+      } else {
+        return 'http://localhost:5000'; // iOS, Windows, macOS, Linux
+      }
+    }
+  }
+
+  // New methods for custom URL configuration
+  Future<void> setCustomBaseUrl(String url) async {
+    // Normalize URL by trimming trailing slash
+    final normalizedUrl = _normalizeUrl(url);
+    await _writeToStorage('custom_api_url', normalizedUrl);
+    // Update cached URL
+    _cachedBaseUrl = normalizedUrl;
+  }
+
+  Future<void> clearCustomBaseUrl() async {
+    await _deleteFromStorage('custom_api_url');
+    // Update cached URL to platform default
+    _cachedBaseUrl = getPlatformDefaultUrl();
+  }
+
+  Future<String> getConfiguredBaseUrl() async {
+    // First priority: Check for API_BASE_URL environment variable
     const String envUrl = String.fromEnvironment('API_BASE_URL');
     if (envUrl.isNotEmpty) {
-      return envUrl;
+      return _normalizeUrl(envUrl);
     }
 
-    // Detect Android emulator and use 10.0.2.2:5000
-    // For other platforms, use localhost:5000
-    return 'http://10.0.2.2:5000';
+    // Second priority: Check for custom URL in storage
+    final customUrl = await _readFromStorage('custom_api_url');
+    if (customUrl != null && customUrl.isNotEmpty) {
+      return _normalizeUrl(customUrl);
+    }
+
+    // Third priority: Platform default
+    return getPlatformDefaultUrl();
+  }
+
+  // Helper method to get the actual base URL for API calls
+  Future<String> _getBaseUrl() async {
+    // Use cached URL if available, otherwise get configured URL
+    if (_cachedBaseUrl != null) {
+      return _cachedBaseUrl!;
+    }
+    return await getConfiguredBaseUrl();
   }
 
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  SharedPreferences? _prefs;
+
+  // Web-safe storage abstraction
+  Future<void> _initStorage() async {
+    if (kIsWeb) {
+      _prefs ??= await SharedPreferences.getInstance();
+    }
+  }
+
+  Future<void> _writeToStorage(String key, String value) async {
+    await _initStorage();
+    if (kIsWeb) {
+      await _prefs!.setString(key, value);
+    } else {
+      await _storage.write(key: key, value: value);
+    }
+  }
+
+  Future<String?> _readFromStorage(String key) async {
+    await _initStorage();
+    if (kIsWeb) {
+      return _prefs!.getString(key);
+    } else {
+      return await _storage.read(key: key);
+    }
+  }
+
+  Future<void> _deleteFromStorage(String key) async {
+    await _initStorage();
+    if (kIsWeb) {
+      await _prefs!.remove(key);
+    } else {
+      await _storage.delete(key: key);
+    }
+  }
+
+  // URL normalization helper
+  String _normalizeUrl(String url) {
+    return url.trim().replaceAll(RegExp(r'/+$'), '');
+  }
+
+  // URL joining helper
+  String _joinUrl(String base, String path) {
+    final normalizedBase = _normalizeUrl(base);
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    return '$normalizedBase$normalizedPath';
+  }
 
   Future<String?> get token async => await _storage.read(key: 'jwt_token');
   Future<void> setToken(String token) =>
@@ -33,7 +143,8 @@ class ApiClient {
   Future<http.Response> get(String path, {Map<String, String>? headers}) async {
     return _withRefreshRetry(() async {
       final authHeaders = await _authHeaders(headers);
-      return http.get(Uri.parse('$baseUrl$path'), headers: authHeaders);
+      final baseUrl = await _getBaseUrl();
+      return http.get(Uri.parse(_joinUrl(baseUrl, path)), headers: authHeaders);
     });
   }
 
@@ -44,10 +155,12 @@ class ApiClient {
   }) async {
     return _withRefreshRetry(() async {
       final authHeaders = await _authHeaders(headers);
+      final baseUrl = await _getBaseUrl();
+      final encoded = body == null ? null : jsonEncode(body);
       return http.post(
-        Uri.parse('$baseUrl$path'),
+        Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
-        body: jsonEncode(body),
+        body: encoded,
       );
     });
   }
@@ -59,10 +172,12 @@ class ApiClient {
   }) async {
     return _withRefreshRetry(() async {
       final authHeaders = await _authHeaders(headers);
+      final baseUrl = await _getBaseUrl();
+      final encoded = body == null ? null : jsonEncode(body);
       return http.put(
-        Uri.parse('$baseUrl$path'),
+        Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
-        body: jsonEncode(body),
+        body: encoded,
       );
     });
   }
@@ -74,10 +189,12 @@ class ApiClient {
   }) async {
     return _withRefreshRetry(() async {
       final authHeaders = await _authHeaders(headers);
+      final baseUrl = await _getBaseUrl();
+      final encoded = body == null ? null : jsonEncode(body);
       return http.delete(
-        Uri.parse('$baseUrl$path'),
+        Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
-        body: jsonEncode(body),
+        body: encoded,
       );
     });
   }
@@ -122,8 +239,9 @@ class ApiClient {
     // try refresh
     final rt = await refreshToken;
     if (rt == null || rt.isEmpty) return first;
+    final baseUrl = await _getBaseUrl();
     final refreshResp = await http.post(
-      Uri.parse('$baseUrl/api/auth/refresh'),
+      Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'refresh_token': rt}),
     );

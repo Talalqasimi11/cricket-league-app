@@ -1,11 +1,11 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 /**
  * 📌 List ALL Tournament Matches (across tournaments)
  */
 const getAllTournamentMatches = async (req, res) => {
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT m.id, m.tournament_id, t.tournament_name, m.round, m.match_date, m.location, m.status,
               COALESCE(t1.team_name, tt1.temp_team_name) AS team1_name,
               COALESCE(t2.team_name, tt2.temp_team_name) AS team2_name,
@@ -36,7 +36,7 @@ const createTournamentMatches = async (req, res) => {
     return res.status(400).json({ error: "Tournament ID and mode are required" });
   }
 
-  const conn = await pool.getConnection();
+  const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
@@ -135,7 +135,7 @@ const getTournamentMatches = async (req, res) => {
   const { tournament_id } = req.params;
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT m.id, m.tournament_id, m.round, m.match_date, m.location, m.status,
               COALESCE(t1.team_name, tt1.temp_team_name) AS team1_name,
               COALESCE(t2.team_name, tt2.temp_team_name) AS team2_name,
@@ -167,7 +167,7 @@ const updateTournamentMatch = async (req, res) => {
 
   try {
     // check ownership
-    const [match] = await pool.query(
+    const [match] = await db.query(
       `SELECT m.*, t.created_by FROM tournament_matches m 
        JOIN tournaments t ON m.tournament_id = t.id
        WHERE m.id = ? AND t.created_by = ?`,
@@ -182,7 +182,7 @@ const updateTournamentMatch = async (req, res) => {
       return res.status(400).json({ error: "Cannot update after match started" });
     }
 
-    await pool.query(
+    await db.query(
       `UPDATE tournament_matches 
        SET match_date = ?, location = ?, team1_id = ?, team2_id = ? 
        WHERE id = ?`,
@@ -204,7 +204,7 @@ const startTournamentMatch = async (req, res) => {
 
   try {
     // check ownership
-    const [match] = await pool.query(
+    const [match] = await db.query(
       `SELECT m.*, t.created_by, t.id as tournament_id FROM tournament_matches m 
        JOIN tournaments t ON m.tournament_id = t.id
        WHERE m.id = ? AND t.created_by = ?`,
@@ -227,7 +227,7 @@ const startTournamentMatch = async (req, res) => {
 
     // Create actual match record for live scoring
     const oversDefault = 20; // TODO: derive from tournament config if available
-    const [ins] = await pool.query(
+    const [ins] = await db.query(
       `INSERT INTO matches (team1_id, team2_id, overs, status, tournament_id) VALUES (?, ?, ?, 'live', ?)`,
       [row.team1_id, row.team2_id, oversDefault, row.tournament_id]
     );
@@ -235,7 +235,7 @@ const startTournamentMatch = async (req, res) => {
     const createdMatchId = ins.insertId;
 
     // Link and set status
-    await pool.query(`UPDATE tournament_matches SET status = 'live', parent_match_id = ? WHERE id = ?`, [createdMatchId, id]);
+    await db.query(`UPDATE tournament_matches SET status = 'live', parent_match_id = ? WHERE id = ?`, [createdMatchId, id]);
 
     res.json({ message: "Match started, live scoring enabled", match_id: createdMatchId });
   } catch (err) {
@@ -257,7 +257,7 @@ const endTournamentMatch = async (req, res) => {
 
   try {
     // check ownership
-    const [match] = await pool.query(
+    const [match] = await db.query(
       `SELECT m.*, t.created_by FROM tournament_matches m 
        JOIN tournaments t ON m.tournament_id = t.id
        WHERE m.id = ? AND t.created_by = ?`,
@@ -272,7 +272,7 @@ const endTournamentMatch = async (req, res) => {
       return res.status(400).json({ error: "Match must be live to end" });
     }
 
-    await pool.query(
+    await db.query(
       `UPDATE tournament_matches 
        SET status = 'finished', winner_id = ? 
        WHERE id = ?`,
@@ -281,7 +281,7 @@ const endTournamentMatch = async (req, res) => {
 
     // If linked to an actual match, mark it completed as well
     if (match[0].parent_match_id) {
-      await pool.query(
+      await db.query(
         `UPDATE matches SET status = 'completed', winner_team_id = ? WHERE id = ?`,
         [winner_id, match[0].parent_match_id]
       );
@@ -293,7 +293,7 @@ const endTournamentMatch = async (req, res) => {
       const nextRound = `round_${parseInt(round.split("_")[1]) + 1}`;
 
       // find if next round already exists with empty slot
-      const [nextMatch] = await pool.query(
+      const [nextMatch] = await db.query(
         `SELECT * FROM tournament_matches 
          WHERE tournament_id = ? AND round = ? AND (team1_id IS NULL OR team2_id IS NULL)
          LIMIT 1`,
@@ -303,19 +303,19 @@ const endTournamentMatch = async (req, res) => {
       if (nextMatch.length > 0) {
         // fill empty slot
         if (!nextMatch[0].team1_id) {
-          await pool.query(`UPDATE tournament_matches SET team1_id = ? WHERE id = ?`, [
+          await db.query(`UPDATE tournament_matches SET team1_id = ? WHERE id = ?`, [
             winner_id,
             nextMatch[0].id,
           ]);
         } else {
-          await pool.query(`UPDATE tournament_matches SET team2_id = ? WHERE id = ?`, [
+          await db.query(`UPDATE tournament_matches SET team2_id = ? WHERE id = ?`, [
             winner_id,
             nextMatch[0].id,
           ]);
         }
       } else {
         // create new match
-        await pool.query(
+        await db.query(
           `INSERT INTO tournament_matches (tournament_id, team1_id, round, status) 
            VALUES (?, ?, ?, 'upcoming')`,
           [match[0].tournament_id, winner_id, nextRound]
@@ -338,7 +338,7 @@ const deleteTournamentMatch = async (req, res) => {
 
   try {
     // check ownership
-    const [match] = await pool.query(
+    const [match] = await db.query(
       `SELECT m.*, t.created_by FROM tournament_matches m 
        JOIN tournaments t ON m.tournament_id = t.id
        WHERE m.id = ? AND t.created_by = ?`,
@@ -353,7 +353,7 @@ const deleteTournamentMatch = async (req, res) => {
       return res.status(400).json({ error: "Cannot delete after match started" });
     }
 
-    await pool.query("DELETE FROM tournament_matches WHERE id = ?", [id]);
+    await db.query("DELETE FROM tournament_matches WHERE id = ?", [id]);
 
     res.json({ message: "Match deleted successfully" });
   } catch (err) {

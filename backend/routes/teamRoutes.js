@@ -8,7 +8,10 @@ router.get("/all", getAllTeams);
 router.get("/:id", getTeamById);
 
 // Protected routes
-router.get("/my-team", verifyToken, getMyTeam);
+router.get("/my-team", (req, res, next) => {
+  console.log("🔍 Route /my-team hit!");
+  next();
+}, verifyToken, getMyTeam);
 router.put("/update", verifyToken, updateMyTeam);
 
 module.exports = router;

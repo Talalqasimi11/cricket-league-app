@@ -3,7 +3,16 @@ const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
-let db;
+// Create database pool immediately - this will be available to controllers
+const db = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
 
 // ✅ Initialize database connection with auto-setup
 (async () => {
@@ -22,17 +31,6 @@ let db;
     // Close temporary connection
     await tempConnection.end();
 
-    // Now create the main connection pool with the database
-    db = mysql.createPool({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASS,
-      database: process.env.DB_NAME,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-    });
-
     // Test the connection
     const conn = await db.getConnection();
     console.log("✅ MySQL connected successfully");
@@ -45,14 +43,23 @@ let db;
     await runMigrations();
 
   } catch (err) {
-    console.error("❌ MySQL connection error:", err.message);
-    console.error("Please check your database credentials in .env file");
+    console.error("❌ FATAL: MySQL connection error:", err.message);
+    console.error("❌ Database connection failed. Please check your .env credentials:");
+    console.error("   - DB_HOST:", process.env.DB_HOST);
+    console.error("   - DB_USER:", process.env.DB_USER);
+    console.error("   - DB_NAME:", process.env.DB_NAME);
+    console.error("❌ Server cannot start without database. Exiting...");
+    process.exit(1);
   }
 })();
 
 // ✅ Setup database schema
 async function setupSchema() {
   try {
+    if (!db) {
+      throw new Error("Database pool not initialized");
+    }
+    
     const conn = await db.getConnection();
     
     // Check if users table exists
@@ -91,13 +98,18 @@ async function setupSchema() {
     
     conn.release();
   } catch (err) {
-    console.error("❌ Schema setup error:", err.message);
+    console.error("❌ FATAL: Schema setup error:", err.message);
+    throw err;
   }
 }
 
 // ✅ Run migrations after schema setup (with tracking)
 async function runMigrations() {
   try {
+    if (!db) {
+      throw new Error("Database pool not initialized");
+    }
+    
     const conn = await db.getConnection();
     
     // Create migrations tracking table if it doesn't exist
@@ -162,7 +174,8 @@ async function runMigrations() {
     console.log("✅ All pending migrations completed");
     conn.release();
   } catch (err) {
-    console.error("❌ Migration error:", err.message);
+    console.error("❌ FATAL: Migration error:", err.message);
+    throw err;
   }
 }
 

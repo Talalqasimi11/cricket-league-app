@@ -12,7 +12,11 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "migrate": "node scripts/runMigrations.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "seed": "node scripts/seedTestData.js",
+    "test": "NODE_ENV=test jest --runInBand --detectOpenHandles --forceExit",
+    "test:watch": "NODE_ENV=test jest --watch",
+    "test:setup": "node scripts/setupTestEnvironment.js",
+    "test:cleanup": "node scripts/cleanupTestEnvironment.js"
   },
   
   "keywords": [],
@@ -38,9 +42,8 @@
   },
   
   "devDependencies": {
-  
-    
-  "nodemon": "^3.1.10"
-  
+    "nodemon": "^3.1.10",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3"
   }
 }

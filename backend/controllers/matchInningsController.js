@@ -1,4 +1,4 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 /**
  * 📌 Get all innings of a match
@@ -7,7 +7,7 @@ const getInningsByMatch = async (req, res) => {
   const { match_id } = req.params;
 
   try {
-    const [innings] = await pool.query(
+    const [innings] = await db.query(
       "SELECT * FROM match_innings WHERE match_id = ? ORDER BY inning_number ASC",
       [match_id]
     );
@@ -30,7 +30,7 @@ const getInningById = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [[inning]] = await pool.query("SELECT * FROM match_innings WHERE id = ?", [id]);
+    const [[inning]] = await db.query("SELECT * FROM match_innings WHERE id = ?", [id]);
 
     if (!inning) {
       return res.status(404).json({ error: "Innings not found" });
@@ -51,7 +51,7 @@ const updateInnings = async (req, res) => {
   const { runs, wickets, overs, status } = req.body;
 
   try {
-    const [result] = await pool.query(
+    const [result] = await db.query(
       `UPDATE match_innings 
        SET runs = ?, wickets = ?, overs = ?, status = ? 
        WHERE id = ?`,
@@ -76,7 +76,7 @@ const deleteInnings = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [result] = await pool.query("DELETE FROM match_innings WHERE id = ?", [id]);
+    const [result] = await db.query("DELETE FROM match_innings WHERE id = ?", [id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Innings not found to delete" });

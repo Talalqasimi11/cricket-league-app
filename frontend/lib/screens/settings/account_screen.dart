@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
+import 'developer_settings_screen.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -154,6 +155,42 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('Save Phone'),
+            ),
+            const Divider(height: 32),
+
+            // API Configuration Section
+            const Text(
+              'Developer Settings',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.settings_ethernet),
+                title: const Text('API Configuration'),
+                subtitle: FutureBuilder<String>(
+                  future: ApiClient.instance.getConfiguredBaseUrl(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasData) {
+                      final url = snapshot.data!;
+                      final displayUrl = url.length > 40
+                          ? '${url.substring(0, 37)}...'
+                          : url;
+                      return Text(displayUrl);
+                    }
+                    return const Text('Loading...');
+                  },
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const DeveloperSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),

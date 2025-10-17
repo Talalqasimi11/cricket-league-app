@@ -1,0 +1,691 @@
+[
+  {
+    "id": "TC001",
+    "title": "User Registration with Valid Phone Number",
+    "description": "Verify successful user registration creates a unique team and assigns the registering user as team captain on valid phone number and password input.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to registration screen"
+      },
+      {
+        "type": "action",
+        "description": "Input valid phone number and valid password"
+      },
+      {
+        "type": "action",
+        "description": "Submit registration form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user account is created"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a unique team is automatically created"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the registered user is assigned as the captain of the newly created team"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "User Registration with Invalid Phone Number",
+    "description": "Verify registration fails when the phone number format is invalid.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to registration screen"
+      },
+      {
+        "type": "action",
+        "description": "Input invalid phone number and valid password"
+      },
+      {
+        "type": "action",
+        "description": "Submit registration form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify registration is rejected with appropriate error message"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "User Login with Correct Credentials",
+    "description": "Verify user can log in successfully with correct credentials and receives valid JWT access and refresh tokens.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to login screen"
+      },
+      {
+        "type": "action",
+        "description": "Input valid phone number and correct password"
+      },
+      {
+        "type": "action",
+        "description": "Click login button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify login success"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access and refresh JWT tokens are returned"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify refresh token is stored securely"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "User Login with Incorrect Password and Progressive Lockout Enforcement",
+    "description": "Verify user login fails with incorrect password and progressive lockout is enforced after specified number of failed attempts.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to login screen"
+      },
+      {
+        "type": "action",
+        "description": "Input valid phone number and incorrect password"
+      },
+      {
+        "type": "action",
+        "description": "Click login button multiple times to exceed allowed failed attempts"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify login is rejected with error message"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify account is locked or login throttled according to policy"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Password Reset via Tokenized Flow",
+    "description": "Verify password reset process works correctly with tokenized flow and tokens are revoked after use.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to forgot password screen"
+      },
+      {
+        "type": "action",
+        "description": "Submit registered phone number to request password reset"
+      },
+      {
+        "type": "action",
+        "description": "Receive password reset token"
+      },
+      {
+        "type": "action",
+        "description": "Use token to submit new password"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify password is successfully reset"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify password reset token is revoked and cannot be reused"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Team Creation and Player Addition by Captain",
+    "description": "Verify team captain can create a team and add players, designate captain and owner roles, and view team dashboard.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as user with captain role"
+      },
+      {
+        "type": "action",
+        "description": "Create a new team"
+      },
+      {
+        "type": "action",
+        "description": "Add players to the team"
+      },
+      {
+        "type": "action",
+        "description": "Designate one player as team captain"
+      },
+      {
+        "type": "action",
+        "description": "Designate one player as team owner"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify team is created successfully"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify players are correctly added and roles set"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify team dashboard displays correct information"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Team Management Access Control",
+    "description": "Verify only team owners and captains can manage team roster and perform team updates; unauthorized users are denied access.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as user without team owner or captain role"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to add or update players in a team"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is denied with appropriate error response"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Tournament Creation with Required Fields",
+    "description": "Verify tournament creator can successfully create tournaments enforcing all required fields and ownership is correctly assigned.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as authorized user"
+      },
+      {
+        "type": "action",
+        "description": "Open tournament creation screen"
+      },
+      {
+        "type": "action",
+        "description": "Input valid tournament details with all required fields"
+      },
+      {
+        "type": "action",
+        "description": "Submit tournament creation form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify tournament is created successfully"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify ownership is correctly assigned to creating user"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Tournament Creation with Missing Required Fields",
+    "description": "Verify tournament creation fails when required fields are missing with correct validation error messages.",
+    "category": "error handling",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to tournament creation form"
+      },
+      {
+        "type": "action",
+        "description": "Leave required fields empty or invalid"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to submit tournament creation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify submission is rejected with appropriate validation error messages"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Registering Teams to Tournament",
+    "description": "Verify users can register both registered and temporary teams to tournaments and system tracks registrations correctly.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as team owner or captain"
+      },
+      {
+        "type": "action",
+        "description": "Register a registered team to a tournament"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify team registration is successfully recorded"
+      },
+      {
+        "type": "action",
+        "description": "Register a temporary team to a tournament"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify temporary team registration is successfully recorded and distinguishable"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Match Creation and Status Updates",
+    "description": "Verify authorized users can create matches within tournaments, update match statuses correctly, and invalid status transitions are rejected.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as tournament creator or authorized captain"
+      },
+      {
+        "type": "action",
+        "description": "Create a new match assigning teams and schedule"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify match is created with correct initial status"
+      },
+      {
+        "type": "action",
+        "description": "Update match status through valid transitions (e.g. scheduled > ongoing > completed)"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify status updates are accepted only if valid"
+      },
+      {
+        "type": "action",
+        "description": "Attempt invalid status transition"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify invalid status update is rejected"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Player Lineups for Matches",
+    "description": "Verify match player lineups can be created and modified by authorized users and lineup data is persisted accurately.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as match manager or captain"
+      },
+      {
+        "type": "action",
+        "description": "Select teams for match lineup"
+      },
+      {
+        "type": "action",
+        "description": "Add and update player lineups prior to match start"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify lineups are saved and displayed correctly"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Live Ball-by-Ball Scoring - Normal Flow",
+    "description": "Verify live match scorers can submit ball-by-ball inputs correctly, innings and player statistics update in real-time and UI reflects changes.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as authorized scorer"
+      },
+      {
+        "type": "action",
+        "description": "Start live scoring session for an ongoing match"
+      },
+      {
+        "type": "action",
+        "description": "Input valid delivery results (runs, extras, wickets, etc.) ball-by-ball"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify innings stats and individual player stats are updated correctly in real-time"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify UI reflects ball information, updated score, and player statistics instantly"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Live Scoring - Inning Auto-Ending and Transition Handling",
+    "description": "Verify innings end automatically as per game rules (e.g. overs completed, all out) and match progresses to next innings smoothly.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Conduct live scoring input until innings completion condition is met"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify innings is ended automatically"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify next innings is started or match marked completed as appropriate"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Live Scoring Authorization Enforcement",
+    "description": "Verify that only authorized scorers or captains can update live match scoring data and unauthorized attempts are rejected.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as unauthorized user"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to submit live scoring data for a match"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify request is denied with authorization error"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Live Scoring - Ball Number and Innings Rules Enforcement",
+    "description": "Verify live scoring inputs respect ball number sequencing, overs count, and innings related rules and reject invalid inputs or duplicates.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Submit ball-by-ball delivery with valid sequence"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify delivery accepted and innings stats updated"
+      },
+      {
+        "type": "action",
+        "description": "Submit ball with duplicate or out-of-sequence ball number"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify delivery is rejected with error"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Player Statistics Aggregation",
+    "description": "Verify player statistics aggregate correctly across matches and tournaments, and player dashboards display accurate information.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "View player dashboard after multiple matches are completed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify aggregated performance statistics correctly computed and displayed"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Scorecards and Match Statistics Retrieval",
+    "description": "Verify retrieval endpoints return accurate scorecards and detailed match statistics after match completion, with proper sorting and error handling.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Request completed match scorecard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify accurate score and statistics are returned"
+      },
+      {
+        "type": "action",
+        "description": "Request scorecard for non-existent match"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify appropriate error response is returned"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Feedback Submission with Profanity Filtering",
+    "description": "Verify that feedback submissions are validated for length and filtered for profanity, storing valid feedback along with IP and user agent data.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Submit feedback with valid content"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify feedback is accepted and stored with user metadata"
+      },
+      {
+        "type": "action",
+        "description": "Submit feedback with profane words"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify submission is rejected or cleaned according to policy"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "API Rate Limiting Enforcement",
+    "description": "Verify that API endpoints enforce rate limiting, rejecting requests exceeding the allowed threshold with appropriate error codes.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send repeated API requests rapidly exceeding rate limits"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify requests beyond limit receive rate limit error response"
+      }
+    ]
+  },
+  {
+    "id": "TC021",
+    "title": "JWT Token Validation and Refresh Flow",
+    "description": "Verify that JWT access tokens are validated for protected routes, and refresh tokens can securely generate new access tokens until revoked.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Access protected API route with valid access token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify API call succeeds"
+      },
+      {
+        "type": "action",
+        "description": "Access protected API route with expired or invalid token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify API call is rejected"
+      },
+      {
+        "type": "action",
+        "description": "Use valid refresh token to request new access token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify new access token is issued"
+      },
+      {
+        "type": "action",
+        "description": "Use revoked refresh token to request new access token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify request is rejected"
+      }
+    ]
+  },
+  {
+    "id": "TC022",
+    "title": "Offline Data Caching in Mobile App",
+    "description": "Verify that mobile app frontend supports offline caching of data for team, tournament, and match details and correctly updates when back online.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Load team, tournament, and match screens while online"
+      },
+      {
+        "type": "action",
+        "description": "Turn off network connection"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to previously viewed data screens"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify cached data is displayed correctly without errors"
+      },
+      {
+        "type": "action",
+        "description": "Reconnect network and refresh data"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify data is refreshed and updated in UI"
+      }
+    ]
+  },
+  {
+    "id": "TC023",
+    "title": "Frontend Token Storage Security",
+    "description": "Verify that JWT tokens (access and refresh) are stored securely in the mobile app and prevent unauthorized access.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in to the app and verify token storage"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify tokens are stored securely using recommended storage solutions (e.g., secure storage packages)"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify tokens are not accessible to other apps or via insecure storage"
+      }
+    ]
+  },
+  {
+    "id": "TC024",
+    "title": "Feedback Submission with Optional User Authentication",
+    "description": "Verify users can submit feedback anonymously or when authenticated, and system records feedback accordingly.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Submit feedback while logged in"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify feedback is stored with user identification"
+      },
+      {
+        "type": "action",
+        "description": "Submit feedback while not logged in"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify feedback is stored anonymously without user details"
+      }
+    ]
+  },
+  {
+    "id": "TC025",
+    "title": "Tournament Team Registration Limits and Validation",
+    "description": "Verify the system enforces limits on number of teams per tournament and validates team eligibility during registration.",
+    "category": "error handling",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Attempt to register teams exceeding tournament maximum allowed number"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify additional registrations are rejected with clear error"
+      },
+      {
+        "type": "action",
+        "description": "Register a team which does not meet tournament eligibility or incomplete requirements"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify registration is rejected with validation error"
+      }
+    ]
+  }
+]

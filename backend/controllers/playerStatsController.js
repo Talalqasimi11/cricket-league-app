@@ -1,4 +1,4 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 /**
  * 📌 Get Top Run Scorers (for a tournament or overall)
@@ -7,7 +7,7 @@ const getTopRunScorers = async (req, res) => {
   const { tournament_id } = req.params;
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT p.id AS player_id, p.player_name, 
               SUM(ps.runs) AS total_runs,
               SUM(ps.balls_faced) AS balls,
@@ -36,7 +36,7 @@ const getTopWicketTakers = async (req, res) => {
   const { tournament_id } = req.params;
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT p.id AS player_id, p.player_name,
               SUM(ps.wickets) AS total_wickets,
               SUM(ps.balls_bowled) AS balls,
@@ -65,7 +65,7 @@ const getPlayerStats = async (req, res) => {
   const { tournament_id, player_id } = req.params;
 
   try {
-    const [[stats]] = await pool.query(
+    const [[stats]] = await db.query(
       `SELECT p.id AS player_id, p.player_name, p.player_role,
               SUM(ps.runs) AS runs,
               SUM(ps.balls_faced) AS balls,

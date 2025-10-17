@@ -1,4 +1,4 @@
-const pool = require("../config/db");
+const db = require("../config/db");
 
 /**
  * 📌 Get Tournament Standings
@@ -7,7 +7,7 @@ const getTournamentSummary = async (req, res) => {
   const { tournament_id } = req.params;
 
   try {
-    const [rows] = await pool.query(
+    const [rows] = await db.query(
       `SELECT 
          t.id AS team_id,
          t.team_name,
