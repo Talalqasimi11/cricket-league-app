@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { logDatabaseError } = require("../utils/safeLogger");
 
 // 📌 Add a team to a tournament (registered OR temporary)
 const addTournamentTeam = async (req, res) => {
@@ -26,8 +27,18 @@ const addTournamentTeam = async (req, res) => {
       return res.status(400).json({ success: false, error: "Cannot add teams once tournament has started" });
     }
 
-    // ✅ Prevent duplicate registered team
+    // ✅ Prevent duplicate registered team and validate team exists
     if (team_id) {
+      // First validate that the team exists
+      const [teamExists] = await db.query(
+        "SELECT id FROM teams WHERE id = ?",
+        [team_id]
+      );
+      if (teamExists.length === 0) {
+        return res.status(404).json({ success: false, error: "Team not found" });
+      }
+
+      // Then check for duplicates
       const [exists] = await db.query(
         "SELECT id FROM tournament_teams WHERE tournament_id = ? AND team_id = ?",
         [tournament_id, team_id]
@@ -37,22 +48,22 @@ const addTournamentTeam = async (req, res) => {
       }
     }
 
-    // ✅ Prevent duplicate temporary team
+    // ✅ Prevent duplicate temporary team (case-insensitive)
     if (temp_team_name && temp_team_location) {
       const [exists] = await db.query(
-        "SELECT id FROM tournament_teams WHERE tournament_id = ? AND temp_team_name = ? AND temp_team_location = ?",
-        [tournament_id, temp_team_name, temp_team_location]
+        "SELECT id FROM tournament_teams WHERE tournament_id = ? AND LOWER(temp_team_name) = LOWER(?) AND LOWER(temp_team_location) = LOWER(?)",
+        [tournament_id, temp_team_name.trim(), temp_team_location.trim()]
       );
       if (exists.length > 0) {
         return res.status(400).json({ success: false, error: "This temporary team already exists" });
       }
     }
 
-    // ✅ Insert
+    // ✅ Insert (normalize temp team data)
     const [result] = await db.query(
       `INSERT INTO tournament_teams (tournament_id, team_id, temp_team_name, temp_team_location) 
        VALUES (?, ?, ?, ?)`,
-      [tournament_id, team_id || null, temp_team_name || null, temp_team_location || null]
+      [tournament_id, team_id || null, temp_team_name?.trim() || null, temp_team_location?.trim() || null]
     );
 
     res.status(201).json({
@@ -61,7 +72,7 @@ const addTournamentTeam = async (req, res) => {
       id: result.insertId,
     });
   } catch (err) {
-    console.error("❌ Error in addTournamentTeam:", err);
+    logDatabaseError(req.log, "addTournamentTeam", err, { tournamentId: tournament_id, teamId: team_id });
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
@@ -86,7 +97,7 @@ const getTournamentTeams = async (req, res) => {
 
     res.json({ success: true, data: rows });
   } catch (err) {
-    console.error("❌ Error in getTournamentTeams:", err);
+    logDatabaseError(req.log, "getTournamentTeams", err, { tournamentId: tournament_id });
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
@@ -141,7 +152,7 @@ const updateTournamentTeam = async (req, res) => {
 
     res.json({ success: true, message: "Tournament team updated successfully" });
   } catch (err) {
-    console.error("❌ Error in updateTournamentTeam:", err);
+    logDatabaseError(req.log, "updateTournamentTeam", err, { tournamentId: tournament_id, teamId: id });
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
@@ -167,9 +178,9 @@ const deleteTournamentTeam = async (req, res) => {
       return res.status(400).json({ success: false, error: "Cannot delete teams once tournament has started" });
     }
 
-    // ✅ Prevent deletion if team already in matches
+    // ✅ Prevent deletion if team already in tournament matches
     const [used] = await db.query(
-      "SELECT id FROM matches WHERE (team1_tournament_team_id = ? OR team2_tournament_team_id = ?) AND tournament_id = ? LIMIT 1",
+      "SELECT id FROM tournament_matches WHERE (team1_tt_id = ? OR team2_tt_id = ?) AND tournament_id = ? LIMIT 1",
       [id, id, tournament_id]
     );
     if (used.length > 0) {
@@ -180,7 +191,7 @@ const deleteTournamentTeam = async (req, res) => {
 
     res.json({ success: true, message: "Tournament team deleted successfully" });
   } catch (err) {
-    console.error("❌ Error in deleteTournamentTeam:", err);
+    logDatabaseError(req.log, "deleteTournamentTeam", err, { tournamentId: tournament_id, teamId: id });
     res.status(500).json({ success: false, error: "Server error" });
   }
 };

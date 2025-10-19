@@ -1,12 +1,16 @@
 const db = require("../config/db");
 
-// Configurable profanity filter list (could be moved to env or config file)
+// Configurable profanity filter list - load from environment or use sanitized default
 const PROFANITY_LIST = process.env.PROFANITY_FILTER 
   ? process.env.PROFANITY_FILTER.split(',').map(w => w.trim().toLowerCase())
   : [
-      'fuck', 'shit', 'bitch', 'asshole', 'bastard', 'cunt', 'dick',
-      'damn', 'piss', 'cock', 'pussy', 'slut', 'whore', 'fag', 'nigger'
+      // Sanitized default list - generic categories only
+      'spam', 'scam', 'fake', 'bot'
     ];
+
+// If no profanity filter is configured, disable the feature
+const PROFANITY_FILTER_ENABLED = process.env.PROFANITY_FILTER_ENABLED === 'true' || 
+                                  process.env.PROFANITY_FILTER !== undefined;
 
 const MAX_FEEDBACK_LENGTH = 1000;
 const MIN_FEEDBACK_LENGTH = 5;
@@ -32,18 +36,20 @@ const createFeedback = async (req, res) => {
   }
   
   // Profanity filter with word boundary checks to reduce false positives
-  const lowered = normalized.toLowerCase();
-  const foundBadWord = PROFANITY_LIST.find((word) => {
-    // Use word boundaries to avoid false positives (e.g., "assignment" shouldn't trigger "ass")
-    const regex = new RegExp(`\\b${word}\\b`, 'i');
-    return regex.test(lowered);
-  });
-  
-  if (foundBadWord) {
-    // Log for abuse monitoring without revealing specific word
-    const ipAddress = req.ip || req.socket?.remoteAddress || null;
-    console.warn(`⚠️  Profanity detected in feedback from IP ${ipAddress}, user ${userId}`);
-    return res.status(400).json({ error: "Inappropriate content detected. Please use respectful language." });
+  if (PROFANITY_FILTER_ENABLED) {
+    const lowered = normalized.toLowerCase();
+    const foundBadWord = PROFANITY_LIST.find((word) => {
+      // Use word boundaries to avoid false positives (e.g., "assignment" shouldn't trigger "ass")
+      const regex = new RegExp(`\\b${word}\\b`, 'i');
+      return regex.test(lowered);
+    });
+    
+    if (foundBadWord) {
+      // Log for abuse monitoring without revealing specific word
+      const ipAddress = req.ip || req.socket?.remoteAddress || null;
+      console.warn(`⚠️  Profanity detected in feedback from IP ${ipAddress}, user ${userId}`);
+      return res.status(400).json({ error: "Inappropriate content detected. Please use respectful language." });
+    }
   }
   
   try {
@@ -58,7 +64,7 @@ const createFeedback = async (req, res) => {
     
     return res.status(201).json({ message: "Feedback received. Thank you!" });
   } catch (err) {
-    console.error("❌ Error in createFeedback:", err);
+    req.log?.error("createFeedback: Database error", { error: err.message, code: err.code, userId, ipAddress: req.ip });
     return res.status(500).json({ error: "Server error" });
   }
 };

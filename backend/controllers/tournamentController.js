@@ -1,43 +1,50 @@
 const db = require("../config/db");
+const { getValidationMessage, createErrorResponse, createSuccessResponse } = require("../utils/validationMessages");
+const { sendSuccess, sendError, sendValidationError, sendAuthError, sendForbiddenError, sendServerError, sendCreated, sendUpdated, sendDeleted } = require("../utils/responseUtils");
 
 // Create Tournament
 const createTournament = async (req, res) => {
-  const { tournament_name, start_date, location } = req.body;
+  const { tournament_name, start_date, location, overs, end_date } = req.body;
 
   if (!tournament_name || !start_date || !location) {
-    return res.status(400).json({ error: "All fields are required" });
+    return sendValidationError(res, getValidationMessage('REQUIRED_FIELDS', ['tournament_name', 'start_date', 'location']));
+  }
+
+  // Validate overs if provided
+  if (overs !== undefined && (overs < 1 || overs > 50)) {
+    return sendValidationError(res, "Overs must be between 1 and 50");
+  }
+
+  // Validate end_date if provided
+  if (end_date && new Date(end_date) < new Date(start_date)) {
+    return sendValidationError(res, "End date cannot be before start date");
   }
 
   // Check if user is authenticated
   if (!req.user || !req.user.id) {
-    console.error("❌ No authenticated user in createTournament");
-    return res.status(401).json({ error: "Authentication required" });
+    req.log?.error("createTournament: No authenticated user");
+    return sendAuthError(res, getValidationMessage('UNAUTHORIZED'));
   }
 
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
-    console.log(`Creating tournament: ${tournament_name} by user ${req.user.id}`);
+    req.log?.info(`Creating tournament: ${tournament_name} by user ${req.user.id}`);
 
     const [result] = await conn.query(
-      `INSERT INTO tournaments (tournament_name, start_date, location, created_by)
-       VALUES (?, ?, ?, ?)`,
-      [tournament_name, start_date, location, req.user.id]
+      `INSERT INTO tournaments (tournament_name, start_date, location, created_by, status, overs, end_date)
+       VALUES (?, ?, ?, ?, 'upcoming', ?, ?)`,
+      [tournament_name, start_date, location, req.user.id, overs || 20, end_date || null]
     );
 
     await conn.commit();
 
-    res.status(201).json({
-      message: "Tournament created successfully",
-      tournamentId: result.insertId,
-    });
+    sendCreated(res, { tournament_id: result.insertId }, "Tournament created successfully");
   } catch (err) {
     await conn.rollback();
-    console.error("❌ Error in createTournament:", err);
-    console.error("❌ Error details:", err.message);
-    console.error("❌ SQL State:", err.sqlState);
-    res.status(500).json({ error: "Server error", details: err.message });
+    req.log?.error("createTournament: Database error", { error: err.message, code: err.code, sqlState: err.sqlState, tournamentName: tournament_name });
+    sendServerError(res, "Server error", err.message);
   } finally {
     conn.release();
   }
@@ -53,19 +60,36 @@ const getTournaments = async (req, res) => {
       JOIN users u ON t.created_by = u.id
       ORDER BY t.start_date DESC
     `);
-    res.json(rows);
+    sendSuccess(res, 200, "Tournaments retrieved successfully", rows);
   } catch (err) {
-    console.error("❌ Error in getTournaments:", err);
-    res.status(500).json({ error: "Server error" });
+    req.log?.error("getTournaments: Database error", { error: err.message, code: err.code });
+    sendServerError(res, "Server error");
   }
+};
+
+// Status transition validation
+const validateStatusTransition = (currentStatus, newStatus) => {
+  const validTransitions = {
+    'not_started': ['upcoming', 'live', 'abandoned'],
+    'upcoming': ['live', 'abandoned'],
+    'live': ['completed', 'abandoned'],
+    'completed': [], // No transitions from completed
+    'abandoned': [] // No transitions from abandoned
+  };
+
+  if (!validTransitions[currentStatus] || !validTransitions[currentStatus].includes(newStatus)) {
+    return false;
+  }
+  return true;
 };
 
 // Update Tournament
 const updateTournament = async (req, res) => {
-  const { tournamentId, tournament_name, start_date, location } = req.body;
+  const tournamentId = req.params.id || req.body.tournamentId;
+  const { tournament_name, start_date, location, status, overs, end_date } = req.body;
 
   if (!tournamentId) {
-    return res.status(400).json({ error: "tournamentId is required" });
+    return sendValidationError(res, getValidationMessage('REQUIRED_FIELD', 'tournamentId'));
   }
 
   try {
@@ -75,7 +99,26 @@ const updateTournament = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(403).json({ error: "Not allowed to update this tournament" });
+      return sendForbiddenError(res, getValidationMessage('NOT_TOURNAMENT_OWNER'));
+    }
+
+    const currentTournament = rows[0];
+
+    // Validate status transition if status is being updated
+    if (status && status !== currentTournament.status) {
+      if (!validateStatusTransition(currentTournament.status, status)) {
+        return sendValidationError(res, getValidationMessage('INVALID_STATUS_TRANSITION', currentTournament.status, status));
+      }
+    }
+
+    // Validate overs if provided
+    if (overs !== undefined && (overs < 1 || overs > 50)) {
+      return sendValidationError(res, "Overs must be between 1 and 50");
+    }
+
+    // Validate end_date if provided
+    if (end_date && new Date(end_date) < new Date(start_date || currentTournament.start_date)) {
+      return sendValidationError(res, "End date cannot be before start date");
     }
 
     const updates = [];
@@ -84,9 +127,12 @@ const updateTournament = async (req, res) => {
     if (tournament_name) { updates.push("tournament_name = ?"); values.push(tournament_name); }
     if (start_date) { updates.push("start_date = ?"); values.push(start_date); }
     if (location) { updates.push("location = ?"); values.push(location); }
+    if (status) { updates.push("status = ?"); values.push(status); }
+    if (overs !== undefined) { updates.push("overs = ?"); values.push(overs); }
+    if (end_date !== undefined) { updates.push("end_date = ?"); values.push(end_date); }
 
     if (updates.length === 0) {
-      return res.status(400).json({ error: "No fields to update" });
+      return sendValidationError(res, "No fields to update");
     }
 
     values.push(tournamentId);
@@ -96,19 +142,19 @@ const updateTournament = async (req, res) => {
       values
     );
 
-    res.json({ message: "Tournament updated successfully" });
+    sendUpdated(res, null, "Tournament updated successfully");
   } catch (err) {
-    console.error("❌ Error in updateTournament:", err);
-    res.status(500).json({ error: "Server error" });
+    req.log?.error("updateTournament: Database error", { error: err.message, code: err.code, tournamentId });
+    sendServerError(res, "Server error");
   }
 };
 
 // Delete Tournament
 const deleteTournament = async (req, res) => {
-  const { tournamentId } = req.body;
+  const tournamentId = req.params.id || req.body.tournamentId;
 
   if (!tournamentId) {
-    return res.status(400).json({ error: "tournamentId is required" });
+    return sendValidationError(res, getValidationMessage('REQUIRED_FIELD', 'tournamentId'));
   }
 
   try {
@@ -118,15 +164,15 @@ const deleteTournament = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(403).json({ error: "Not allowed to delete this tournament" });
+      return sendForbiddenError(res, "Not allowed to delete this tournament");
     }
 
     await db.query("DELETE FROM tournaments WHERE id = ?", [tournamentId]);
 
-    res.json({ message: "Tournament deleted successfully" });
+    sendDeleted(res, "Tournament deleted successfully");
   } catch (err) {
-    console.error("❌ Error in deleteTournament:", err);
-    res.status(500).json({ error: "Server error" });
+    req.log?.error("deleteTournament: Database error", { error: err.message, code: err.code, tournamentId });
+    sendServerError(res, "Server error");
   }
 };
 

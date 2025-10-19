@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:async';
 import '../../../core/api_client.dart';
 
 class LiveMatchViewScreen extends StatefulWidget {
@@ -19,14 +20,40 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
   String currentOvers = '0.0';
   List<Map<String, String>> ballByBall = const [];
 
+  // Real-time update configuration
+  Timer? _refreshTimer;
+  static const Duration _refreshInterval = Duration(seconds: 5);
+  bool _isRefreshing = false;
+
   @override
   void initState() {
     super.initState();
     _fetchLive();
+    _startPeriodicRefresh();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startPeriodicRefresh() {
+    _refreshTimer = Timer.periodic(_refreshInterval, (timer) {
+      if (mounted && !_isRefreshing) {
+        _fetchLive();
+      }
+    });
   }
 
   Future<void> _fetchLive() async {
-    setState(() => _loading = true);
+    if (_isRefreshing) return; // Prevent concurrent refreshes
+
+    setState(() {
+      _loading = true;
+      _isRefreshing = true;
+    });
+
     try {
       final resp = await ApiClient.instance.get(
         '/api/viewer/live-score/${widget.matchId}',
@@ -91,8 +118,17 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
         ).showSnackBar(SnackBar(content: Text('Error loading live score: $e')));
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _isRefreshing = false;
+        });
+      }
     }
+  }
+
+  Future<void> _onRefresh() async {
+    await _fetchLive();
   }
 
   @override
@@ -127,192 +163,197 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // 🏏 Match Info Card
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1a3d27),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.green.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Match Title + Overs
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "$teamA vs $teamB",
-                            style: const TextStyle(
-                              color: Color(0xFF36e27b),
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            "$overs Overs Match",
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Text(
-                              "LIVE",
-                              style: TextStyle(
-                                color: Colors.green,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
+          : RefreshIndicator(
+              onRefresh: _onRefresh,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // 🏏 Match Info Card
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1a3d27),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.green.withValues(alpha: 0.2),
                       ),
-
-                      // Team Logos simplified (no network fetch for web safety)
-                      Row(
-                        children: const [
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundColor: Colors.grey,
-                            child: Icon(Icons.shield, color: Colors.white),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8),
-                            child: Text(
-                              "vs",
-                              style: TextStyle(
-                                color: Colors.grey,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Match Title + Overs
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "$teamA vs $teamB",
+                              style: const TextStyle(
+                                color: Color(0xFF36e27b),
                                 fontSize: 16,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ),
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundColor: Colors.grey,
-                            child: Icon(Icons.shield, color: Colors.white),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+                            Text(
+                              "$overs Overs Match",
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                "LIVE",
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
 
-                const SizedBox(height: 20),
-
-                // 📊 Scorecard
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1a3d27),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.green.withValues(alpha: 0.2),
+                        // Team Logos simplified (no network fetch for web safety)
+                        Row(
+                          children: const [
+                            CircleAvatar(
+                              radius: 20,
+                              backgroundColor: Colors.grey,
+                              child: Icon(Icons.shield, color: Colors.white),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                "vs",
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                            CircleAvatar(
+                              radius: 20,
+                              backgroundColor: Colors.grey,
+                              child: Icon(Icons.shield, color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        "Batting Team",
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontWeight: FontWeight.w600,
+
+                  const SizedBox(height: 20),
+
+                  // 📊 Scorecard
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1a3d27),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.green.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          "Batting Team",
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
+                        const SizedBox(height: 12),
 
-                      // Score + Overs
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Column(
-                            children: [
-                              Text(
-                                score,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.bold,
+                        // Score + Overs
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Column(
+                              children: [
+                                Text(
+                                  score,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 36,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                              const Text(
-                                "Runs / Wickets",
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 12,
+                                const Text(
+                                  "Runs / Wickets",
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 12,
+                                  ),
                                 ),
+                              ],
+                            ),
+                            Container(
+                              height: 40,
+                              width: 1,
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 20,
                               ),
-                            ],
-                          ),
-                          Container(
-                            height: 40,
-                            width: 1,
-                            margin: const EdgeInsets.symmetric(horizontal: 20),
-                            color: Colors.grey.withValues(alpha: 0.3),
-                          ),
-                          Column(
-                            children: [
-                              Text(
-                                currentOvers,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.bold,
+                              color: Colors.grey.withValues(alpha: 0.3),
+                            ),
+                            Column(
+                              children: [
+                                Text(
+                                  currentOvers,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 36,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                              const Text(
-                                "Overs",
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 12,
+                                const Text(
+                                  "Overs",
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 12,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
-                // 📒 Ball-by-Ball Log
-                const Text(
-                  "Ball-by-Ball Log",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                  // 📒 Ball-by-Ball Log
+                  const Text(
+                    "Ball-by-Ball Log",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-                ...ballByBall.map(
-                  (ball) => _buildBallLog(
-                    over: ball["over"] ?? "",
-                    bowler: ball["bowler"] ?? "",
-                    batsman: ball["batsman"] ?? "",
-                    commentary: ball["commentary"] ?? "",
-                    result: ball["result"] ?? "",
+                  ...ballByBall.map(
+                    (ball) => _buildBallLog(
+                      over: ball["over"] ?? "",
+                      bowler: ball["bowler"] ?? "",
+                      batsman: ball["batsman"] ?? "",
+                      commentary: ball["commentary"] ?? "",
+                      result: ball["result"] ?? "",
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
 
       // 🔽 Bottom Navigation

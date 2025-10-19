@@ -1,9 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http/browser_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
+    show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
+
+// Conditional imports for cookie handling
+import 'cookie_stub.dart' if (dart.library.io) 'cookie_io.dart';
 
 class ApiClient {
   ApiClient._();
@@ -84,6 +88,12 @@ class ApiClient {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   SharedPreferences? _prefs;
 
+  // Web-specific HTTP client with credentials support
+  http.Client? _webClient;
+
+  // Web access token storage (in-memory only)
+  String? _webAccessToken;
+
   // Web-safe storage abstraction
   Future<void> _initStorage() async {
     if (kIsWeb) {
@@ -130,21 +140,81 @@ class ApiClient {
     return '$normalizedBase$normalizedPath';
   }
 
-  Future<String?> get token async => await _storage.read(key: 'jwt_token');
-  Future<void> setToken(String token) =>
-      _storage.write(key: 'jwt_token', value: token);
-  Future<void> clearToken() => _storage.delete(key: 'jwt_token');
-  Future<String?> get refreshToken async =>
-      await _storage.read(key: 'refresh_token');
-  Future<void> setRefreshToken(String token) =>
-      _storage.write(key: 'refresh_token', value: token);
-  Future<void> clearRefreshToken() => _storage.delete(key: 'refresh_token');
+  // Get CSRF token from cookie (web only)
+  Future<String?> _getCsrfToken() async {
+    if (!kIsWeb) return null;
+    return CookieService.getCsrfToken();
+  }
+
+  // Get HTTP client for web (with credentials) or mobile
+  http.Client _getHttpClient() {
+    if (kIsWeb) {
+      _webClient ??= BrowserClient()..withCredentials = true;
+      return _webClient!;
+    }
+    return http.Client();
+  }
+
+  Future<String?> get token async {
+    if (kIsWeb) {
+      // On web, return in-memory access token
+      return _webAccessToken;
+    }
+    return await _storage.read(key: 'jwt_token');
+  }
+
+  Future<void> setToken(String token) async {
+    if (kIsWeb) {
+      // On web, store access token in memory only
+      _webAccessToken = token;
+      return;
+    }
+    await _storage.write(key: 'jwt_token', value: token);
+  }
+
+  Future<void> clearToken() async {
+    if (kIsWeb) {
+      // On web, clear in-memory access token
+      _webAccessToken = null;
+      return;
+    }
+    await _storage.delete(key: 'jwt_token');
+  }
+
+  Future<String?> get refreshToken async {
+    if (kIsWeb) {
+      // On web, rely on httpOnly cookies, don't store refresh token client-side
+      return null;
+    }
+    return await _storage.read(key: 'refresh_token');
+  }
+
+  Future<void> setRefreshToken(String token) async {
+    if (kIsWeb) {
+      // On web, don't store refresh tokens client-side
+      return;
+    }
+    await _storage.write(key: 'refresh_token', value: token);
+  }
+
+  Future<void> clearRefreshToken() async {
+    if (kIsWeb) {
+      // On web, refresh tokens are handled via cookies
+      return;
+    }
+    await _storage.delete(key: 'refresh_token');
+  }
 
   Future<http.Response> get(String path, {Map<String, String>? headers}) async {
     return _withRefreshRetry(() async {
       final authHeaders = await _authHeaders(headers);
       final baseUrl = await _getBaseUrl();
-      return http.get(Uri.parse(_joinUrl(baseUrl, path)), headers: authHeaders);
+      final client = _getHttpClient();
+
+      return client.get(
+        Uri.parse(_joinUrl(baseUrl, path)),
+        headers: authHeaders,
+      );
     });
   }
 
@@ -157,7 +227,9 @@ class ApiClient {
       final authHeaders = await _authHeaders(headers);
       final baseUrl = await _getBaseUrl();
       final encoded = body == null ? null : jsonEncode(body);
-      return http.post(
+      final client = _getHttpClient();
+
+      return client.post(
         Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
         body: encoded,
@@ -174,7 +246,9 @@ class ApiClient {
       final authHeaders = await _authHeaders(headers);
       final baseUrl = await _getBaseUrl();
       final encoded = body == null ? null : jsonEncode(body);
-      return http.put(
+      final client = _getHttpClient();
+
+      return client.put(
         Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
         body: encoded,
@@ -191,12 +265,57 @@ class ApiClient {
       final authHeaders = await _authHeaders(headers);
       final baseUrl = await _getBaseUrl();
       final encoded = body == null ? null : jsonEncode(body);
-      return http.delete(
+      final client = _getHttpClient();
+
+      return client.delete(
         Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
         body: encoded,
       );
     });
+  }
+
+  // Logout method to revoke refresh tokens and clear storage
+  Future<void> logout() async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final client = _getHttpClient();
+
+      if (kIsWeb) {
+        // On web, logout via cookie-based auth
+        final csrfToken = await _getCsrfToken();
+        final headers = {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        };
+        if (csrfToken != null) {
+          headers['X-CSRF-Token'] = csrfToken;
+        }
+
+        await client.post(
+          Uri.parse(_joinUrl(baseUrl, '/api/auth/logout')),
+          headers: headers,
+        );
+      } else {
+        // On mobile, use body-based logout
+        final refreshToken = await this.refreshToken;
+        if (refreshToken != null && refreshToken.isNotEmpty) {
+          await client.post(
+            Uri.parse(_joinUrl(baseUrl, '/api/auth/logout')),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'refresh_token': refreshToken}),
+          );
+        }
+      }
+    } catch (e) {
+      // Log error but don't throw - we want to clear local tokens regardless
+      // Note: In production, consider using a proper logging service
+      debugPrint('Logout API call failed: $e');
+    } finally {
+      // Always clear local tokens
+      await clearToken();
+      await clearRefreshToken();
+    }
   }
 
   // JSON helpers
@@ -223,7 +342,13 @@ class ApiClient {
   }
 
   Future<Map<String, String>> _authHeaders(Map<String, String>? headers) async {
-    final h = {'Content-Type': 'application/json', ...?headers};
+    final h = {
+      'Content-Type': 'application/json',
+      'x-client-type': kIsWeb
+          ? 'web'
+          : 'mobile', // Dynamic client type based on platform
+      ...?headers,
+    };
     final t = await token;
     if (t != null && t.isNotEmpty) {
       h['Authorization'] = 'Bearer $t';
@@ -236,20 +361,47 @@ class ApiClient {
   ) async {
     final first = await fn();
     if (first.statusCode != 401) return first;
+
     // try refresh
-    final rt = await refreshToken;
-    if (rt == null || rt.isEmpty) return first;
     final baseUrl = await _getBaseUrl();
-    final refreshResp = await http.post(
-      Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'refresh_token': rt}),
-    );
+    http.Response refreshResp;
+
+    if (kIsWeb) {
+      // On web, use cookie-based refresh (no body, with credentials)
+      // Get CSRF token from cookie for web clients
+      final csrfToken = await _getCsrfToken();
+      final headers = {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest', // Helps with CORS
+      };
+      if (csrfToken != null) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
+
+      final client = _getHttpClient();
+      refreshResp = await client.post(
+        Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
+        headers: headers,
+      );
+    } else {
+      // On mobile, use body-based refresh
+      final rt = await refreshToken;
+      if (rt == null || rt.isEmpty) return first;
+
+      final client = _getHttpClient();
+      refreshResp = await client.post(
+        Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': rt}),
+      );
+    }
+
     if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
       try {
         final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
         final newAccess = data['token']?.toString();
         final newRefresh = data['refresh_token']?.toString();
+
         if (newAccess != null && newAccess.isNotEmpty) {
           await setToken(newAccess);
           if (newRefresh != null && newRefresh.isNotEmpty) {

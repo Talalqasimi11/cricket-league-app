@@ -4,7 +4,7 @@ import '../../../core/api_client.dart';
 import '../../../widgets/bottom_nav.dart';
 
 class TeamDashboardScreen extends StatefulWidget {
-  final String teamId;
+  final int teamId;
   final String? teamName;
   const TeamDashboardScreen({super.key, required this.teamId, this.teamName});
 
@@ -14,6 +14,8 @@ class TeamDashboardScreen extends StatefulWidget {
 
 class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   bool _loading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
   String teamName = '';
   String imageUrl = '';
   int trophies = 0;
@@ -27,27 +29,113 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   }
 
   Future<void> _fetch() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _hasError = false;
+      _errorMessage = '';
+    });
+
     try {
       final teamResp = await ApiClient.instance.get(
         '/api/teams/${widget.teamId}',
       );
+
       if (teamResp.statusCode == 200) {
         final t = jsonDecode(teamResp.body) as Map<String, dynamic>;
         teamName = (t['team_name'] ?? teamName).toString();
         trophies = (t['trophies'] ?? 0) is int
             ? t['trophies']
             : int.tryParse(t['trophies'].toString()) ?? 0;
-        imageUrl = (t['team_logo'] ?? '').toString();
+        imageUrl = (t['team_logo_url'] ?? '').toString();
+      } else if (teamResp.statusCode == 404) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Team not found';
+        });
+        return;
+      } else {
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Failed to load team data (${teamResp.statusCode})';
+        });
+        return;
       }
+
       final pResp = await ApiClient.instance.get(
-        '/api/players/by-team/${widget.teamId}',
+        '/api/players/team/${widget.teamId}',
       );
+
       if (pResp.statusCode == 200) {
         players = List<Map<String, dynamic>>.from(jsonDecode(pResp.body));
+      } else {
+        // Players are optional, so we don't treat this as a fatal error
+        players = [];
       }
-    } catch (_) {}
-    if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      setState(() {
+        _hasError = true;
+        _errorMessage = 'Network error: ${e.toString()}';
+      });
+    }
+
+    if (mounted) {
+      setState(() => _loading = false);
+    }
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(
+              'Oops! Something went wrong',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage,
+              style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                _fetch();
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try Again'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2E7D32),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text(
+                'Go Back',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -72,6 +160,8 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
+          : _hasError
+          ? _buildErrorState()
           : SafeArea(
               bottom: false,
               child: SingleChildScrollView(

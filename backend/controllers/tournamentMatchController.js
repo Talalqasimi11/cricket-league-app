@@ -163,7 +163,7 @@ const getTournamentMatches = async (req, res) => {
  */
 const updateTournamentMatch = async (req, res) => {
   const { id } = req.params;
-  const { match_date, location, team1_id, team2_id } = req.body;
+  const { match_date, location, team1_id, team2_id, team1_tt_id, team2_tt_id } = req.body;
 
   try {
     // check ownership
@@ -182,11 +182,25 @@ const updateTournamentMatch = async (req, res) => {
       return res.status(400).json({ error: "Cannot update after match started" });
     }
 
+    // Check if there are dependent matches that reference this match's teams
+    const [dependentMatches] = await db.query(
+      `SELECT COUNT(*) as count FROM tournament_matches 
+       WHERE tournament_id = ? AND (team1_id = ? OR team2_id = ? OR team1_tt_id = ? OR team2_tt_id = ?)
+       AND id != ?`,
+      [match[0].tournament_id, match[0].team1_id, match[0].team2_id, match[0].team1_tt_id, match[0].team2_tt_id, id]
+    );
+
+    if (dependentMatches[0].count > 0) {
+      return res.status(400).json({ 
+        error: "Cannot change teams after dependent matches have been created that reference these teams" 
+      });
+    }
+
     await db.query(
       `UPDATE tournament_matches 
-       SET match_date = ?, location = ?, team1_id = ?, team2_id = ? 
+       SET match_date = ?, location = ?, team1_id = ?, team2_id = ?, team1_tt_id = ?, team2_tt_id = ? 
        WHERE id = ?`,
-      [match_date || null, location || null, team1_id || null, team2_id || null, id]
+      [match_date || null, location || null, team1_id || null, team2_id || null, team1_tt_id || null, team2_tt_id || null, id]
     );
 
     res.json({ message: "Match updated successfully" });
@@ -203,12 +217,20 @@ const startTournamentMatch = async (req, res) => {
   const { id } = req.params;
 
   try {
-    // check ownership
+    // check ownership or team owner
     const [match] = await db.query(
-      `SELECT m.*, t.created_by, t.id as tournament_id FROM tournament_matches m 
+      `SELECT m.*, t.created_by, t.id as tournament_id, t.start_date as tournament_start_date,
+              t1.owner_id as team1_owner, t2.owner_id as team2_owner
+       FROM tournament_matches m 
        JOIN tournaments t ON m.tournament_id = t.id
-       WHERE m.id = ? AND t.created_by = ?`,
-      [id, req.user.id]
+       LEFT JOIN teams t1 ON m.team1_id = t1.id
+       LEFT JOIN teams t2 ON m.team2_id = t2.id
+       WHERE m.id = ? AND (
+         t.created_by = ? OR 
+         t1.owner_id = ? OR 
+         t2.owner_id = ?
+       )`,
+      [id, req.user.id, req.user.id, req.user.id]
     );
 
     if (match.length === 0) {
@@ -218,6 +240,18 @@ const startTournamentMatch = async (req, res) => {
     const row = match[0];
     if (row.status !== "upcoming") {
       return res.status(400).json({ error: "Match already started or finished" });
+    }
+
+    // Validate match date against tournament start date
+    if (row.match_date) {
+      const matchDate = new Date(row.match_date);
+      const tournamentStartDate = new Date(row.tournament_start_date);
+      
+      if (matchDate < tournamentStartDate) {
+        return res.status(400).json({ 
+          error: `Match cannot be started before tournament start date (${row.tournament_start_date})` 
+        });
+      }
     }
 
     // Require registered teams for live match
@@ -256,12 +290,20 @@ const endTournamentMatch = async (req, res) => {
   }
 
   try {
-    // check ownership
+    // check ownership or team owner
     const [match] = await db.query(
-      `SELECT m.*, t.created_by FROM tournament_matches m 
+      `SELECT m.*, t.created_by,
+              t1.owner_id as team1_owner, t2.owner_id as team2_owner
+       FROM tournament_matches m 
        JOIN tournaments t ON m.tournament_id = t.id
-       WHERE m.id = ? AND t.created_by = ?`,
-      [id, req.user.id]
+       LEFT JOIN teams t1 ON m.team1_id = t1.id
+       LEFT JOIN teams t2 ON m.team2_id = t2.id
+       WHERE m.id = ? AND (
+         t.created_by = ? OR 
+         t1.owner_id = ? OR 
+         t2.owner_id = ?
+       )`,
+      [id, req.user.id, req.user.id, req.user.id]
     );
 
     if (match.length === 0) {
@@ -303,22 +345,30 @@ const endTournamentMatch = async (req, res) => {
       if (nextMatch.length > 0) {
         // fill empty slot
         if (!nextMatch[0].team1_id) {
-          await db.query(`UPDATE tournament_matches SET team1_id = ? WHERE id = ?`, [
+          // Determine if winner is from team1 or team2 and get corresponding tt_id
+          const winner_tt_id = match[0].winner_id === match[0].team1_id ? match[0].team1_tt_id : match[0].team2_tt_id;
+          await db.query(`UPDATE tournament_matches SET team1_id = ?, team1_tt_id = ? WHERE id = ?`, [
             winner_id,
+            winner_tt_id,
             nextMatch[0].id,
           ]);
         } else {
-          await db.query(`UPDATE tournament_matches SET team2_id = ? WHERE id = ?`, [
+          // Determine if winner is from team1 or team2 and get corresponding tt_id
+          const winner_tt_id = match[0].winner_id === match[0].team1_id ? match[0].team1_tt_id : match[0].team2_tt_id;
+          await db.query(`UPDATE tournament_matches SET team2_id = ?, team2_tt_id = ? WHERE id = ?`, [
             winner_id,
+            winner_tt_id,
             nextMatch[0].id,
           ]);
         }
       } else {
         // create new match
+        // Determine if winner is from team1 or team2 and get corresponding tt_id
+        const winner_tt_id = match[0].winner_id === match[0].team1_id ? match[0].team1_tt_id : match[0].team2_tt_id;
         await db.query(
-          `INSERT INTO tournament_matches (tournament_id, team1_id, round, status) 
-           VALUES (?, ?, ?, 'upcoming')`,
-          [match[0].tournament_id, winner_id, nextRound]
+          `INSERT INTO tournament_matches (tournament_id, team1_id, team1_tt_id, round, status) 
+           VALUES (?, ?, ?, ?, 'upcoming')`,
+          [match[0].tournament_id, winner_id, winner_tt_id, nextRound]
         );
       }
     }

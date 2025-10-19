@@ -18,6 +18,7 @@ class TournamentDrawsScreen extends StatefulWidget {
   final String tournamentId; // ✅ NEW: required to persist to backend
   final List<String> teams;
   final bool isCreator;
+  final int? overs; // Add overs parameter
 
   const TournamentDrawsScreen({
     super.key,
@@ -25,6 +26,7 @@ class TournamentDrawsScreen extends StatefulWidget {
     required this.tournamentId,
     required this.teams,
     this.isCreator = false,
+    this.overs,
   });
 
   @override
@@ -33,6 +35,7 @@ class TournamentDrawsScreen extends StatefulWidget {
 
 class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
   bool _autoDraw = true;
+  bool _isPersisting = false;
   List<MatchModel> _matches = [];
   final Map<String, Map<String, int?>> _nameToIds =
       {}; // ✅ name -> { teamId, ttId }
@@ -247,8 +250,16 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green.shade700,
               ),
-              onPressed: _matches.isEmpty ? null : _persistMatches,
-              child: const Text('Save & Publish'),
+              onPressed: _matches.isEmpty || _isPersisting
+                  ? null
+                  : _persistMatches,
+              child: _isPersisting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save & Publish'),
             ),
           ),
         ],
@@ -257,15 +268,35 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
   }
 
   Future<void> _persistMatches() async {
+    if (_isPersisting) return; // Prevent multiple submissions
+
+    setState(() {
+      _isPersisting = true;
+    });
+
     try {
+      // Ensure team mapping is complete before persisting
+      if (_nameToIds.isEmpty) {
+        await _fetchTournamentTeams();
+      }
+
       // Build payload for manual creation
       final List<Map<String, dynamic>> matches = _matches.map((m) {
         final map1 = _nameToIds[m.teamA];
         final map2 = _nameToIds[m.teamB];
-        final t1 = map1?['teamId'];
-        final t2 = map2?['teamId'];
-        final tt1 = map1?['ttId'];
-        final tt2 = map2?['ttId'];
+
+        // Validate that team mappings exist
+        if (map1 == null || map2 == null) {
+          throw Exception(
+            'Team mapping not found for ${m.teamA} or ${m.teamB}',
+          );
+        }
+
+        final t1 = map1['teamId'];
+        final t2 = map2['teamId'];
+        final tt1 = map1['ttId'];
+        final tt2 = map2['ttId'];
+
         return {
           'team1_id': t1, // may be null for temp teams
           'team2_id': t2, // may be null for temp teams
@@ -299,7 +330,7 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
           type: 'Knockout',
           dateRange: 'TBD',
           location: 'Unknown',
-          overs: 20,
+          overs: widget.overs ?? 20, // Use actual overs or default to 20
           teams: widget.teams,
           matches: _matches,
         );
@@ -321,6 +352,12 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPersisting = false;
+        });
+      }
     }
   }
 

@@ -6,13 +6,13 @@
 ## 1. Product Overview
 
 ### 1.1 Executive Summary
-The Cricket League Management Application is a comprehensive digital platform designed to facilitate the organization, management, and tracking of cricket tournaments and matches. The system enables team captains to register their teams, organize tournaments, manage live scoring, and track player statistics in real-time.
+The Cricket League Management Application is a comprehensive digital platform designed to facilitate the organization, management, and tracking of cricket tournaments and matches. The system enables registered users to become team owners, organize tournaments, manage live scoring, and track player statistics in real-time.
 
 ### 1.2 Product Vision
 To become the go-to platform for amateur and semi-professional cricket leagues, providing an intuitive, mobile-first experience that digitizes the entire cricket tournament lifecycle from registration to match completion.
 
 ### 1.3 Target Audience
-- **Primary Users:** Cricket team captains and owners
+- **Primary Users:** Registered users who become team owners
 - **Secondary Users:** Players, match scorers, tournament organizers
 - **Tertiary Users:** Spectators and cricket enthusiasts
 
@@ -43,18 +43,20 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 
 ## 3. User Personas
 
-### 3.1 Captain Raj - Team Owner & Captain
+### 3.1 Captain Raj - Team Owner
 **Age:** 28 | **Location:** Urban India | **Tech Savviness:** Medium
 
 **Background:**
 - Runs a local cricket team with 15 players
 - Organizes weekend matches and participates in local tournaments
 - Previously used WhatsApp groups and paper scorecards
+- Registered user who automatically becomes team owner
 
 **Goals:**
 - Easy team registration and player management
 - Track team performance across multiple tournaments
 - Access match history and statistics
+- Start tournaments and manage matches
 
 **Pain Points:**
 - Manual scorekeeping is error-prone
@@ -294,12 +296,12 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Captain and vice-captain can be designated
 
 **Technical Specifications:**
-- Endpoint: `PUT /api/teams`
+- Endpoint: `PUT /api/teams/update`
 - Requires authentication
-- Validates ownership
+- Validates ownership (owner_id = user.id)
 
 **Acceptance Criteria:**
-- ✅ Owner can update team details
+- ✅ Team owner can update team details
 - ✅ Non-owners cannot update
 - ✅ Changes are persisted correctly
 
@@ -314,19 +316,19 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Add player to authenticated user's team
 - Required: player name, role
 - Optional: player image URL
-- Roles: Batsman, Bowler, All-rounder, Wicket-keeper
+- Roles: Batsman, Bowler, All-rounder, Wicketkeeper
 - Initialize statistics to zero
 
 **Technical Specifications:**
 - Endpoint: `POST /api/players`
 - Requires authentication
-- Validates user owns team
+- Validates user owns team (owner_id = user.id)
 
 **Acceptance Criteria:**
-- ✅ Captain can add players to their team
+- ✅ Team owner can add players to their team
 - ✅ Player statistics initialized to zero
 - ✅ Player roles are validated
-- ✅ Non-captains cannot add players
+- ✅ Non-owners cannot add players
 
 #### 4.3.2 View Players
 **Priority:** P0 (Must Have)
@@ -350,16 +352,16 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 
 **Functional Requirements:**
 - Update player details (name, role, image)
-- Only team owner/captain can update
+- Only team owner can update
 - Cannot change team assignment directly
 
 **Technical Specifications:**
 - Endpoint: `PUT /api/players/:id`
-- Requires authentication and ownership
+- Requires authentication and ownership (owner_id = user.id)
 
 **Acceptance Criteria:**
-- ✅ Captain can update player details
-- ✅ Non-captains cannot update
+- ✅ Team owner can update player details
+- ✅ Non-owners cannot update
 - ✅ Team assignment cannot be changed
 
 #### 4.3.4 Delete Player
@@ -367,17 +369,18 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 
 **Functional Requirements:**
 - Remove player from team
-- Only team owner/captain can delete
+- Only team owner can delete
 - Cascade: removes player match stats
 
 **Technical Specifications:**
 - Endpoint: `DELETE /api/players/:id`
 - Foreign key cascade delete
+- Requires ownership (owner_id = user.id)
 
 **Acceptance Criteria:**
-- ✅ Captain can delete players
+- ✅ Team owner can delete players
 - ✅ Associated stats are cleaned up
-- ✅ Non-captains cannot delete
+- ✅ Non-owners cannot delete
 
 ---
 
@@ -583,7 +586,7 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Update match status
 - Transitions: not_started → live → completed
 - Can mark as abandoned
-- Only captains or creator can update
+- Only team owners or creator can update
 
 **Technical Specifications:**
 - Endpoint: `PUT /api/tournament-matches/:id`
@@ -613,7 +616,7 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Creates record in match_innings table
 
 **Acceptance Criteria:**
-- ✅ Captain can start innings for live match
+- ✅ Team owner can start innings for live match
 - ✅ Cannot start if match not live
 - ✅ Statistics initialized correctly
 
@@ -625,17 +628,17 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Required: match_id, inning_id, over_number, ball_number, batsman_id, bowler_id, runs
 - Optional: extras, wicket_type, out_player_id
 - Update innings totals automatically
-- Update player statistics automatically (if scorer is captain)
+- Update player statistics automatically (if scorer is team owner)
 - Auto-end innings if:
   - 10 wickets fall
   - Overs completed (match overs reached)
-- Captain authorization check using captain_id or owner_id fallback
+- Team owner authorization check (owner_id = user.id)
 
 **Technical Specifications:**
 - Endpoint: `POST /api/live/add-ball`
 - Updates match_innings (runs, wickets, overs)
 - Updates player_match_stats (runs, balls_faced, balls_bowled, runs_conceded, wickets)
-- Uses COALESCE(captain_id, owner_id) for authorization
+- Uses owner_id for authorization
 
 **Acceptance Criteria:**
 - ✅ Authorized scorer can add balls
@@ -651,14 +654,15 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 **Functional Requirements:**
 - Manually end innings before all out/overs
 - Set status to 'completed'
-- Only captain can end
+- Only team owner can end
 
 **Technical Specifications:**
 - Endpoint: `POST /api/live/end-innings`
 - Updates match_innings.status
+- Requires ownership (owner_id = user.id)
 
 **Acceptance Criteria:**
-- ✅ Captain can end innings
+- ✅ Team owner can end innings
 - ✅ Status changes to completed
 - ✅ Cannot end already completed innings
 
@@ -693,7 +697,7 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Mark match as completed
 - Determine winner based on runs
 - Update team statistics (matches_played, matches_won)
-- Only captain of participating team can finalize
+- Only team owner of participating team can finalize
 - All innings should be completed
 
 **Technical Specifications:**
@@ -703,7 +707,7 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Sets match.status = 'completed', match.winner_team_id
 
 **Acceptance Criteria:**
-- ✅ Captain can finalize match
+- ✅ Team owner can finalize match
 - ✅ Winner determined correctly
 - ✅ Team stats updated
 - ✅ Match status set to completed

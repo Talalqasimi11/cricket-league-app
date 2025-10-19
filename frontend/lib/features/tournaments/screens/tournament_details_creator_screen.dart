@@ -2,6 +2,9 @@
 import 'package:flutter/material.dart';
 import '../models/tournament_model.dart';
 import '../../matches/screens/create_match_screen.dart'; // ✅ scoring screen (replace with your matches page)
+import '../../matches/screens/live_match_view_screen.dart';
+import '../../matches/screens/scorecard_screen.dart';
+import '../../../core/api_client.dart';
 
 class TournamentDetailsCaptainScreen extends StatefulWidget {
   final TournamentModel tournament;
@@ -9,10 +12,12 @@ class TournamentDetailsCaptainScreen extends StatefulWidget {
   const TournamentDetailsCaptainScreen({super.key, required this.tournament});
 
   @override
-  State<TournamentDetailsCaptainScreen> createState() => _TournamentDetailsCaptainScreenState();
+  State<TournamentDetailsCaptainScreen> createState() =>
+      _TournamentDetailsCaptainScreenState();
 }
 
-class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptainScreen> {
+class _TournamentDetailsCaptainScreenState
+    extends State<TournamentDetailsCaptainScreen> {
   late List<MatchModel> _matches;
 
   @override
@@ -32,7 +37,8 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (_matches.isEmpty) const Center(child: Text("No matches scheduled yet")),
+          if (_matches.isEmpty)
+            const Center(child: Text("No matches scheduled yet")),
           if (_matches.isNotEmpty) ..._buildStages(context, _matches),
         ],
       ),
@@ -49,16 +55,23 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
           final idx = entry.key;
           final m = entry.value;
 
-          final matchNo = int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? idx + 1;
-          final scheduled = m.scheduledAt?.toLocal().toString().substring(0, 16);
+          final matchNo =
+              int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? idx + 1;
+          final scheduled = m.scheduledAt?.toLocal().toString().substring(
+            0,
+            16,
+          );
 
           return MatchCard(
             matchNo: matchNo,
             teamA: m.teamA,
             teamB: m.teamB,
-            result: m.status == "completed" ? "Winner: ${m.winner ?? 'TBD'}" : null,
+            result: m.status == "completed"
+                ? "Winner: ${m.winner ?? 'TBD'}"
+                : null,
             scheduled: scheduled,
             editable: m.status == "planned",
+            match: m,
             onEdit: () async {
               final newDate = await _pickDate(context, m.scheduledAt);
               if (!mounted) return;
@@ -67,10 +80,8 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
                   _matches[idx] = m.copyWith(scheduledAt: newDate);
                 });
 
-                // ✅ TODO: Save updated match date to backend
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text("Match ${m.id} rescheduled to $newDate")),
-                );
+                // Save updated match date to backend
+                await _rescheduleMatch(m.id, newDate);
               }
             },
             onStart: () {
@@ -80,8 +91,12 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
               });
 
               // ✅ Navigate to scoring page (replace with MatchesScreen if you like)
-              Navigator.push(context, MaterialPageRoute(builder: (_) => CreateMatchScreen()));
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => CreateMatchScreen()),
+              );
             },
+            onViewDetails: () => _navigateToMatchDetails(m),
           );
         }).toList(),
       ),
@@ -94,12 +109,52 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(stage, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(
+          stage,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 12),
         ...matches,
         const SizedBox(height: 20),
       ],
     );
+  }
+
+  Future<void> _rescheduleMatch(String matchId, DateTime newDate) async {
+    try {
+      final response = await ApiClient.instance.put(
+        '/api/tournament-matches/update/$matchId',
+        body: {'match_date': newDate.toIso8601String()},
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Match $matchId rescheduled to ${newDate.toString().split(' ')[0]}",
+              ),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Failed to reschedule match: ${response.statusCode}",
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error rescheduling match: $e")));
+      }
+    }
   }
 
   Future<DateTime?> _pickDate(BuildContext context, DateTime? initial) async {
@@ -119,6 +174,51 @@ class _TournamentDetailsCaptainScreenState extends State<TournamentDetailsCaptai
 
     return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
+
+  void _navigateToMatchDetails(MatchModel match) {
+    if (match.status == "live") {
+      // Navigate to live match view for ongoing matches
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LiveMatchViewScreen(matchId: match.id),
+        ),
+      );
+    } else if (match.status == "completed" || match.status == "finished") {
+      // Navigate to scorecard for completed matches
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ScorecardScreen(matchId: match.id)),
+      );
+    } else {
+      // For planned/upcoming matches, show a dialog with match info
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text("Match ${match.id}"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("${match.teamA} vs ${match.teamB}"),
+              const SizedBox(height: 8),
+              Text("Status: ${match.status}"),
+              if (match.scheduledAt != null)
+                Text(
+                  "Scheduled: ${match.scheduledAt!.toLocal().toString().substring(0, 16)}",
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Close"),
+            ),
+          ],
+        ),
+      );
+    }
+  }
 }
 
 class MatchCard extends StatelessWidget {
@@ -128,8 +228,10 @@ class MatchCard extends StatelessWidget {
   final String? result;
   final String? scheduled;
   final bool editable;
+  final MatchModel match;
   final VoidCallback? onEdit;
   final VoidCallback? onStart;
+  final VoidCallback? onViewDetails;
 
   const MatchCard({
     super.key,
@@ -139,8 +241,10 @@ class MatchCard extends StatelessWidget {
     this.result,
     this.scheduled,
     this.editable = false,
+    required this.match,
     this.onEdit,
     this.onStart,
+    this.onViewDetails,
   });
 
   @override
@@ -156,7 +260,10 @@ class MatchCard extends StatelessWidget {
           children: [
             Text(
               "Match $matchNo",
-              style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Colors.green.shade700,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -165,7 +272,8 @@ class MatchCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
 
-            if (result != null) Text(result!, style: const TextStyle(color: Colors.grey)),
+            if (result != null)
+              Text(result!, style: const TextStyle(color: Colors.grey)),
             if (scheduled != null)
               Row(
                 children: [
@@ -193,9 +301,7 @@ class MatchCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () {
-                      // TODO: Navigate to Match Details screen
-                    },
+                    onPressed: onViewDetails,
                     child: const Text("View Details"),
                   ),
                 ),
@@ -203,7 +309,9 @@ class MatchCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade600,
+                      ),
                       icon: const Icon(Icons.play_arrow),
                       label: const Text("Start Match"),
                       onPressed: onStart,

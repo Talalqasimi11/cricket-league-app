@@ -13,7 +13,8 @@ class CreateTournamentScreen extends StatefulWidget {
 class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final TextEditingController _tournamentNameController = TextEditingController();
+  final TextEditingController _tournamentNameController =
+      TextEditingController();
   final TextEditingController _locationController = TextEditingController();
   DateTime? _startDate;
   DateTime? _endDate;
@@ -40,13 +41,15 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   Future<void> _onSave() async {
     if (_formKey.currentState!.validate()) {
       if (_startDate == null) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select start date')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Select start date')));
         return;
       }
 
       try {
         final resp = await ApiClient.instance.post(
-          '/api/tournaments/create',
+          '/api/tournaments',
           body: {
             // Prefer snake_case for backend, but include fallbacks if server expects different keys.
             'tournament_name': _tournamentNameController.text,
@@ -60,9 +63,19 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
 
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         if (resp.statusCode == 201 || resp.statusCode == 200) {
-          final tournamentId = (data['tournamentId'] ?? data['id'] ?? data['_id'] ?? data['tournament_id'])?.toString() ?? '';
+          final tournamentId =
+              (data['tournamentId'] ??
+                      data['id'] ??
+                      data['_id'] ??
+                      data['tournament_id'])
+                  ?.toString() ??
+              '';
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tournament created. Add teams next.')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tournament created. Add teams next.'),
+            ),
+          );
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -75,16 +88,21 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
         } else {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['error']?.toString() ?? 'Failed to create tournament')),
+            SnackBar(
+              content: Text(
+                data['error']?.toString() ?? 'Failed to create tournament',
+              ),
+            ),
           );
         }
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
-
 
   void _onCancel() {
     Navigator.pop(context);
@@ -98,7 +116,10 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text("Create Tournament", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          "Create Tournament",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
       ),
       body: Form(
@@ -113,7 +134,8 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
                 labelText: "Tournament Name",
                 border: OutlineInputBorder(),
               ),
-              validator: (value) => value!.isEmpty ? "Please enter tournament name" : null,
+              validator: (value) =>
+                  value!.isEmpty ? "Please enter tournament name" : null,
             ),
             const SizedBox(height: 16),
 
@@ -124,7 +146,8 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
                 labelText: "Location / Venue",
                 border: OutlineInputBorder(),
               ),
-              validator: (value) => value!.isEmpty ? "Please enter location" : null,
+              validator: (value) =>
+                  value!.isEmpty ? "Please enter location" : null,
             ),
             const SizedBox(height: 16),
 
@@ -146,7 +169,8 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
                               ? "${_startDate!.day}-${_startDate!.month}-${_startDate!.year}"
                               : "",
                         ),
-                        validator: (value) => value!.isEmpty ? "Select start date" : null,
+                        validator: (value) =>
+                            value!.isEmpty ? "Select start date" : null,
                       ),
                     ),
                   ),
@@ -167,7 +191,8 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
                               ? "${_endDate!.day}-${_endDate!.month}-${_endDate!.year}"
                               : "",
                         ),
-                        validator: (value) => value!.isEmpty ? "Select end date" : null,
+                        validator: (value) =>
+                            value!.isEmpty ? "Select end date" : null,
                       ),
                     ),
                   ),
@@ -179,12 +204,11 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
             // Overs
             DropdownButtonFormField<String>(
               initialValue: _selectedOvers,
-              items: [
-                "5",
-                "10",
-                "20",
-                "50",
-              ].map((e) => DropdownMenuItem(value: e, child: Text("$e Overs"))).toList(),
+              items: ["5", "10", "20", "50"]
+                  .map(
+                    (e) => DropdownMenuItem(value: e, child: Text("$e Overs")),
+                  )
+                  .toList(),
               onChanged: (value) {
                 setState(() {
                   _selectedOvers = value!;

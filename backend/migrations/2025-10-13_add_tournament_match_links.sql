@@ -1,2 +1,0 @@
--- This migration has been superseded by 2025-10-13_01_create_tournament_matches.sql
--- Keeping as a no-op to preserve history.

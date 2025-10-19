@@ -1,4 +1,5 @@
 // lib/features/home/screens/home_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../widgets/bottom_nav.dart';
@@ -23,25 +24,106 @@ class _HomeScreenState extends State<HomeScreen> {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   bool _loading = false;
+  bool _searching = false;
   List<Map<String, dynamic>> _teams = [];
+  List<Map<String, dynamic>> _filteredTeams = [];
+  Timer? _debounceTimer;
+
+  // Pagination state
+  int _currentPage = 1;
+  int _totalPages = 1;
+  int _totalTeams = 0;
+  final int _pageSize = 20;
 
   @override
   void initState() {
     super.initState();
     _fetchTeams();
+    _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _fetchTeams() async {
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _performSearch();
+    });
+  }
+
+  Future<void> _performSearch() async {
+    final query = _searchController.text.trim();
+
+    if (query.isEmpty) {
+      setState(() {
+        _filteredTeams = _teams;
+        _searching = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _searching = true;
+    });
+
+    try {
+      // Server-side search with pagination
+      await _fetchTeams(search: query);
+    } catch (e) {
+      // Fallback to client-side filtering
+      _performClientSideSearch(query);
+    }
+  }
+
+  void _performClientSideSearch(String query) {
+    final filtered = _teams.where((team) {
+      final name = asType<String>(team['team_name'], '').toLowerCase();
+      return name.contains(query.toLowerCase());
+    }).toList();
+
+    setState(() {
+      _filteredTeams = filtered;
+      _searching = false;
+    });
+  }
+
+  Future<void> _fetchTeams({int page = 1, String? search}) async {
     setState(() => _loading = true);
     try {
-      final resp = await ApiClient.instance.get('/api/teams/all');
+      final searchQuery = search ?? _searchController.text.trim();
+      final queryParams = <String, String>{
+        'page': page.toString(),
+        'limit': _pageSize.toString(),
+      };
+
+      if (searchQuery.isNotEmpty) {
+        queryParams['search'] = searchQuery;
+      }
+
+      final queryString = queryParams.entries
+          .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
+          .join('&');
+
+      final resp = await ApiClient.instance.get('/api/teams?$queryString');
       if (resp.statusCode == 200) {
-        final List<dynamic> list = List<dynamic>.from(jsonDecode(resp.body));
+        final response = jsonDecode(resp.body);
+
         setState(() {
-          _teams = list.map((e) => e as Map<String, dynamic>).toList();
+          _teams = (response['teams'] as List)
+              .map((e) => e as Map<String, dynamic>)
+              .toList();
+          _filteredTeams = _teams;
+          _currentPage = response['pagination']['page'] ?? page;
+          _totalPages = response['pagination']['pages'] ?? 1;
+          _totalTeams = response['pagination']['total'] ?? 0;
         });
       } else {
-        // keep list empty and show message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -108,20 +190,34 @@ class _HomeScreenState extends State<HomeScreen> {
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
+              : _searching
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text(
+                        'Searching...',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                )
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
                   ),
-                  itemCount: _teams.length,
+                  itemCount: _filteredTeams.length,
                   itemBuilder: (context, index) {
-                    final t = _teams[index];
+                    final t = _filteredTeams[index];
                     final String name = asType<String>(
                       t['team_name'],
                       'Unknown Team',
                     );
                     final int trophies = asType<int>(t['trophies'], 0);
-                    final String teamId = asType<String>(t['id'], '');
+                    final int teamId = asType<int>(t['id'], 0);
                     return GestureDetector(
                       onTap: () {
                         Navigator.pushNamed(
@@ -184,6 +280,37 @@ class _HomeScreenState extends State<HomeScreen> {
                   },
                 ),
         ),
+
+        // Pagination controls
+        if (_totalPages > 1) ...[
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                onPressed: _currentPage > 1
+                    ? () => _fetchTeams(page: _currentPage - 1)
+                    : null,
+                icon: const Icon(Icons.chevron_left),
+              ),
+              Text(
+                'Page $_currentPage of $_totalPages',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              IconButton(
+                onPressed: _currentPage < _totalPages
+                    ? () => _fetchTeams(page: _currentPage + 1)
+                    : null,
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Showing ${_teams.length} of $_totalTeams teams',
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+        ],
       ],
     );
   }

@@ -4,6 +4,7 @@ class Player {
   final int id;
   final String playerName;
   final String playerRole;
+  final String? playerImageUrl;
   final int runs;
   final int matchesPlayed;
   final int hundreds;
@@ -16,6 +17,7 @@ class Player {
     required this.id,
     required this.playerName,
     required this.playerRole,
+    this.playerImageUrl,
     required this.runs,
     required this.matchesPlayed,
     required this.hundreds,
@@ -53,19 +55,19 @@ class Player {
   }
 
   /// Creates a Player instance from a JSON map.
-  /// This factory handles multiple possible key names from the API (e.g., 'player_name' or 'name')
-  /// to make the frontend more resilient to backend inconsistencies.
+  /// Backend now uses consistent field names, so we can rely on canonical keys.
   factory Player.fromJson(Map<String, dynamic> json) {
     return Player(
-      id: _toInt(json['id'] ?? json['_id']),
-      playerName: _toString(json['player_name'] ?? json['name']),
-      playerRole: _toString(json['player_role'] ?? json['role']),
+      id: _toInt(json['id']),
+      playerName: _toString(json['player_name']),
+      playerRole: _toString(json['player_role']),
+      playerImageUrl: json['player_image_url']?.toString(),
       runs: _toInt(json['runs']),
-      matchesPlayed: _toInt(json['matches_played'] ?? json['matches']),
+      matchesPlayed: _toInt(json['matches_played']),
       hundreds: _toInt(json['hundreds']),
       fifties: _toInt(json['fifties']),
-      battingAverage: _toDouble(json['batting_average'] ?? json['avg']),
-      strikeRate: _toDouble(json['strike_rate'] ?? json['sr']),
+      battingAverage: _toDouble(json['batting_average']),
+      strikeRate: _toDouble(json['strike_rate']),
       wickets: _toInt(json['wickets']),
     );
   }
@@ -76,6 +78,7 @@ class Player {
       'id': id,
       'player_name': playerName,
       'player_role': playerRole,
+      'player_image_url': playerImageUrl,
       'runs': runs,
       'matches_played': matchesPlayed,
       'hundreds': hundreds,

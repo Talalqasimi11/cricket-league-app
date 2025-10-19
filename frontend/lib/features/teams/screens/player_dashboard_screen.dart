@@ -36,7 +36,7 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
     try {
       final response = await ApiClient.instance.put(
         // The player ID should ideally be in the URL.
-        "/api/players/update/${_player.id}",
+        "/api/players/${_player.id}",
         headers: {"Authorization": "Bearer $token"},
         body: updatedPlayer.toJson(),
       );
@@ -44,13 +44,20 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
       if (response.statusCode == 200) {
         // Update the local state with the successfully saved player data.
         setState(() {
-          _player = Player.fromJson(jsonDecode(response.body));
+          _player = Player.fromJson(jsonDecode(response.body)['player']);
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("✅ Player info updated")),
           );
         }
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        // Auth error - logout and redirect to login
+        await storage.delete(key: 'jwt_token');
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+        return;
       } else {
         throw 'Failed to update player: ${response.body}';
       }
@@ -170,7 +177,7 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.grey.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -195,7 +202,6 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
   void _showEditPlayerDialog(Player player) {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: player.playerName);
-    final roleController = TextEditingController(text: player.playerRole);
     final runsController = TextEditingController(text: player.runs.toString());
     final avgController = TextEditingController(
       text: player.battingAverage.toString(),
@@ -206,6 +212,10 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
     final wicketsController = TextEditingController(
       text: player.wickets.toString(),
     );
+
+    // Define allowed roles (matching backend and DB)
+    final roles = ['Batsman', 'Bowler', 'All-rounder', 'Wicket-keeper'];
+    String selectedRole = player.playerRole;
 
     showDialog(
       context: context,
@@ -228,10 +238,22 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
                   decoration: const InputDecoration(labelText: "Player Name"),
                   validator: (v) => v!.isEmpty ? 'Required' : null,
                 ),
-                TextFormField(
-                  controller: roleController,
+                DropdownButtonFormField<String>(
+                  initialValue: selectedRole,
                   decoration: const InputDecoration(labelText: "Role"),
-                  validator: (v) => v!.isEmpty ? 'Required' : null,
+                  items: roles.map((String role) {
+                    return DropdownMenuItem<String>(
+                      value: role,
+                      child: Text(role),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    if (newValue != null) {
+                      selectedRole = newValue;
+                    }
+                  },
+                  validator: (value) =>
+                      value == null || value.isEmpty ? 'Required' : null,
                 ),
                 TextFormField(
                   controller: runsController,
@@ -274,7 +296,7 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
                           final updated = Player(
                             id: player.id,
                             playerName: nameController.text.trim(),
-                            playerRole: roleController.text.trim(),
+                            playerRole: selectedRole,
                             runs: int.tryParse(runsController.text) ?? 0,
                             matchesPlayed: player.matchesPlayed,
                             hundreds: player.hundreds,

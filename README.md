@@ -32,8 +32,10 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:5000,http://127.0.0.1:5000,h
 
 # Cookie flags (OPTIONAL)
 COOKIE_SECURE=false
-# Set to true to rotate refresh tokens on each use
+# Set to true to rotate refresh tokens on each use (enabled by default in production)
 ROTATE_REFRESH_ON_USE=false
+# Set to true to return password reset tokens in response body (DEVELOPMENT ONLY - NEVER enable in production)
+RETURN_RESET_TOKEN_IN_BODY=false
 ```
 
 ### Required Environment Variables
@@ -48,9 +50,24 @@ The following variables **must** be set for the application to run:
 ### Optional Environment Variables
 
 - `COOKIE_SECURE`: Set to `true` in production to enforce HTTPS-only cookies (default: `false`)
-- `ROTATE_REFRESH_ON_USE`: Set to `true` to rotate refresh tokens on each use (default: `false`)
+- `ROTATE_REFRESH_ON_USE`: Set to `true` to rotate refresh tokens on each use (enabled by default in production)
+- `RETURN_RESET_TOKEN_IN_BODY`: Set to `true` to return password reset tokens in response body (DEVELOPMENT ONLY - NEVER enable in production)
 - `PORT`: Server port (default: `5000`)
 - `NODE_ENV`: Set to `development` to bypass env validation errors (warnings only)
+
+### Authorization Scopes
+
+The application uses role-based access control with the following scopes:
+
+- `team:read` - Read team information
+- `team:manage` - Create, update, delete teams
+- `player:manage` - Manage players (add, update, delete)
+- `match:score` - Score matches and manage innings
+- `tournament:manage` - Create, update, delete tournaments
+
+**Default Role Mapping:**
+- `captain` role includes all scopes above
+- All registered users are assigned the `captain` role by default
 
 ### Important Notes
 

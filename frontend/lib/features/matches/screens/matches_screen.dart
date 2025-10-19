@@ -257,7 +257,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
                       icon: const Icon(Icons.live_tv),
                       label: const Text('View Live'),
                     );
-                  } else if (parentId != null && status == 'finished') {
+                  } else if (parentId != null && status == 'completed') {
                     return TextButton.icon(
                       onPressed: () {
                         Navigator.pushNamed(

@@ -49,19 +49,45 @@ APP_VERSION=1.0.0
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-this-in-production
-JWT_EXPIRES_IN=1h
-JWT_REFRESH_EXPIRES_IN=7d
+JWT_ISS=your-app-name
+JWT_AUD=your-app-audience
 
-# Rate Limiting
-RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX_REQUESTS=100
+# Security Configuration
+ALLOW_REFRESH_IN_BODY=false  # Set to true for mobile clients
+RETURN_RESET_TOKEN_IN_BODY=false  # Set to true for development only
+COOKIE_SECURE=true  # Set to true in production with HTTPS
+LOG_LEVEL=info  # Set to debug for detailed logging
+
+# Rate Limiting (format: max_requests/window_seconds)
+REGISTER_RATE_LIMIT=10/3600  # 10 per hour
+LOGIN_RATE_LIMIT=10/900      # 10 per 15 minutes
+FORGOT_RATE_LIMIT=5/900      # 5 per 15 minutes
+CHANGE_RATE_LIMIT=10/900     # 10 per 15 minutes
 
 # CORS Configuration (Development)
 # Add your computer's IP address when testing on physical devices
 # Example: http://192.168.1.100:5000
 # Find your IP: Windows (ipconfig), macOS/Linux (ifconfig)
 CORS_ORIGINS=http://localhost:3000,http://localhost:5000,http://localhost:8080,http://127.0.0.1:5000,http://127.0.0.1:8080,http://10.0.2.2:5000
+
+# Profanity Filter Configuration (Optional)
+PROFANITY_FILTER_ENABLED=false
+PROFANITY_FILTER=spam,scam,fake,bot
 ```
+
+### Profanity Filter Configuration
+
+The feedback system includes an optional profanity filter to prevent inappropriate content:
+
+**Configuration Options:**
+- `PROFANITY_FILTER_ENABLED=true` - Enable the profanity filter (default: false)
+- `PROFANITY_FILTER=word1,word2,word3` - Comma-separated list of words to filter
+
+**Security Notes:**
+- By default, the profanity filter is disabled for privacy
+- If enabled without `PROFANITY_FILTER` set, uses a sanitized default list
+- The filter uses word boundaries to avoid false positives
+- Configure your own word list via environment variables, not in code
 
 ### CORS Configuration Details
 
@@ -224,6 +250,12 @@ Use browser developer tools to check CORS headers:
 - `GET /api/tournaments/:id` - Get tournament details
 - `PUT /api/tournaments/:id` - Update tournament
 
+### Tournament Teams
+- `POST /api/tournament-teams` - Add team to tournament
+- `GET /api/tournament-teams/:tournament_id` - Get tournament teams
+- `PUT /api/tournament-teams` - Update tournament team (extended functionality)
+- `DELETE /api/tournament-teams` - Remove tournament team (extended functionality)
+
 ### Matches
 - `GET /api/tournament-matches` - List matches
 - `POST /api/tournament-matches` - Create match
@@ -297,6 +329,39 @@ npm run migrate:rollback
 - Use HTTPS in production
 - Regularly update dependencies
 - Monitor logs for suspicious activity
+
+### Security Features
+
+The backend implements comprehensive security measures:
+
+#### Authentication & Authorization
+- JWT-based authentication with short-lived access tokens (15 minutes)
+- Long-lived refresh tokens (7 days) stored securely
+- Role-based access control with captain permissions
+- Progressive lockout: 3→1m, 5→5m, 10→30m delays
+- IP-based throttling to prevent distributed attacks
+
+#### Token Security
+- Refresh tokens in httpOnly cookies (web) or request body (mobile)
+- CSRF protection for cookie-based refresh
+- Token rotation on refresh (configurable)
+- Secure cookie flags (HttpOnly, Secure, SameSite)
+
+#### Rate Limiting
+- Configurable rate limits via environment variables
+- Different limits for different endpoints
+- Standard rate limit headers with Retry-After
+
+#### Data Protection
+- Password reset tokens only returned in development
+- Sensitive data redacted from logs
+- Audit trail for authentication failures
+- Secure password hashing with bcrypt
+
+#### Environment-Specific Security
+- Development: More lenient limits, debug logging
+- Production: Strict limits, minimal logging, secure cookies
+- Test: Isolated database, comprehensive test coverage
 
 ## Support
 

@@ -2,17 +2,20 @@ const jwt = require("jsonwebtoken");
 
 // ✅ Middleware to verify JWT token with aud/iss and clock tolerance
 const verifyToken = (req, res, next) => {
-  console.log("🔍 verifyToken - URL:", req.url);
-  console.log("🔍 verifyToken - Authorization header:", req.headers["authorization"]);
+  // Only log in debug mode and never log sensitive data
+  if (process.env.LOG_LEVEL === 'debug') {
+    req.log?.debug("verifyToken - URL:", req.url);
+  }
   
   const authHeader = req.headers["authorization"]; 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    console.log("❌ verifyToken - No valid authorization header");
+    if (process.env.LOG_LEVEL === 'debug') {
+      req.log?.debug("verifyToken - No valid authorization header");
+    }
     return res.status(401).json({ error: "Authorization header missing or malformed" });
   }
 
   const token = authHeader.split(" ")[1];
-  console.log("🔍 verifyToken - Token length:", token.length);
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET, {
@@ -21,20 +24,36 @@ const verifyToken = (req, res, next) => {
       clockTolerance: 5,
     });
 
-    console.log("🔍 verifyToken - Decoded token:", decoded);
+    // Validate token type
+    if (decoded.typ !== 'access') {
+      if (process.env.LOG_LEVEL === 'debug') {
+        req.log?.debug("verifyToken - Invalid token type:", decoded.typ);
+      }
+      return res.status(401).json({ error: 'Invalid token type' });
+    }
+
+    // Validate sub field is a positive integer
+    const userId = decoded.sub;
+    if (!userId || !Number.isInteger(Number(userId)) || Number(userId) <= 0) {
+      if (process.env.LOG_LEVEL === 'debug') {
+        req.log?.debug("verifyToken - Invalid sub field in token");
+      }
+      return res.status(401).json({ error: 'Invalid token' });
+    }
 
     req.user = {
-      id: parseInt(decoded.sub || decoded.id),
+      id: Number(userId),
       phone_number: decoded.phone_number,
       scopes: decoded.scopes || [],
       roles: decoded.roles || [],
-      raw: decoded,
     };
     
-    console.log("🔍 verifyToken - Parsed user:", req.user);
+    if (process.env.LOG_LEVEL === 'debug') {
+      req.log?.debug("verifyToken - Token verified for user:", req.user.id);
+    }
     return next();
   } catch (err) {
-    console.log("❌ verifyToken - JWT error:", err.message);
+    req.log?.error("JWT verification failed:", err.message);
     if (err && err.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired' });
     }

@@ -1,6 +1,8 @@
 // lib/features/tournaments/screens/tournament_details_viewer_screen.dart
 import 'package:flutter/material.dart';
 import '../models/tournament_model.dart';
+import '../../matches/screens/live_match_view_screen.dart';
+import '../../matches/screens/scorecard_screen.dart';
 
 class TournamentDetailsViewerScreen extends StatelessWidget {
   final TournamentModel tournament;
@@ -34,9 +36,15 @@ class TournamentDetailsViewerScreen extends StatelessWidget {
       _buildStage(
         "All Matches",
         matches.map((m) {
-          final matchNo = int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-          final result = m.status == "completed" ? "Winner: ${m.winner ?? 'TBD'}" : null;
-          final scheduled = m.scheduledAt?.toLocal().toString().substring(0, 16);
+          final matchNo =
+              int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+          final result = m.status == "completed"
+              ? "Winner: ${m.winner ?? 'TBD'}"
+              : null;
+          final scheduled = m.scheduledAt?.toLocal().toString().substring(
+            0,
+            16,
+          );
 
           return MatchCardViewer(
             matchNo: matchNo,
@@ -44,6 +52,7 @@ class TournamentDetailsViewerScreen extends StatelessWidget {
             teamB: m.teamB,
             result: result,
             scheduled: scheduled,
+            match: m,
           );
         }).toList(),
       ),
@@ -56,7 +65,10 @@ class TournamentDetailsViewerScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(stage, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(
+          stage,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 12),
         ...matches,
       ],
@@ -70,6 +82,7 @@ class MatchCardViewer extends StatelessWidget {
   final String teamB;
   final String? result;
   final String? scheduled;
+  final MatchModel match;
 
   const MatchCardViewer({
     super.key,
@@ -78,6 +91,7 @@ class MatchCardViewer extends StatelessWidget {
     required this.teamB,
     this.result,
     this.scheduled,
+    required this.match,
   });
 
   @override
@@ -93,7 +107,10 @@ class MatchCardViewer extends StatelessWidget {
           children: [
             Text(
               "Match $matchNo",
-              style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Colors.green.shade700,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -102,7 +119,10 @@ class MatchCardViewer extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             if (result != null)
-              Text(result!, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+              Text(
+                result!,
+                style: const TextStyle(color: Colors.grey, fontSize: 14),
+              ),
             if (scheduled != null)
               Text(
                 "Scheduled: $scheduled",
@@ -113,7 +133,7 @@ class MatchCardViewer extends StatelessWidget {
               width: double.infinity,
               child: OutlinedButton(
                 onPressed: () {
-                  // TODO: Navigate to match details
+                  _navigateToMatchDetails(context, match);
                 },
                 child: const Text("View Match Details"),
               ),
@@ -122,5 +142,50 @@ class MatchCardViewer extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _navigateToMatchDetails(BuildContext context, MatchModel match) {
+    if (match.status == "live") {
+      // Navigate to live match view for ongoing matches
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LiveMatchViewScreen(matchId: match.id),
+        ),
+      );
+    } else if (match.status == "completed" || match.status == "finished") {
+      // Navigate to scorecard for completed matches
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ScorecardScreen(matchId: match.id)),
+      );
+    } else {
+      // For planned/upcoming matches, show a dialog with match info
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text("Match ${match.id}"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("${match.teamA} vs ${match.teamB}"),
+              const SizedBox(height: 8),
+              Text("Status: ${match.status}"),
+              if (match.scheduledAt != null)
+                Text(
+                  "Scheduled: ${match.scheduledAt!.toLocal().toString().substring(0, 16)}",
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Close"),
+            ),
+          ],
+        ),
+      );
+    }
   }
 }

@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../../core/api_client.dart';
+import '../../../core/cache_service.dart';
 import '../../../core/json_utils.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'team_dashboard_screen.dart';
@@ -17,6 +18,7 @@ class MyTeamScreen extends StatefulWidget {
 
 class _MyTeamScreenState extends State<MyTeamScreen> {
   final storage = const FlutterSecureStorage();
+  final cacheService = CacheService();
 
   bool _isLoading = true;
   String _error = '';
@@ -31,15 +33,24 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
   // The Player model already handles variations in keys like 'id' vs '_id'.
 
   String get teamName => asType<String>(_teamData?['team_name'], 'Team Name');
-  String? get teamLogoUrl => _teamData?['team_logo']?.toString();
+  String? get teamLogoUrl =>
+      _teamData?['team_logo_url']?.toString() ??
+      _teamData?['team_logo']?.toString();
   int get trophies => asType<int>(_teamData?['trophies'], 0);
-  String get teamId => asType<String>(_teamData?['id'], '');
+  int get teamId => asType<int>(_teamData?['id'], 0);
   int get matchesWon => asType<int>(_teamData?['matches_won'], 0);
   String get ownerName => 'Team Owner';
-  String get ownerPhone =>
-      _teamData?['owner_phone']?.toString() ??
-      _teamData?['captain_phone']?.toString() ??
-      '';
+  String get ownerPhone {
+    final phone =
+        _teamData?['owner_phone']?.toString() ??
+        _teamData?['captain_phone']?.toString() ??
+        '';
+    if (phone.isEmpty) return '';
+    // Mask phone number - show last 4 digits only
+    if (phone.length <= 4) return phone;
+    return '****${phone.substring(phone.length - 4)}';
+  }
+
   String? get ownerImage =>
       _teamData?['owner_image']?.toString() ??
       _teamData?['captain_image']?.toString();
@@ -47,10 +58,54 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
   @override
   void initState() {
     super.initState();
+    _loadFromCacheAndFetch();
+  }
+
+  /// Load from cache first, then fetch fresh data
+  Future<void> _loadFromCacheAndFetch() async {
+    // First, try to load from cache for instant display
+    await _loadFromCache();
+
+    // Then fetch fresh data in the background
     _fetchTeamData();
   }
 
-  /// Fetches both team and player data.
+  /// Load team data from cache
+  Future<void> _loadFromCache() async {
+    try {
+      // Loading from cache
+
+      final cachedTeamData = await cacheService.getCachedTeamData();
+      final cachedPlayersData = await cacheService.getCachedPlayersData();
+
+      if (cachedTeamData != null) {
+        if (mounted) {
+          setState(() {
+            _teamData = cachedTeamData;
+          });
+        }
+      }
+
+      if (cachedPlayersData != null) {
+        if (mounted) {
+          setState(() {
+            _players = cachedPlayersData
+                .map((p) => Player.fromJson(p))
+                .toList();
+          });
+        }
+      }
+    } catch (e) {
+      // Cache load failure shouldn't break the app
+      debugPrint('Failed to load from cache: $e');
+    } finally {
+      if (mounted) {
+        // Cache loading completed
+      }
+    }
+  }
+
+  /// Fetches team data which includes players.
   Future<void> _fetchTeamData() async {
     setState(() {
       _isLoading = true;
@@ -64,35 +119,45 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
     }
 
     try {
-      // It's better if the backend provides one endpoint for team + players.
-      // For now, we fetch them in parallel.
-      final responses = await Future.wait([
-        ApiClient.instance.get(
-          '/api/teams/my-team',
-          headers: {'Authorization': 'Bearer $token'},
-        ),
-        ApiClient.instance.get(
-          '/api/players/my-players',
-          headers: {'Authorization': 'Bearer $token'},
-        ),
-      ]);
+      // Fetch team data which includes players
+      final teamResponse = await ApiClient.instance.get(
+        '/api/teams/my-team',
+        headers: {'Authorization': 'Bearer $token'},
+      );
 
-      // Process Team Response
-      final teamResponse = responses[0];
       if (teamResponse.statusCode == 200) {
         _teamData = jsonDecode(teamResponse.body) as Map<String, dynamic>;
-      } else if (teamResponse.statusCode != 404) {
-        // Only show error if it's not a "not found" error
-        throw 'Failed to load team: ${teamResponse.statusCode}';
-      }
 
-      // Process Players Response
-      final playersResponse = responses[1];
-      if (playersResponse.statusCode == 200) {
-        final playersList = jsonDecode(playersResponse.body) as List;
-        _players = playersList.map((p) => Player.fromJson(p)).toList();
+        // Process players from team response
+        if (_teamData!['players'] != null) {
+          final playersList = _teamData!['players'] as List;
+          _players = playersList.map((p) => Player.fromJson(p)).toList();
+
+          // Cache players data
+          final playersData = playersList.cast<Map<String, dynamic>>();
+          await cacheService.cachePlayersData(playersData);
+        }
+
+        // Cache team data (excluding players as they're cached separately)
+        final teamDataToCache = Map<String, dynamic>.from(_teamData!);
+        teamDataToCache.remove(
+          'players',
+        ); // Remove players as they're cached separately
+        await cacheService.cacheTeamData(teamDataToCache);
+      } else if (teamResponse.statusCode == 401 ||
+          teamResponse.statusCode == 403) {
+        // Auth error - logout and redirect to login
+        _logout();
+        return;
+      } else if (teamResponse.statusCode == 404) {
+        // Team not found - this is acceptable, user might not have a team yet
+        _teamData = null;
+        _players = [];
+      } else if (teamResponse.statusCode >= 500) {
+        // Server error - show retry option
+        throw 'Server error (${teamResponse.statusCode}). Please try again.';
       } else {
-        throw 'Failed to load players: ${playersResponse.statusCode}';
+        throw 'Failed to load team: ${teamResponse.statusCode}';
       }
     } catch (e) {
       if (mounted) {
@@ -305,14 +370,8 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
 
   void _logout() async {
     try {
-      final rt = await storage.read(key: 'refresh_token');
-      await ApiClient.instance.post(
-        '/api/auth/logout',
-        body: rt != null ? {'refresh_token': rt} : null,
-      );
+      await ApiClient.instance.logout();
     } catch (_) {}
-    await storage.delete(key: 'jwt_token');
-    await storage.delete(key: 'refresh_token');
     if (mounted) {
       Navigator.pushReplacementNamed(context, '/login');
     }

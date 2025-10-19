@@ -2,25 +2,47 @@ const db = require("../config/db");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const { getUserFriendlyMessage, mapDatabaseError } = require("../utils/errorMessages");
+const { validateTeamLogoUrl } = require("../utils/urlValidation");
 require("dotenv").config();
+
+// Auth throttling constants (PRD-compliant)
+const AUTH_THROTTLING = {
+  WINDOW_MINUTES: 15,
+  THRESHOLDS: {
+    LEVEL_1: { failures: 3, delayMinutes: 1 },
+    LEVEL_2: { failures: 5, delayMinutes: 5 },
+    LEVEL_3: { failures: 10, delayMinutes: 30 }
+  }
+};
 
 // ========================
 // REGISTER CAPTAIN
 // ========================
 const registerCaptain = async (req, res) => {
-    const { phone_number, password, team_name, team_location, team_logo_url } = req.body; // ✅ ADDED team_logo_url
+    let { phone_number, password, team_name, team_location, team_logo_url } = req.body; // ✅ ADDED team_logo_url
 
   if (!phone_number || !password || !team_name || !team_location) {
-    return res.status(400).json({ error: "All fields are required" });
+    return res.status(400).json({ error: getUserFriendlyMessage("VALIDATION_REQUIRED_FIELD") });
   }
 
   // Basic phone and password validation (E.164-ish and min length)
   const phoneRegex = /^\+?[1-9]\d{7,14}$/;
   if (!phoneRegex.test(String(phone_number))) {
-    return res.status(400).json({ error: "Invalid phone number format" });
+    return res.status(400).json({ error: getUserFriendlyMessage("AUTH_INVALID_PHONE") });
   }
   if (String(password).length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters" });
+    return res.status(400).json({ error: getUserFriendlyMessage("AUTH_WEAK_PASSWORD") });
+  }
+
+  // Validate team logo URL if provided
+  if (team_logo_url !== undefined && team_logo_url !== null) {
+    const urlValidation = validateTeamLogoUrl(team_logo_url);
+    if (!urlValidation.isValid) {
+      return res.status(400).json({ error: `Invalid team logo URL: ${urlValidation.error}` });
+    }
+    // Use normalized URL
+    team_logo_url = urlValidation.normalizedUrl;
   }
 
   try {
@@ -30,7 +52,7 @@ const registerCaptain = async (req, res) => {
       [phone_number]
     );
     if (existing.length > 0) {
-      return res.status(409).json({ error: "Phone number already registered" });
+      return res.status(409).json({ error: getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS") });
     }
 
     // Step 1: Create owner (user)
@@ -51,11 +73,11 @@ const registerCaptain = async (req, res) => {
 
     res.status(201).json({ message: "Owner and team registered successfully" });
   } catch (err) {
-    console.error("❌ Error in registerCaptain:", err);
+    req.log?.error("registerCaptain: Database error", { error: err.message, code: err.code });
     if (err && err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: "Phone number already registered" });
+      return res.status(409).json({ error: getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS") });
     }
-    res.status(500).json({ error: "Server error", details: err.message });
+    res.status(500).json({ error: "Server error" });
   }
 };
 
@@ -73,38 +95,27 @@ const loginCaptain = async (req, res) => {
     // 0️⃣ Check for recent auth failures to implement progressive throttling
     const ipAddress = req.ip || req.socket?.remoteAddress || null;
     const [[{ failureCount }]] = await db.query(
-      "SELECT COUNT(*) AS failureCount FROM auth_failures WHERE phone_number = ? AND failed_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)",
-      [phone_number]
+      "SELECT COUNT(*) AS failureCount FROM auth_failures WHERE phone_number = ? AND ip_address = ? AND failed_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE) AND resolved_at IS NULL",
+      [phone_number, ipAddress]
     );
 
-    // Progressive lockout: More lenient in development/testing
+    // Progressive lockout: PRD-compliant thresholds
     let requiredDelay = 0;
-    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const failureCountNum = Number(failureCount);
     
-    if (isDevelopment) {
-      // Development: More lenient limits
-      if (Number(failureCount) >= 20) {
-        requiredDelay = 5 * 60 * 1000; // 5 minutes
-      } else if (Number(failureCount) >= 10) {
-        requiredDelay = 60 * 1000; // 1 minute
-      } else if (Number(failureCount) >= 5) {
-        requiredDelay = 30 * 1000; // 30 seconds
-      }
-    } else {
-      // Production: Original strict limits
-      if (Number(failureCount) >= 10) {
-        requiredDelay = 30 * 60 * 1000; // 30 minutes
-      } else if (Number(failureCount) >= 5) {
-        requiredDelay = 5 * 60 * 1000; // 5 minutes
-      } else if (Number(failureCount) >= 3) {
-        requiredDelay = 60 * 1000; // 1 minute
-      }
+    // PRD thresholds: 3→1m, 5→5m, 10→30m in a 15m window
+    if (failureCountNum >= AUTH_THROTTLING.THRESHOLDS.LEVEL_3.failures) {
+      requiredDelay = AUTH_THROTTLING.THRESHOLDS.LEVEL_3.delayMinutes * 60 * 1000;
+    } else if (failureCountNum >= AUTH_THROTTLING.THRESHOLDS.LEVEL_2.failures) {
+      requiredDelay = AUTH_THROTTLING.THRESHOLDS.LEVEL_2.delayMinutes * 60 * 1000;
+    } else if (failureCountNum >= AUTH_THROTTLING.THRESHOLDS.LEVEL_1.failures) {
+      requiredDelay = AUTH_THROTTLING.THRESHOLDS.LEVEL_1.delayMinutes * 60 * 1000;
     }
 
     if (requiredDelay > 0) {
       const [[{ lastFailure }]] = await db.query(
-        "SELECT UNIX_TIMESTAMP(MAX(failed_at)) * 1000 AS lastFailure FROM auth_failures WHERE phone_number = ?",
-        [phone_number]
+        "SELECT UNIX_TIMESTAMP(MAX(failed_at)) * 1000 AS lastFailure FROM auth_failures WHERE phone_number = ? AND ip_address = ? AND resolved_at IS NULL",
+        [phone_number, ipAddress]
       );
       const timeSinceLastFailure = Date.now() - Number(lastFailure);
       if (timeSinceLastFailure < requiredDelay) {
@@ -143,13 +154,24 @@ const loginCaptain = async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // 3️⃣ SUCCESS - Clear auth failures for this phone number
-    await db.query("DELETE FROM auth_failures WHERE phone_number = ?", [phone_number]);
+    // 3️⃣ SUCCESS - Mark auth failures as resolved for this phone number and IP
+    await db.query(
+      "UPDATE auth_failures SET resolved_at = NOW() WHERE phone_number = ? AND ip_address = ? AND resolved_at IS NULL", 
+      [phone_number, ipAddress]
+    );
 
     // 4️⃣ Create short-lived access token and long-lived refresh token
-    const jwtPayload = { sub: user.id, phone_number: user.phone_number, iss: process.env.JWT_ISS, aud: process.env.JWT_AUD };
+    const jwtPayload = { 
+      sub: user.id, 
+      phone_number: user.phone_number, 
+      roles: ['captain'], // All registered users are team captains
+      scopes: ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'], // Basic scopes for captains
+      typ: 'access', // Token type for validation
+      iss: process.env.JWT_ISS, 
+      aud: process.env.JWT_AUD 
+    };
     const accessToken = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: "15m" });
-    const refreshToken = jwt.sign({ sub: user.id, type: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
+    const refreshToken = jwt.sign({ sub: user.id, typ: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
     // 5️⃣ Persist refresh token (basic blacklist table)
     await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [user.id, refreshToken]);
@@ -161,17 +183,37 @@ const loginCaptain = async (req, res) => {
       httpOnly: true,
       secure: isSecure,
       sameSite: isSecure ? "none" : "lax", // 'none' requires secure; fallback to 'lax' for local dev
-      path: "/api/auth",
+      path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // 7️⃣ Respond access token and refresh token (for mobile clients)
-    res.json({
+    // Set CSRF token for web clients
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    res.cookie("csrf-token", csrfToken, {
+      httpOnly: false, // Must be accessible to JavaScript for CSRF protection
+      secure: isSecure,
+      sameSite: "lax", // Use 'lax' for CSRF token regardless of environment
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    // 7️⃣ Respond access token and conditionally refresh token (for mobile clients)
+    const response = {
       message: "Login successful",
       token: accessToken,
-      refresh_token: refreshToken,
       user: { id: user.id, phone_number: user.phone_number },
-    });
+    };
+    
+    // Only include refresh token in body for mobile clients
+    // For web clients, refresh tokens are handled via cookies only
+    const isMobileClient = req.headers['x-client-type'] === 'mobile';
+    const allowRefreshInBody = process.env.ALLOW_REFRESH_IN_BODY === 'true' && isMobileClient;
+    
+    if (allowRefreshInBody) {
+      response.refresh_token = refreshToken;
+    }
+    
+    res.json(response);
   } catch (err) {
     req.log?.error(err);
     res.status(500).json({ error: "Server error", details: err.message });
@@ -190,6 +232,16 @@ const refreshToken = async (req, res) => {
     return res.status(401).json({ error: "Refresh token missing" });
   }
 
+  // CSRF protection for cookie-based refresh
+  if (tokenFromCookie && !tokenFromBody) {
+    const csrfToken = req.get('X-CSRF-Token');
+    const expectedCsrfToken = req.cookies['csrf-token'];
+    
+    if (!csrfToken || !expectedCsrfToken || csrfToken !== expectedCsrfToken) {
+      return res.status(403).json({ error: "CSRF token mismatch" });
+    }
+  }
+
   try {
     // Verify token signature and claims
     const payload = jwt.verify(presented, process.env.JWT_REFRESH_SECRET, {
@@ -206,27 +258,66 @@ const refreshToken = async (req, res) => {
 
     const userId = rows[0].user_id;
 
-    // Optionally rotate refresh token (not enforced yet; returned when present)
-    const rotate = String(process.env.ROTATE_REFRESH_ON_USE || '').toLowerCase() === 'true';
+    // Enable rotation by default in production, optional in development
+    const rotate = process.env.NODE_ENV === 'production' || 
+                   String(process.env.ROTATE_REFRESH_ON_USE || '').toLowerCase() === 'true';
     let newRefresh = null;
     if (rotate) {
       // revoke old
       await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE token = ?", [presented]);
       // issue new
-      newRefresh = jwt.sign({ sub: userId, type: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
+      newRefresh = jwt.sign({ sub: userId, typ: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
       await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [userId, newRefresh]);
       const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
       res.cookie("refresh_token", newRefresh, {
         httpOnly: true,
         secure: isSecure,
         sameSite: isSecure ? "none" : "lax", // 'none' requires secure; fallback to 'lax' for local dev
-        path: "/api/auth",
+        path: "/",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
+
+      // Set new CSRF token for web clients
+      const newCsrfToken = crypto.randomBytes(32).toString('hex');
+      res.cookie("csrf-token", newCsrfToken, {
+        httpOnly: false, // Must be accessible to JavaScript for CSRF protection
+        secure: isSecure,
+        sameSite: "lax", // Use 'lax' for CSRF token regardless of environment
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      // Signal to client that refresh token was rotated
+      res.set('X-Refresh-Rotated', 'true');
     }
 
-    const accessToken = jwt.sign({ sub: userId, iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_SECRET, { expiresIn: "15m" });
-    return res.json(newRefresh ? { token: accessToken, refresh_token: newRefresh } : { token: accessToken });
+    // Get user details for token claims
+    const [userRows] = await db.query("SELECT phone_number FROM users WHERE id = ?", [userId]);
+    const user = userRows[0];
+    
+    const accessToken = jwt.sign({ 
+      sub: userId, 
+      phone_number: user.phone_number,
+      roles: ['captain'], // All registered users are team captains
+      scopes: ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'], // Basic scopes for captains
+      typ: 'access', // Token type for validation
+      iss: process.env.JWT_ISS, 
+      aud: process.env.JWT_AUD 
+    }, process.env.JWT_SECRET, { expiresIn: "15m" });
+    
+    const response = { token: accessToken };
+    
+    // Always include refresh token in body when rotation occurs and token was presented in body
+    if (newRefresh && tokenFromBody) {
+      response.refresh_token = newRefresh;
+    }
+    
+    // Set response header to indicate rotation occurred
+    if (newRefresh) {
+      res.setHeader('X-Refresh-Rotated', 'true');
+    }
+    
+    return res.json(response);
   } catch (err) {
     if (err && err.name === 'TokenExpiredError') {
       return res.status(401).json({ error: "Refresh token expired" });
@@ -248,11 +339,21 @@ const logout = async (req, res) => {
     if (tokenFromBody) {
       await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE token = ?", [tokenFromBody]);
     }
-    res.clearCookie("refresh_token", { path: "/api/auth" });
+    const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
+    res.clearCookie("refresh_token", { 
+      path: "/", 
+      secure: isSecure, 
+      sameSite: isSecure ? "none" : "lax" 
+    });
+    res.clearCookie("csrf-token", { 
+      path: "/", 
+      secure: isSecure, 
+      sameSite: "lax" 
+    });
     return res.status(200).json({ message: "Logged out" });
   } catch (err) {
     req.log?.error(err);
-    return res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: mapDatabaseError(err) });
   }
 };
 
@@ -285,7 +386,7 @@ const requestPasswordReset = async (req, res) => {
     // Invalidate any active tokens (single-active token policy)
     await db.query("UPDATE password_resets SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL AND expires_at > NOW()", [userId]);
 
-    const rawToken = crypto.randomBytes(24).toString("hex");
+    const rawToken = crypto.randomBytes(48).toString("hex");
     const tokenHash = await bcrypt.hash(rawToken, 12);
     const expiresMinutes = 15;
     await db.query(
@@ -294,10 +395,23 @@ const requestPasswordReset = async (req, res) => {
     );
 
     // In production, send via SMS/Email. For development, return token for UX testing
-    return res.json({ message: "Reset initiated", token: rawToken });
+    const response = { message: "Reset initiated" };
+    
+    // Only return token when explicitly allowed AND not in production
+    const returnTokenInBody = process.env.RETURN_RESET_TOKEN_IN_BODY === 'true' && 
+                             process.env.NODE_ENV !== 'production';
+    
+    if (returnTokenInBody) {
+      response.token = rawToken;
+      console.log(`⚠️  Password reset token returned in body for user ${userId} (development only)`);
+    } else if (process.env.NODE_ENV !== 'production') {
+      console.log(`🔒 Password reset token generated for user ${userId} but not returned (security)`);
+    }
+    
+    return res.json(response);
   } catch (err) {
     req.log?.error(err);
-    return res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: mapDatabaseError(err) });
   }
 };
 
@@ -321,7 +435,7 @@ const verifyPasswordReset = async (req, res) => {
     return res.json({ valid: true });
   } catch (err) {
     req.log?.error(err);
-    return res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: mapDatabaseError(err) });
   }
 };
 
@@ -355,7 +469,7 @@ const confirmPasswordReset = async (req, res) => {
     return res.json({ message: "Password reset successful" });
   } catch (err) {
     req.log?.error(err);
-    return res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: mapDatabaseError(err) });
   }
 };
 
@@ -381,7 +495,7 @@ const changePassword = async (req, res) => {
     return res.json({ message: "Password changed" });
   } catch (err) {
     req.log?.error(err);
-    return res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: mapDatabaseError(err) });
   }
 };
 
@@ -400,7 +514,7 @@ const changePhoneNumber = async (req, res) => {
     return res.json({ message: "Phone number updated", phone_number: new_phone_number });
   } catch (err) {
     req.log?.error(err);
-    return res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: mapDatabaseError(err) });
   }
 };
 
@@ -413,8 +527,13 @@ const clearAuthFailures = async (req, res) => {
   }
   
   try {
-    await db.query("DELETE FROM auth_failures WHERE failed_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)");
-    res.json({ message: "Auth failures cleared" });
+    // Clean up old resolved failures (older than 24 hours) and very old unresolved ones (older than 7 days)
+    await db.query(`
+      DELETE FROM auth_failures 
+      WHERE (resolved_at IS NOT NULL AND resolved_at < DATE_SUB(NOW(), INTERVAL 24 HOUR))
+         OR (resolved_at IS NULL AND failed_at < DATE_SUB(NOW(), INTERVAL 7 DAY))
+    `);
+    res.json({ message: "Auth failures cleaned up" });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }

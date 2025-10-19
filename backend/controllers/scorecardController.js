@@ -41,18 +41,18 @@ const getMatchScorecard = async (req, res) => {
       [match_id]
     );
 
-    // 3️⃣ Get batting stats per innings
+    // 3️⃣ Get batting stats per innings with team information
     const [battingStats] = await db.query(
-      `SELECT pms.match_id, pms.player_id, p.player_name, pms.runs, pms.balls_faced, pms.fours, pms.sixes
+      `SELECT pms.match_id, pms.player_id, p.player_name, pms.runs, pms.balls_faced, pms.fours, pms.sixes, p.team_id
        FROM player_match_stats pms
        JOIN players p ON p.id = pms.player_id
        WHERE pms.match_id = ?`,
       [match_id]
     );
 
-    // 4️⃣ Get bowling stats per innings
+    // 4️⃣ Get bowling stats per innings with team information
     const [bowlingStats] = await db.query(
-      `SELECT pms.match_id, pms.player_id, p.player_name, pms.balls_bowled, pms.runs_conceded, pms.wickets
+      `SELECT pms.match_id, pms.player_id, p.player_name, pms.balls_bowled, pms.runs_conceded, pms.wickets, p.team_id
        FROM player_match_stats pms
        JOIN players p ON p.id = pms.player_id
        WHERE pms.match_id = ?`,
@@ -61,9 +61,20 @@ const getMatchScorecard = async (req, res) => {
 
     // 5️⃣ Organize scorecard
     const scorecard = innings.map((inn) => {
-      // Filter batting and bowling stats by innings teams for accuracy
-      const batting = battingStats.filter((b) => Number(b.match_id) === match_id && b.player_id);
-      const bowling = bowlingStats.filter((b) => Number(b.match_id) === match_id && b.player_id);
+      // Filter batting stats to players belonging to batting team for this innings
+      const batting = battingStats.filter((b) => 
+        Number(b.match_id) === match_id && 
+        b.player_id && 
+        Number(b.team_id) === Number(inn.batting_team_id)
+      );
+      
+      // Filter bowling stats to players belonging to bowling team for this innings
+      const bowling = bowlingStats.filter((b) => 
+        Number(b.match_id) === match_id && 
+        b.player_id && 
+        Number(b.team_id) === Number(inn.bowling_team_id)
+      );
+      
       return {
         inning_number: inn.inning_number,
         batting_team: inn.batting_team_name,

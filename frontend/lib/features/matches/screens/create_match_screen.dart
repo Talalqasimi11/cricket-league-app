@@ -22,7 +22,12 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   final _formKey = GlobalKey<FormState>();
 
   // ✅ Dummy registered teams (replace with DB fetch later)
-  final List<String> registeredTeams = ["Custom Team", "Warriors", "Titans", "Strikers"];
+  final List<String> registeredTeams = [
+    "Custom Team",
+    "Warriors",
+    "Titans",
+    "Strikers",
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -53,9 +58,18 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                 decoration: _inputDecoration("Select Match Type", Icons.sports),
                 initialValue: matchType,
                 items: const [
-                  DropdownMenuItem(value: "Show Match", child: Text("Show Match")),
-                  DropdownMenuItem(value: "Tournament Match", child: Text("Tournament Match")),
-                  DropdownMenuItem(value: "Series Match", child: Text("Series Match")),
+                  DropdownMenuItem(
+                    value: "Show Match",
+                    child: Text("Show Match"),
+                  ),
+                  DropdownMenuItem(
+                    value: "Tournament Match",
+                    child: Text("Tournament Match"),
+                  ),
+                  DropdownMenuItem(
+                    value: "Series Match",
+                    child: Text("Series Match"),
+                  ),
                 ],
                 onChanged: (val) => setState(() => matchType = val),
                 dropdownColor: const Color(0xFF1E2E2A),
@@ -67,7 +81,9 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
               // 🔹 Teams Section
               Row(
                 children: [
-                  Expanded(child: _teamCard("Team A", teamAController, isTeamA: true)),
+                  Expanded(
+                    child: _teamCard("Team A", teamAController, isTeamA: true),
+                  ),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 8),
                     child: Text(
@@ -79,7 +95,9 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                       ),
                     ),
                   ),
-                  Expanded(child: _teamCard("Team B", teamBController, isTeamA: false)),
+                  Expanded(
+                    child: _teamCard("Team B", teamBController, isTeamA: false),
+                  ),
                 ],
               ),
               const SizedBox(height: 20),
@@ -87,9 +105,13 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
               // 🔹 Lineup Buttons
               Row(
                 children: [
-                  Expanded(child: _lineupButton("Team A Lineup", teamAController.text)),
+                  Expanded(
+                    child: _lineupButton("Team A Lineup", teamAController.text),
+                  ),
                   const SizedBox(width: 12),
-                  Expanded(child: _lineupButton("Team B Lineup", teamBController.text)),
+                  Expanded(
+                    child: _lineupButton("Team B Lineup", teamBController.text),
+                  ),
                 ],
               ),
               const SizedBox(height: 20),
@@ -115,7 +137,9 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF36e27b),
                   minimumSize: const Size(double.infinity, 56),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 onPressed: () {
                   if (_formKey.currentState!.validate()) {
@@ -125,6 +149,8 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                         builder: (_) => LiveMatchScoringScreen(
                           teamA: teamAController.text,
                           teamB: teamBController.text,
+                          matchId:
+                              'temp_match_${DateTime.now().millisecondsSinceEpoch}',
                         ),
                       ),
                     );
@@ -162,7 +188,11 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   }
 
   // 🔹 Team Card with Dropdown + TextField
-  Widget _teamCard(String title, TextEditingController controller, {required bool isTeamA}) {
+  Widget _teamCard(
+    String title,
+    TextEditingController controller, {
+    required bool isTeamA,
+  }) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -173,7 +203,10 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
         children: [
           Text(
             title,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
 
@@ -214,7 +247,8 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                 borderSide: BorderSide.none,
               ),
             ),
-            validator: (val) => val == null || val.isEmpty ? "Enter team name" : null,
+            validator: (val) =>
+                val == null || val.isEmpty ? "Enter team name" : null,
           ),
         ],
       ),
@@ -232,7 +266,9 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       onPressed: () async {
         final lineup = await Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => SelectLineupScreen(teamName: teamName)),
+          MaterialPageRoute(
+            builder: (_) => SelectLineupScreen(teamName: teamName),
+          ),
         );
         if (lineup != null) {
           print("✅ Selected Players for $teamName: $lineup");
@@ -241,7 +277,10 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       icon: const Icon(Icons.groups, color: Color(0xFF95c6a9)),
       label: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

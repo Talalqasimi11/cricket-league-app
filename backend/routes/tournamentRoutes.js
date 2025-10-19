@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { verifyToken: authMiddleware } = require("../middleware/authMiddleware");
+const { verifyToken: authMiddleware, requireScope } = require("../middleware/authMiddleware");
 const {
   createTournament,
   getTournaments,
@@ -8,10 +8,15 @@ const {
   deleteTournament
 } = require("../controllers/tournamentController");
 
-// Protected routes
-router.post("/create", authMiddleware, createTournament);
+// Tournament routes following REST conventions
+router.post("/", authMiddleware, requireScope('tournament:manage'), createTournament);
 router.get("/", getTournaments);
-router.put("/update", authMiddleware, updateTournament);
-router.delete("/delete", authMiddleware, deleteTournament);
+router.put("/:id", authMiddleware, requireScope('tournament:manage'), updateTournament);
+router.delete("/:id", authMiddleware, requireScope('tournament:manage'), deleteTournament);
+
+// Legacy aliases for backward compatibility
+router.post("/create", authMiddleware, requireScope('tournament:manage'), createTournament);
+router.put("/update", authMiddleware, requireScope('tournament:manage'), updateTournament);
+router.delete("/delete", authMiddleware, requireScope('tournament:manage'), deleteTournament);
 
 module.exports = router;

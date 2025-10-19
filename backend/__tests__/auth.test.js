@@ -1,158 +1,301 @@
 const request = require('supertest');
 const mysql = require('mysql2/promise');
+const express = require('express');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
 
-// Note: These tests require a test database setup
-// Set TEST_DB_NAME in .env or use a separate test database
+// Test database setup
+const setupTestDB = async () => {
+  const db = await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASS || '',
+    database: process.env.TEST_DB_NAME || 'cricket_league_test',
+  });
+  return db;
+};
 
 describe('Auth API Integration Tests', () => {
   let app;
   let db;
+  let server;
   const testPhone = `+1555${Date.now().toString().slice(-7)}`;
   const testPassword = 'TestPassword123!';
+  const testTeamName = 'Test Team';
+  const testTeamLocation = 'Test City';
 
   beforeAll(async () => {
-    // Ensure test environment
+    // Set test environment
     process.env.NODE_ENV = 'test';
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
+    process.env.JWT_ISS = 'test-issuer';
+    process.env.JWT_AUD = 'test-audience';
+    process.env.ALLOW_REFRESH_IN_BODY = 'true';
     
-    // Wait for DB initialization (app loads db async)
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Setup test database
+    db = await setupTestDB();
     
-    // Import app after env is set
-    const indexPath = require.resolve('../index');
-    delete require.cache[indexPath];
+    // Create Express app for testing
+    app = express();
+    app.use(cors({ origin: true, credentials: true }));
+    app.use(express.json());
+    app.use(cookieParser());
     
-    // Create test database connection for cleanup
-    db = await mysql.createConnection({
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASS || '',
-      database: process.env.DB_NAME || 'cricket_league',
-    });
+    // Import and mount auth routes
+    const authRoutes = require('../routes/authRoutes');
+    app.use('/api/auth', authRoutes);
+    
+    // Start test server
+    server = app.listen(0);
   });
 
   afterAll(async () => {
-    // Cleanup test user
+    // Cleanup
     if (db) {
+      await db.execute('DELETE FROM auth_failures WHERE phone_number = ?', [testPhone]);
+      await db.execute('DELETE FROM refresh_tokens WHERE user_id IN (SELECT id FROM users WHERE phone_number = ?)', [testPhone]);
+      await db.execute('DELETE FROM teams WHERE owner_id IN (SELECT id FROM users WHERE phone_number = ?)', [testPhone]);
       await db.execute('DELETE FROM users WHERE phone_number = ?', [testPhone]);
       await db.end();
+    }
+    if (server) {
+      server.close();
     }
   });
 
   describe('POST /api/auth/register', () => {
     test('should register a new captain with valid data', async () => {
-      // Note: Since we can't easily get the app instance, we'll skip actual HTTP tests
-      // and document the expected behavior
-      expect(true).toBe(true);
-      // In a real test environment:
-      // const res = await request(app)
-      //   .post('/api/auth/register')
-      //   .send({
-      //     phone_number: testPhone,
-      //     password: testPassword,
-      //     team_name: 'Test Team',
-      //     team_location: 'Test City',
-      //   });
-      // expect(res.status).toBe(201);
-      // expect(res.body.message).toContain('registered successfully');
+      const res = await request(app)
+        .post('/api/auth/register')
+        .send({
+          phone_number: testPhone,
+          password: testPassword,
+          team_name: testTeamName,
+          team_location: testTeamLocation,
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.message).toContain('registered successfully');
     });
 
     test('should reject registration with duplicate phone number', async () => {
-      expect(true).toBe(true);
-      // const res = await request(app)
-      //   .post('/api/auth/register')
-      //   .send({ phone_number: testPhone, password: testPassword, team_name: 'Test', team_location: 'Test' });
-      // expect(res.status).toBe(409);
+      const res = await request(app)
+        .post('/api/auth/register')
+        .send({ 
+          phone_number: testPhone, 
+          password: testPassword, 
+          team_name: 'Test', 
+          team_location: 'Test' 
+        });
+      expect(res.status).toBe(409);
+      expect(res.body.error).toContain('already registered');
     });
 
     test('should reject registration with invalid phone format', async () => {
-      expect(true).toBe(true);
-      // const res = await request(app)
-      //   .post('/api/auth/register')
-      //   .send({ phone_number: 'invalid', password: testPassword, team_name: 'Test', team_location: 'Test' });
-      // expect(res.status).toBe(400);
+      const res = await request(app)
+        .post('/api/auth/register')
+        .send({ 
+          phone_number: 'invalid', 
+          password: testPassword, 
+          team_name: 'Test', 
+          team_location: 'Test' 
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Invalid phone number format');
     });
 
     test('should reject registration with short password', async () => {
-      expect(true).toBe(true);
-      // const res = await request(app)
-      //   .post('/api/auth/register')
-      //   .send({ phone_number: '+15551234567', password: 'short', team_name: 'Test', team_location: 'Test' });
-      // expect(res.status).toBe(400);
+      const res = await request(app)
+        .post('/api/auth/register')
+        .send({ 
+          phone_number: '+15551234567', 
+          password: 'short', 
+          team_name: 'Test', 
+          team_location: 'Test' 
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('at least 8 characters');
     });
   });
 
   describe('POST /api/auth/login', () => {
     test('should login with correct credentials', async () => {
-      expect(true).toBe(true);
-      // const res = await request(app)
-      //   .post('/api/auth/login')
-      //   .send({ phone_number: testPhone, password: testPassword });
-      // expect(res.status).toBe(200);
-      // expect(res.body).toHaveProperty('token');
-      // expect(res.body).toHaveProperty('refresh_token');
+      const res = await request(app)
+        .post('/api/auth/login')
+        .send({ phone_number: testPhone, password: testPassword });
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('token');
+      expect(res.body).toHaveProperty('refresh_token');
+      expect(res.body).toHaveProperty('user');
+      expect(res.body.user).toHaveProperty('id');
+      expect(res.body.user).toHaveProperty('phone_number', testPhone);
     });
 
     test('should reject login with incorrect password', async () => {
-      expect(true).toBe(true);
-      // const res = await request(app)
-      //   .post('/api/auth/login')
-      //   .send({ phone_number: testPhone, password: 'wrongpassword' });
-      // expect(res.status).toBe(401);
+      const res = await request(app)
+        .post('/api/auth/login')
+        .send({ phone_number: testPhone, password: 'wrongpassword' });
+      expect(res.status).toBe(401);
+      expect(res.body.error).toContain('Invalid credentials');
     });
 
     test('should reject login for non-existent user', async () => {
-      expect(true).toBe(true);
-      // const res = await request(app)
-      //   .post('/api/auth/login')
-      //   .send({ phone_number: '+15559999999', password: testPassword });
-      // expect(res.status).toBe(404);
+      const res = await request(app)
+        .post('/api/auth/login')
+        .send({ phone_number: '+15559999999', password: testPassword });
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain('User not found');
     });
 
     test('should implement progressive throttling after multiple failures', async () => {
-      expect(true).toBe(true);
-      // Attempt login 3+ times with wrong password, then verify 429 response
+      // Clear any existing failures first
+      await db.execute('DELETE FROM auth_failures WHERE phone_number = ?', [testPhone]);
+      
+      // Make 3 failed attempts
+      for (let i = 0; i < 3; i++) {
+        await request(app)
+          .post('/api/auth/login')
+          .send({ phone_number: testPhone, password: 'wrongpassword' });
+      }
+      
+      // 4th attempt should be throttled
+      const res = await request(app)
+        .post('/api/auth/login')
+        .send({ phone_number: testPhone, password: 'wrongpassword' });
+      
+      expect(res.status).toBe(429);
+      expect(res.body.error).toContain('Too many failed login attempts');
+      expect(res.body).toHaveProperty('retryAfter');
+      expect(typeof res.body.retryAfter).toBe('number');
     });
   });
 
   describe('POST /api/auth/refresh', () => {
     test('should refresh access token with valid refresh token', async () => {
-      expect(true).toBe(true);
-      // const loginRes = await request(app)
-      //   .post('/api/auth/login')
-      //   .send({ phone_number: testPhone, password: testPassword });
-      // const refreshToken = loginRes.body.refresh_token;
-      // const res = await request(app)
-      //   .post('/api/auth/refresh')
-      //   .send({ refresh_token: refreshToken });
-      // expect(res.status).toBe(200);
-      // expect(res.body).toHaveProperty('token');
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ phone_number: testPhone, password: testPassword });
+      const refreshToken = loginRes.body.refresh_token;
+      
+      const res = await request(app)
+        .post('/api/auth/refresh')
+        .send({ refresh_token: refreshToken });
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('token');
     });
 
     test('should reject refresh with invalid token', async () => {
-      expect(true).toBe(true);
-      // const res = await request(app)
-      //   .post('/api/auth/refresh')
-      //   .send({ refresh_token: 'invalid.token.here' });
-      // expect(res.status).toBe(401);
+      const res = await request(app)
+        .post('/api/auth/refresh')
+        .send({ refresh_token: 'invalid.token.here' });
+      expect(res.status).toBe(401);
+      expect(res.body.error).toContain('Invalid refresh token');
+    });
+
+    test('should refresh with cookie-based token', async () => {
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ phone_number: testPhone, password: testPassword });
+      
+      const cookies = loginRes.headers['set-cookie'];
+      const refreshCookie = cookies.find(cookie => cookie.startsWith('refresh_token='));
+      
+      const res = await request(app)
+        .post('/api/auth/refresh')
+        .set('Cookie', refreshCookie);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('token');
     });
   });
 
   describe('POST /api/auth/logout', () => {
     test('should logout and revoke refresh token', async () => {
-      expect(true).toBe(true);
-      // const loginRes = await request(app).post('/api/auth/login').send({ phone_number: testPhone, password: testPassword });
-      // const res = await request(app).post('/api/auth/logout').send({ refresh_token: loginRes.body.refresh_token });
-      // expect(res.status).toBe(200);
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ phone_number: testPhone, password: testPassword });
+      
+      const res = await request(app)
+        .post('/api/auth/logout')
+        .send({ refresh_token: loginRes.body.refresh_token });
+      expect(res.status).toBe(200);
+      expect(res.body.message).toContain('Logged out');
+    });
+
+    test('should logout with cookie-based token', async () => {
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ phone_number: testPhone, password: testPassword });
+      
+      const cookies = loginRes.headers['set-cookie'];
+      const refreshCookie = cookies.find(cookie => cookie.startsWith('refresh_token='));
+      
+      const res = await request(app)
+        .post('/api/auth/logout')
+        .set('Cookie', refreshCookie);
+      expect(res.status).toBe(200);
+      expect(res.body.message).toContain('Logged out');
     });
   });
-});
 
-describe('Health Check', () => {
-  test('GET /health should return status ok', async () => {
-    expect(true).toBe(true);
-    // const res = await request(app).get('/health');
-    // expect(res.status).toBe(200);
-    // expect(res.body.status).toBe('ok');
+  describe('Password Reset Flow', () => {
+    test('should request password reset for valid user', async () => {
+      const res = await request(app)
+        .post('/api/auth/forgot-password')
+        .send({ phone_number: testPhone });
+      expect(res.status).toBe(200);
+      expect(res.body.message).toContain('Reset initiated');
+      expect(res.body).toHaveProperty('token'); // In test environment
+    });
+
+    test('should verify password reset token', async () => {
+      // First request reset
+      const resetRes = await request(app)
+        .post('/api/auth/forgot-password')
+        .send({ phone_number: testPhone });
+      const token = resetRes.body.token;
+      
+      // Verify token
+      const verifyRes = await request(app)
+        .post('/api/auth/verify-reset')
+        .send({ phone_number: testPhone, token });
+      expect(verifyRes.status).toBe(200);
+      expect(verifyRes.body.valid).toBe(true);
+    });
+
+    test('should confirm password reset', async () => {
+      // First request reset
+      const resetRes = await request(app)
+        .post('/api/auth/forgot-password')
+        .send({ phone_number: testPhone });
+      const token = resetRes.body.token;
+      
+      // Confirm reset with new password
+      const confirmRes = await request(app)
+        .post('/api/auth/reset-password')
+        .send({ 
+          phone_number: testPhone, 
+          token, 
+          new_password: 'NewPassword123!' 
+        });
+      expect(confirmRes.status).toBe(200);
+      expect(confirmRes.body.message).toContain('Password reset successful');
+    });
+  });
+
+  describe('Cookie Security', () => {
+    test('should set secure cookie flags', async () => {
+      const res = await request(app)
+        .post('/api/auth/login')
+        .send({ phone_number: testPhone, password: testPassword });
+      
+      const cookies = res.headers['set-cookie'];
+      const refreshCookie = cookies.find(cookie => cookie.startsWith('refresh_token='));
+      const csrfCookie = cookies.find(cookie => cookie.startsWith('csrf-token='));
+      
+      expect(refreshCookie).toContain('HttpOnly');
+      expect(refreshCookie).toContain('Path=/');
+      expect(csrfCookie).toContain('Path=/');
+    });
   });
 });
 

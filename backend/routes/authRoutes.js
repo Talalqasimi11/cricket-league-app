@@ -4,11 +4,36 @@ const { registerCaptain, loginCaptain, refreshToken, logout, requestPasswordRese
 const { verifyToken } = require('../middleware/authMiddleware');
 const rateLimit = require('express-rate-limit');
 
-// Rate limits adjusted for development/testing
-const registerLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 100 }); // 100 per hour
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 50 }); // 50 per 15 minutes
-const forgotLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }); // 20 per 15 minutes
-const changeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 }); // 30 per 15 minutes
+// Rate limits configurable via environment variables with safe production defaults
+const parseRateLimit = (envVar, defaultWindow, defaultMax) => {
+  const value = process.env[envVar];
+  if (!value) return { windowMs: defaultWindow, max: defaultMax };
+  
+  const [max, window] = value.split('/');
+  const windowMs = window ? parseInt(window) * 1000 : defaultWindow;
+  return { windowMs, max: parseInt(max) || defaultMax };
+};
+
+const registerLimiter = rateLimit({
+  ...parseRateLimit('REGISTER_RATE_LIMIT', 60 * 60 * 1000, 10), // 10 per hour in production
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const loginLimiter = rateLimit({
+  ...parseRateLimit('LOGIN_RATE_LIMIT', 15 * 60 * 1000, 10), // 10 per 15 minutes in production
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const forgotLimiter = rateLimit({
+  ...parseRateLimit('FORGOT_RATE_LIMIT', 15 * 60 * 1000, 5), // 5 per 15 minutes in production
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const changeLimiter = rateLimit({
+  ...parseRateLimit('CHANGE_RATE_LIMIT', 15 * 60 * 1000, 10), // 10 per 15 minutes in production
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Register new captain
 router.post('/register', registerLimiter, registerCaptain);
@@ -33,6 +58,8 @@ router.put('/change-password', verifyToken, changeLimiter, changePassword);
 router.put('/change-phone', verifyToken, changeLimiter, changePhoneNumber);
 
 // Test cleanup (development only)
-router.post('/clear-auth-failures', clearAuthFailures);
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/clear-auth-failures', clearAuthFailures);
+}
 
 module.exports = router;

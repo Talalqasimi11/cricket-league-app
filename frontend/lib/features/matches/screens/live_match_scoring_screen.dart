@@ -1,27 +1,225 @@
 // lib/features/matches/screens/live_match_scoring_screen.dart
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import '../../../core/api_client.dart';
 import 'post_match_screen.dart';
 
 class LiveMatchScoringScreen extends StatefulWidget {
   final String teamA;
   final String teamB;
+  final String matchId;
+  final int? teamAId;
+  final int? teamBId;
 
-  const LiveMatchScoringScreen({super.key, required this.teamA, required this.teamB});
+  const LiveMatchScoringScreen({
+    super.key,
+    required this.teamA,
+    required this.teamB,
+    required this.matchId,
+    this.teamAId,
+    this.teamBId,
+  });
 
   @override
   State<LiveMatchScoringScreen> createState() => _LiveMatchScoringScreenState();
 }
 
 class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
-  String score = "120/5";
-  String overs = "15.3";
-  String crr = "7.82";
+  String score = "0/0";
+  String overs = "0.0";
+  String crr = "0.00";
+  String? currentInningId;
+  int currentOver = 0;
+  int currentBall = 0;
+  bool isLoading = false;
+  int? teamAId;
+  int? teamBId;
+  int? currentBatsmanId;
+  int? currentBowlerId;
 
-  final List<Map<String, String>> ballByBall = [
-    {"over": "15.3", "desc": "Wicket! Caught by SKY.", "result": "W"},
-    {"over": "15.2", "desc": "1 Run", "result": "1"},
-    {"over": "15.1", "desc": "4 Runs", "result": "4"},
-  ];
+  final List<Map<String, String>> ballByBall = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize team IDs from widget parameters
+    teamAId = widget.teamAId;
+    teamBId = widget.teamBId;
+    _loadMatchData();
+  }
+
+  Future<void> _loadMatchData() async {
+    setState(() => isLoading = true);
+    try {
+      final response = await ApiClient.instance.get(
+        '/api/live/${widget.matchId}',
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        // Extract team IDs from match data if not already set
+        if (teamAId == null && data['team1_id'] != null) {
+          teamAId = data['team1_id'] as int;
+        }
+        if (teamBId == null && data['team2_id'] != null) {
+          teamBId = data['team2_id'] as int;
+        }
+
+        final innings = data['innings'] as List?;
+        if (innings != null && innings.isNotEmpty) {
+          final lastInning = innings.last as Map<String, dynamic>;
+          setState(() {
+            currentInningId = lastInning['id'].toString();
+            score = '${lastInning['runs']}/${lastInning['wickets']}';
+            overs = lastInning['overs'].toString();
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading match data: $e')));
+      }
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _startInnings() async {
+    if (currentInningId != null) return; // Innings already started
+
+    setState(() => isLoading = true);
+    try {
+      final response = await ApiClient.instance.post(
+        '/api/live/start-innings',
+        body: {
+          'match_id': widget.matchId,
+          'batting_team_id': teamAId ?? 1, // Use actual team ID or fallback
+          'bowling_team_id': teamBId ?? 2, // Use actual team ID or fallback
+          'inning_number': 1,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          currentInningId = data['inning_id']?.toString();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Innings started successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error starting innings: $e')));
+      }
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _addBall({
+    required int runs,
+    String? extras,
+    String? wicketType,
+    int? outPlayerId,
+  }) async {
+    if (currentInningId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please start innings first')),
+      );
+      return;
+    }
+
+    setState(() => isLoading = true);
+    try {
+      // Increment ball number
+      currentBall++;
+      if (currentBall > 6) {
+        currentBall = 1;
+        currentOver++;
+      }
+
+      final response = await ApiClient.instance.post(
+        '/api/live/ball',
+        body: {
+          'match_id': widget.matchId,
+          'inning_id': currentInningId,
+          'over_number': currentOver,
+          'ball_number': currentBall,
+          'batsman_id':
+              currentBatsmanId ?? 1, // Use actual batsman ID or fallback
+          'bowler_id': currentBowlerId ?? 2, // Use actual bowler ID or fallback
+          'runs': runs,
+          'extras': extras,
+          'wicket_type': wicketType,
+          'out_player_id': outPlayerId,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        await _loadMatchData(); // Refresh data
+        _addBallToLog(runs, wicketType);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error adding ball: $e')));
+      }
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _endInnings() async {
+    if (currentInningId == null) return;
+
+    setState(() => isLoading = true);
+    try {
+      final response = await ApiClient.instance.post(
+        '/api/live/end-innings',
+        body: {'inning_id': currentInningId},
+      );
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Innings ended successfully')),
+        );
+        setState(() {
+          currentInningId = null;
+          currentOver = 0;
+          currentBall = 0;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error ending innings: $e')));
+      }
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  void _addBallToLog(int runs, String? wicketType) {
+    final result = wicketType != null ? 'W' : runs.toString();
+    final description = wicketType != null
+        ? 'Wicket: $wicketType'
+        : 'Runs: $runs';
+
+    setState(() {
+      ballByBall.insert(0, {
+        'over': '$currentOver.$currentBall',
+        'desc': description,
+        'result': result,
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +234,10 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
         ),
         title: Text(
           "${widget.teamA} vs ${widget.teamB}",
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         centerTitle: true,
       ),
@@ -65,13 +266,19 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    Text("CRR: $crr", style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                    Text(
+                      "CRR: $crr",
+                      style: const TextStyle(color: Colors.grey, fontSize: 14),
+                    ),
                   ],
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: const [
-                    Text("Partnership", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    Text(
+                      "Partnership",
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
                     Text(
                       "45 (23)",
                       style: TextStyle(
@@ -119,7 +326,11 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
         children: [
           const Text(
             "Batters",
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
           ),
           const SizedBox(height: 8),
           _batterRow("Virat Kohli*", "48", "30", "5", "2"),
@@ -129,7 +340,13 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
     );
   }
 
-  Widget _batterRow(String name, String runs, String balls, String fours, String sixes) {
+  Widget _batterRow(
+    String name,
+    String runs,
+    String balls,
+    String fours,
+    String sixes,
+  ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -161,7 +378,10 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
             "Jasprit Bumrah",
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
           ),
-          Text("O: 3.3  M: 0  R: 25  W: 1", style: TextStyle(color: Colors.white70)),
+          Text(
+            "O: 3.3  M: 0  R: 25  W: 1",
+            style: TextStyle(color: Colors.white70),
+          ),
         ],
       ),
     );
@@ -173,7 +393,11 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
       children: [
         const Text(
           "Ball by Ball",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
         ),
         const SizedBox(height: 8),
         ...ballByBall.map(
@@ -191,12 +415,18 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                   backgroundColor: const Color(0xFF264532),
                   child: Text(
                     ball["over"]!,
-                    style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(ball["desc"]!, style: const TextStyle(color: Colors.white)),
+                  child: Text(
+                    ball["desc"]!,
+                    style: const TextStyle(color: Colors.white),
+                  ),
                 ),
                 Container(
                   padding: const EdgeInsets.all(6),
@@ -206,7 +436,10 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                   ),
                   child: Text(
                     ball["result"]!,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
@@ -239,23 +472,26 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                 .map(
                   (val) => ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: val == "W" ? Colors.red : Colors.green[700],
+                      backgroundColor: val == "W"
+                          ? Colors.red
+                          : Colors.green[700],
                     ),
-                    onPressed: () async {
-                      if (val == "W") {
-                        _showWicketDialog(context);
-                        final batsman = await showNewBatsmanPopup(context, [
-                          "Kohli",
-                          "Faf",
-                          "Maxwell",
-                        ]);
-                        if (batsman != null) {
-                          print("New batsman: $batsman");
-                        }
-                      } else {
-                        print("Run Scored: $val");
-                      }
-                    },
+                    onPressed: isLoading
+                        ? null
+                        : () async {
+                            if (val == "W") {
+                              _showWicketDialog(context);
+                              final batsman = await showNewBatsmanPopup(
+                                context,
+                                ["Kohli", "Faf", "Maxwell"],
+                              );
+                              if (batsman != null) {
+                                await _addBall(runs: 0, wicketType: "bowled");
+                              }
+                            } else {
+                              await _addBall(runs: int.parse(val));
+                            }
+                          },
                     child: Text(
                       val,
                       style: const TextStyle(
@@ -275,11 +511,16 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
             children: [
               Expanded(
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[600]),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[600],
+                  ),
                   onPressed: () => _showExtrasBottomSheet(context),
                   child: const Text(
                     "Extras",
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -304,6 +545,28 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
           ),
           const SizedBox(height: 12),
 
+          // Start Innings button if not started
+          if (currentInningId == null)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                onPressed: isLoading ? null : _startInnings,
+                child: const Text(
+                  "Start Innings",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+
           // Bottom Actions
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -313,17 +576,23 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 4),
                   child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                    onPressed: () async {
-                      final nextBowler = await showEndOverPopup(context, [
-                        "Hardik",
-                        "Bumrah",
-                        "Shami",
-                      ]);
-                      if (nextBowler != null) {
-                        print("Next bowler: $nextBowler");
-                      }
-                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                    ),
+                    onPressed: isLoading
+                        ? null
+                        : () async {
+                            final nextBowler = await showEndOverPopup(context, [
+                              "Hardik",
+                              "Bumrah",
+                              "Shami",
+                            ]);
+                            if (nextBowler != null) {
+                              // End over logic - just increment over
+                              currentOver++;
+                              currentBall = 0;
+                            }
+                          },
                     child: const Text(
                       "End Over",
                       style: TextStyle(color: Colors.white, fontSize: 12),
@@ -331,14 +600,19 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                   ),
                 ),
               ),
-              _actionButton("End Innings"),
+              _actionButton("End Innings", onPressed: _endInnings),
 
               // end match button
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: () {
                   // ✅ Collect stats (replace these with your real data from scoring logic)
@@ -411,7 +685,10 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                 },
                 child: const Text(
                   "End Match",
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -421,20 +698,32 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
     );
   }
 
-  Widget _actionButton(String text, {bool isDanger = false}) {
+  Widget _actionButton(
+    String text, {
+    bool isDanger = false,
+    VoidCallback? onPressed,
+  }) {
     return Expanded(
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: isDanger ? Colors.red[800] : const Color(0xFF1A2C22),
+            backgroundColor: isDanger
+                ? Colors.red[800]
+                : const Color(0xFF1A2C22),
           ),
-          onPressed: () {
-            print("Action: $text");
-          },
+          onPressed:
+              onPressed ??
+              () {
+                print("Action: $text");
+              },
           child: Text(
             text,
-            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ),
@@ -443,7 +732,10 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
 }
 
 // ✅ Fix: make these return Future<String?>
-Future<String?> showNewBatsmanPopup(BuildContext context, List<String> teamPlayers) async {
+Future<String?> showNewBatsmanPopup(
+  BuildContext context,
+  List<String> teamPlayers,
+) async {
   TextEditingController batsmanController = TextEditingController();
   String? selectedPlayer;
 
@@ -463,7 +755,11 @@ Future<String?> showNewBatsmanPopup(BuildContext context, List<String> teamPlaye
               children: [
                 const Text(
                   "New Batsman",
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -483,10 +779,15 @@ Future<String?> showNewBatsmanPopup(BuildContext context, List<String> teamPlaye
                         backgroundColor: selectedPlayer == player
                             ? Colors.green
                             : const Color(0xFF264532),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       onPressed: () => setState(() => selectedPlayer = player),
-                      child: Text(player, style: const TextStyle(color: Colors.white)),
+                      child: Text(
+                        player,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                     );
                   },
                 ),
@@ -502,7 +803,9 @@ Future<String?> showNewBatsmanPopup(BuildContext context, List<String> teamPlaye
                     hintStyle: const TextStyle(color: Colors.grey),
                     filled: true,
                     fillColor: const Color(0xFF264532),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   style: const TextStyle(color: Colors.white),
                 ),
@@ -515,10 +818,15 @@ Future<String?> showNewBatsmanPopup(BuildContext context, List<String> teamPlaye
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.grey,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         onPressed: () => Navigator.pop(context),
-                        child: const Text("Cancel", style: TextStyle(color: Colors.white)),
+                        child: const Text(
+                          "Cancel",
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -526,13 +834,19 @@ Future<String?> showNewBatsmanPopup(BuildContext context, List<String> teamPlaye
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         onPressed: () {
-                          final batsman = selectedPlayer ?? batsmanController.text.trim();
+                          final batsman =
+                              selectedPlayer ?? batsmanController.text.trim();
                           Navigator.pop(context, batsman);
                         },
-                        child: const Text("Confirm", style: TextStyle(color: Colors.white)),
+                        child: const Text(
+                          "Confirm",
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                     ),
                   ],
@@ -547,7 +861,10 @@ Future<String?> showNewBatsmanPopup(BuildContext context, List<String> teamPlaye
 }
 
 // ✅ Fix: return Future<String?>
-Future<String?> showEndOverPopup(BuildContext context, List<String> bowlers) async {
+Future<String?> showEndOverPopup(
+  BuildContext context,
+  List<String> bowlers,
+) async {
   String? selectedBowler;
   TextEditingController newBowlerController = TextEditingController();
   bool confirm = false;
@@ -593,14 +910,19 @@ Future<String?> showEndOverPopup(BuildContext context, List<String> bowlers) asy
                     labelStyle: TextStyle(color: Colors.grey),
                     filled: true,
                     fillColor: Color(0xFF264532),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
                   ),
                   initialValue: selectedBowler,
                   items: bowlers
                       .map(
                         (bowler) => DropdownMenuItem(
                           value: bowler,
-                          child: Text(bowler, style: const TextStyle(color: Colors.white)),
+                          child: Text(
+                            bowler,
+                            style: const TextStyle(color: Colors.white),
+                          ),
                         ),
                       )
                       .toList(),
@@ -616,7 +938,9 @@ Future<String?> showEndOverPopup(BuildContext context, List<String> bowlers) asy
                     hintStyle: const TextStyle(color: Colors.grey),
                     filled: true,
                     fillColor: const Color(0xFF264532),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   style: const TextStyle(color: Colors.white),
                 ),
@@ -628,9 +952,13 @@ Future<String?> showEndOverPopup(BuildContext context, List<String> bowlers) asy
                     Checkbox(
                       value: confirm,
                       activeColor: Colors.green,
-                      onChanged: (val) => setState(() => confirm = val ?? false),
+                      onChanged: (val) =>
+                          setState(() => confirm = val ?? false),
                     ),
-                    const Text("Confirm end of over", style: TextStyle(color: Colors.grey)),
+                    const Text(
+                      "Confirm end of over",
+                      style: TextStyle(color: Colors.grey),
+                    ),
                   ],
                 ),
 
@@ -642,10 +970,15 @@ Future<String?> showEndOverPopup(BuildContext context, List<String> bowlers) asy
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.grey,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         onPressed: () => Navigator.pop(context),
-                        child: const Text("Cancel", style: TextStyle(color: Colors.white)),
+                        child: const Text(
+                          "Cancel",
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -653,15 +986,22 @@ Future<String?> showEndOverPopup(BuildContext context, List<String> bowlers) asy
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         onPressed: confirm
                             ? () {
-                                final bowler = selectedBowler ?? newBowlerController.text.trim();
+                                final bowler =
+                                    selectedBowler ??
+                                    newBowlerController.text.trim();
                                 Navigator.pop(context, bowler);
                               }
                             : null,
-                        child: const Text("Confirm", style: TextStyle(color: Colors.white)),
+                        child: const Text(
+                          "Confirm",
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                     ),
                   ],
@@ -692,7 +1032,11 @@ void _showWicketDialog(BuildContext context) {
           children: [
             const Text(
               "Wicket Options",
-              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -713,7 +1057,9 @@ void _showWicketDialog(BuildContext context) {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onPressed: () => Navigator.pop(context),
               child: const Text("Cancel"),
@@ -761,7 +1107,11 @@ void _showExtrasBottomSheet(BuildContext context) {
               children: [
                 const Text(
                   "Extras",
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
@@ -792,7 +1142,10 @@ void _showExtrasBottomSheet(BuildContext context) {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text("Overthrow Runs", style: TextStyle(color: Colors.white, fontSize: 16)),
+                  const Text(
+                    "Overthrow Runs",
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
                   SizedBox(
                     width: 60,
                     child: TextField(
@@ -815,7 +1168,9 @@ void _showExtrasBottomSheet(BuildContext context) {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onPressed: () {
                 // ✅ Handle selected extras + overthrowController.text

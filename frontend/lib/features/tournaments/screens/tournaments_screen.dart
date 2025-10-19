@@ -48,7 +48,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
               as Map<String, dynamic>;
       setState(() {
         _userId =
-            int.tryParse(payload['id']?.toString() ?? '') ?? (_userId ?? 0);
+            int.tryParse(payload['sub']?.toString() ?? '') ?? (_userId ?? 0);
       });
     } catch (_) {
       // ignore decode errors
@@ -115,7 +115,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
         type: 'Knockout',
         dateRange: asType<String>(t['start_date'], ''),
         location: asType<String>(t['location'], ''),
-        overs: 20,
+        overs: asType<int>(t['overs'], 20), // Use actual overs or default to 20
         teams: const [],
         matches: matches,
       );
@@ -213,7 +213,10 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                               type: 'Knockout',
                               dateRange: date,
                               location: loc,
-                              overs: 20,
+                              overs: asType<int>(
+                                t['overs'],
+                                20,
+                              ), // Use actual overs or default to 20
                               teams: const [],
                             );
                             return GestureDetector(

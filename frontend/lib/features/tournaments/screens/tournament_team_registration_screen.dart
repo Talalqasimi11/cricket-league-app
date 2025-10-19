@@ -167,7 +167,7 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                 if (name.isEmpty) return;
                 try {
                   final resp = await ApiClient.instance.post(
-                    '/api/tournament-teams/add',
+                    '/api/tournament-teams',
                     body: {
                       'tournament_id': widget.tournamentId,
                       'temp_team_name': name,
