@@ -4,35 +4,57 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ThemeNotifier extends ChangeNotifier {
   static const _key = 'theme_mode';
   ThemeMode _mode = ThemeMode.system;
-  ThemeMode get mode => _mode;
+  bool _isLoaded = false;
 
-  Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final v = prefs.getString(_key);
-    switch (v) {
-      case 'light':
-        _mode = ThemeMode.light;
-        break;
-      case 'dark':
-        _mode = ThemeMode.dark;
-        break;
-      default:
-        _mode = ThemeMode.system;
+  ThemeMode get mode => _mode;
+  bool get isLoaded => _isLoaded;
+
+  ThemeNotifier() {
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    // Ensure bindings are ready before scheduling UI updates
+    WidgetsFlutterBinding.ensureInitialized();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getString(_key);
+
+      switch (v) {
+        case 'light':
+          _mode = ThemeMode.light;
+          break;
+        case 'dark':
+          _mode = ThemeMode.dark;
+          break;
+        default:
+          _mode = ThemeMode.system;
+      }
+
+      _isLoaded = true;
+
+      // Schedule notifyListeners AFTER the first frame to avoid `_dirty` error
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (hasListeners) notifyListeners();
+      });
+    } catch (e) {
+      debugPrint('ThemeNotifier load error: $e');
     }
-    notifyListeners();
   }
 
   Future<void> setMode(ThemeMode mode) async {
     _mode = mode;
     notifyListeners();
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _key,
-      _mode == ThemeMode.light
+      mode == ThemeMode.light
           ? 'light'
-          : _mode == ThemeMode.dark
-          ? 'dark'
-          : 'system',
+          : mode == ThemeMode.dark
+              ? 'dark'
+              : 'system',
     );
   }
 

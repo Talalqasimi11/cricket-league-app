@@ -1,14 +1,17 @@
 // lib/core/cache_service.dart
 
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path_provider/path_provider.dart';
 
 class CacheService {
-  static const String _teamDataKey = 'cached_team_data';
-  static const String _playersDataKey = 'cached_players_data';
-  static const String _atomicTeamDataKey = 'cached_atomic_team_data';
+  // File-based cache keys for large datasets
+  static const String _teamDataFile = 'cached_team_data.json';
+  static const String _playersDataFile = 'cached_players_data.json';
+  static const String _atomicTeamDataFile = 'cached_atomic_team_data.json';
+
+  // Secure storage keys for small metadata
   static const String _cacheVersionKey = 'cache_version';
   static const String _cacheTimestampKey = 'cache_timestamp';
 
@@ -20,39 +23,65 @@ class CacheService {
   factory CacheService() => _instance;
   CacheService._internal();
 
-  SharedPreferences? _prefs;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  Directory? _cacheDirectory;
 
-  Future<void> _initStorage() async {
-    if (kIsWeb) {
-      _prefs ??= await SharedPreferences.getInstance();
+  // Get cache directory for file-based storage
+  Future<Directory> _getCacheDirectory() async {
+    _cacheDirectory ??= await getApplicationDocumentsDirectory();
+    return _cacheDirectory!;
+  }
+
+  // Write to secure storage (for small metadata)
+  Future<void> _writeToSecureStorage(String key, String value) async {
+    await _secureStorage.write(key: key, value: value);
+  }
+
+  // Read from secure storage (for small metadata)
+  Future<String?> _readFromSecureStorage(String key) async {
+    return await _secureStorage.read(key: key);
+  }
+
+  // Delete from secure storage (for small metadata)
+  Future<void> _deleteFromSecureStorage(String key) async {
+    await _secureStorage.delete(key: key);
+  }
+
+  // Write to file-based cache (for large datasets)
+  Future<void> _writeToFileCache(String filename, String content) async {
+    try {
+      final cacheDir = await _getCacheDirectory();
+      final file = File('${cacheDir.path}/$filename');
+      await file.writeAsString(content);
+    } catch (e) {
+      print('Failed to write to file cache: $e');
     }
   }
 
-  Future<void> _writeToStorage(String key, String value) async {
-    await _initStorage();
-    if (kIsWeb) {
-      await _prefs!.setString(key, value);
-    } else {
-      await _secureStorage.write(key: key, value: value);
+  // Read from file-based cache (for large datasets)
+  Future<String?> _readFromFileCache(String filename) async {
+    try {
+      final cacheDir = await _getCacheDirectory();
+      final file = File('${cacheDir.path}/$filename');
+      if (await file.exists()) {
+        return await file.readAsString();
+      }
+    } catch (e) {
+      print('Failed to read from file cache: $e');
     }
+    return null;
   }
 
-  Future<String?> _readFromStorage(String key) async {
-    await _initStorage();
-    if (kIsWeb) {
-      return _prefs!.getString(key);
-    } else {
-      return await _secureStorage.read(key: key);
-    }
-  }
-
-  Future<void> _deleteFromStorage(String key) async {
-    await _initStorage();
-    if (kIsWeb) {
-      await _prefs!.remove(key);
-    } else {
-      await _secureStorage.delete(key: key);
+  // Delete from file-based cache (for large datasets)
+  Future<void> _deleteFromFileCache(String filename) async {
+    try {
+      final cacheDir = await _getCacheDirectory();
+      final file = File('${cacheDir.path}/$filename');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      print('Failed to delete from file cache: $e');
     }
   }
 
@@ -77,12 +106,12 @@ class CacheService {
         'version': _currentCacheVersion,
       };
 
-      await _writeToStorage(_teamDataKey, jsonEncode(cacheData));
-      await _writeToStorage(
+      await _writeToFileCache(_teamDataFile, jsonEncode(cacheData));
+      await _writeToSecureStorage(
         _cacheTimestampKey,
         DateTime.now().millisecondsSinceEpoch.toString(),
       );
-      await _writeToStorage(_cacheVersionKey, _currentCacheVersion);
+      await _writeToSecureStorage(_cacheVersionKey, _currentCacheVersion);
     } catch (e) {
       // Cache write failure shouldn't break the app
       print('Failed to cache team data: $e');
@@ -98,7 +127,7 @@ class CacheService {
         'version': _currentCacheVersion,
       };
 
-      await _writeToStorage(_playersDataKey, jsonEncode(cacheData));
+      await _writeToFileCache(_playersDataFile, jsonEncode(cacheData));
     } catch (e) {
       // Cache write failure shouldn't break the app
       print('Failed to cache players data: $e');
@@ -120,16 +149,16 @@ class CacheService {
         'version': _currentCacheVersion,
       };
 
-      // Write atomic data
-      await _writeToStorage(_atomicTeamDataKey, jsonEncode(atomicData));
+      // Write atomic data to file cache
+      await _writeToFileCache(_atomicTeamDataFile, jsonEncode(atomicData));
 
       // Also update individual caches for backward compatibility
       await cacheTeamData(teamData);
       await cachePlayersData(playersData);
 
-      // Update global timestamp
-      await _writeToStorage(_cacheTimestampKey, timestamp.toString());
-      await _writeToStorage(_cacheVersionKey, _currentCacheVersion);
+      // Update global timestamp in secure storage
+      await _writeToSecureStorage(_cacheTimestampKey, timestamp.toString());
+      await _writeToSecureStorage(_cacheVersionKey, _currentCacheVersion);
     } catch (e) {
       // Cache write failure shouldn't break the app
       print('Failed to cache atomic team data: $e');
@@ -139,7 +168,7 @@ class CacheService {
   /// Get atomically cached team and players data
   Future<Map<String, dynamic>?> getAtomicTeamAndPlayers() async {
     try {
-      final cachedJson = await _readFromStorage(_atomicTeamDataKey);
+      final cachedJson = await _readFromFileCache(_atomicTeamDataFile);
       if (cachedJson == null) return null;
 
       final cacheData = jsonDecode(cachedJson) as Map<String, dynamic>;
@@ -173,7 +202,7 @@ class CacheService {
   /// Get cached team data if valid
   Future<Map<String, dynamic>?> getCachedTeamData() async {
     try {
-      final cachedJson = await _readFromStorage(_teamDataKey);
+      final cachedJson = await _readFromFileCache(_teamDataFile);
       if (cachedJson == null) return null;
 
       final cacheData = jsonDecode(cachedJson) as Map<String, dynamic>;
@@ -207,7 +236,7 @@ class CacheService {
   /// Get cached players data if valid
   Future<List<Map<String, dynamic>>?> getCachedPlayersData() async {
     try {
-      final cachedJson = await _readFromStorage(_playersDataKey);
+      final cachedJson = await _readFromFileCache(_playersDataFile);
       if (cachedJson == null) return null;
 
       final cacheData = jsonDecode(cachedJson) as Map<String, dynamic>;
@@ -241,7 +270,7 @@ class CacheService {
   /// Check if cache is valid and not expired
   Future<bool> isCacheValid() async {
     try {
-      final timestampStr = await _readFromStorage(_cacheTimestampKey);
+      final timestampStr = await _readFromSecureStorage(_cacheTimestampKey);
       if (timestampStr == null) return false;
 
       final timestamp = int.tryParse(timestampStr);
@@ -259,11 +288,11 @@ class CacheService {
   /// Clear all cached data
   Future<void> clearCache() async {
     try {
-      await _deleteFromStorage(_teamDataKey);
-      await _deleteFromStorage(_playersDataKey);
-      await _deleteFromStorage(_atomicTeamDataKey);
-      await _deleteFromStorage(_cacheTimestampKey);
-      await _deleteFromStorage(_cacheVersionKey);
+      await _deleteFromFileCache(_teamDataFile);
+      await _deleteFromFileCache(_playersDataFile);
+      await _deleteFromFileCache(_atomicTeamDataFile);
+      await _deleteFromSecureStorage(_cacheTimestampKey);
+      await _deleteFromSecureStorage(_cacheVersionKey);
     } catch (e) {
       // Cache clear failure shouldn't break the app
       print('Failed to clear cache: $e');
@@ -273,7 +302,7 @@ class CacheService {
   /// Get cache age in minutes
   Future<int?> getCacheAgeMinutes() async {
     try {
-      final timestampStr = await _readFromStorage(_cacheTimestampKey);
+      final timestampStr = await _readFromSecureStorage(_cacheTimestampKey);
       if (timestampStr == null) return null;
 
       final timestamp = int.tryParse(timestampStr);

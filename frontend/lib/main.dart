@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'screens/splash/splash_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/forgot_password_screen.dart';
@@ -24,6 +25,25 @@ import 'screens/support/contact_screen.dart';
 import 'screens/support/feedback_screen.dart';
 
 void main() {
+  // Ensure Flutter bindings are initialized before doing any platform / binding work.
+  // This prevents timing issues when ChangeNotifiers or other initialization
+  // code use WidgetsBinding or schedule post-frame callbacks.
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Add error handling for uncaught exceptions
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('Flutter Error: ${details.exception}');
+    debugPrint('Stack trace: ${details.stack}');
+  };
+
+  // Add error handling for platform errors
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Platform Error: $error');
+    debugPrint('Stack trace: $stack');
+    return true;
+  };
+
   runApp(const AppBootstrap());
 }
 
@@ -52,6 +72,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
         _isInitialized = true;
       });
     } catch (e) {
+      debugPrint('App initialization error: $e');
       setState(() {
         _initError = e.toString();
       });
@@ -94,7 +115,20 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeNotifier()..load()),
+        // IMPORTANT: Create ThemeNotifier without invoking load() synchronously
+        // during widget tree construction. ThemeNotifier should either:
+        //  - perform its own safe initialization (in its constructor with
+        //    post-frame/microtask-safe notifyListeners), OR
+        //  - expose a load() that you call after the first frame.
+        //
+        // Creating it like this avoids calling notifyListeners() while the
+        // framework is still mounting widgets which triggers the `_dirty` assertion.
+        ChangeNotifierProvider(
+          create: (_) => ThemeNotifier(),
+        ),
+
+        // AuthProvider created normally. Its initialization which needs context
+        // will be done inside AuthInitializer (after the first frame).
         ChangeNotifierProvider(create: (_) => AuthProvider()),
       ],
       child: const AuthInitializer(),
@@ -115,19 +149,29 @@ class _AuthInitializerState extends State<AuthInitializer> {
   @override
   void initState() {
     super.initState();
-    _initializeAuth();
+
+    // Delay actual auth initialization to after the first frame so that
+    // Provider.of(context) and other context-bound calls are safe and we
+    // avoid triggering rebuilds during widget mounting.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeAuth();
+    });
   }
 
   Future<void> _initializeAuth() async {
     try {
+      // listen: false is used because we're calling this in init; we don't want
+      // this method to subscribe the initState to changes.
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.initializeAuth();
       setState(() {
         _authInitialized = true;
       });
     } catch (e) {
+      debugPrint('Auth initialization error: $e');
+      // Continue even if auth init fails; app shows UI and user can retry/login.
       setState(() {
-        _authInitialized = true; // Continue even if auth init fails
+        _authInitialized = true;
       });
     }
   }
@@ -264,16 +308,16 @@ class _AuthInitializerState extends State<AuthInitializer> {
                         .toString(),
                     runs:
                         int.tryParse(args['runs']?.toString() ?? '') ??
-                        (args['runs'] is int ? args['runs'] as int : 0),
+                            (args['runs'] is int ? args['runs'] as int : 0),
                     battingAvg:
                         double.tryParse(args['battingAvg']?.toString() ?? '') ??
-                        0,
+                            0,
                     strikeRate:
                         double.tryParse(args['strikeRate']?.toString() ?? '') ??
-                        0,
+                            0,
                     wickets:
                         int.tryParse(args['wickets']?.toString() ?? '') ??
-                        (args['wickets'] is int ? args['wickets'] as int : 0),
+                            (args['wickets'] is int ? args['wickets'] as int : 0),
                   ),
                 );
             }
