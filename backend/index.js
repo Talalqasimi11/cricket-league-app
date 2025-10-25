@@ -10,7 +10,7 @@ const validateEnv = require("./config/validateEnv");
 const rateLimit = require("express-rate-limit");
 
 // Initialize database connection
-const db = require("./config/db");
+const { db, checkConnection } = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
 const teamRoutes = require("./routes/teamRoutes");
@@ -23,6 +23,7 @@ const liveScoreRoutes = require("./routes/liveScoreRoutes");
 const playerStatsRoutes = require("./routes/playerStatsRoutes");
 const teamTournamentSummaryRoutes = require("./routes/teamTournamentSummaryRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 validateEnv();
 
@@ -47,23 +48,17 @@ validateEnv();
 
 const app = express();
 
-// Security headers with helmet
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'"],
-      fontSrc: ["'self'"],
-      objectSrc: ["'none'"],
-      mediaSrc: ["'self'"],
-      frameSrc: ["'none'"],
-    },
-  },
-  crossOriginEmbedderPolicy: false, // Disable for development compatibility
-}));
+
+app.use((req, res, next) => {
+ 
+
+  res.setHeader('ngrok-skip-browser-warning', 'true');
+  next();
+});
+
+// Helper function to derive connectSrc from allowedOrigins (moved after allowedOrigins declaration)
+
+// Security headers with helmet (moved after getConnectSrc function definition)
 
 app.use(pinoHttp({
   redact: [
@@ -118,6 +113,7 @@ let allowedOrigins = (process.env.CORS_ORIGINS || "").split(",").map(s => s.trim
 // For development, auto-add common localhost origins if empty
 if (process.env.NODE_ENV !== 'production' && allowedOrigins.length === 0) {
   allowedOrigins = [
+    'https://foveolar-louetta-unradiant.ngrok-free.dev',
     'http://localhost:3000',
     'http://localhost:5000',
     'http://localhost:8080', // Flutter web dev server
@@ -134,6 +130,38 @@ if (process.env.NODE_ENV !== 'production' && allowedOrigins.length === 0) {
 
 console.log('✅ CORS allowed origins:', allowedOrigins.length > 0 ? allowedOrigins.join(', ') : 'none (production requires CORS_ORIGINS)');
 console.log('💡 For physical devices, add your computer\'s IP (e.g., http://192.168.1.100:5000) to CORS_ORIGINS env var');
+
+// Helper function to derive connectSrc from allowedOrigins
+const getConnectSrc = () => {
+  const baseSources = ["'self'"];
+  const wsSources = allowedOrigins.map(origin => {
+    if (origin.startsWith('https://')) {
+      return origin.replace('https://', 'wss://');
+    } else if (origin.startsWith('http://')) {
+      return origin.replace('http://', 'ws://');
+    }
+    return origin;
+  });
+  return [...baseSources, ...allowedOrigins, ...wsSources];
+};
+
+// Security headers with helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: getConnectSrc(),
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Disable for development compatibility
+}));
 
 // Production validation: warn when credentials=true but no HTTPS origins
 if (process.env.NODE_ENV === 'production') {
@@ -216,19 +244,64 @@ app.use("/api/tournament-teams", tournamentTeamRoutes);
 app.use("/api/tournament-matches", tournamentMatchRoutes); // ✅ Register here
 app.use("/api/live", liveScoreRoutes);
 app.use("/api/feedback", feedbackRoutes);
+app.use("/api/admin", adminRoutes);
 
-// Health check endpoint with DB ping
-app.get("/health", async (req, res) => {
-  let dbOk = false;
+// Health check endpoints
+// Liveness probe - always returns 200 if server is running
+app.get("/health/live", (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    version: process.env.APP_VERSION || 'dev'
+  });
+});
+
+// Readiness probe - returns 200 only if DB is accessible, 503 otherwise
+app.get("/health/ready", async (req, res) => {
   try {
-    const conn = await db.getConnection();
-    await conn.query("SELECT 1");
-    conn.release();
-    dbOk = true;
-  } catch (_) {
-    dbOk = false;
+    const isDbReady = await checkConnection();
+    if (isDbReady) {
+      res.status(200).json({ 
+        status: 'ready', 
+        timestamp: new Date().toISOString(),
+        version: process.env.APP_VERSION || 'dev',
+        database: 'connected'
+      });
+    } else {
+      res.status(503).json({ 
+        status: 'not ready', 
+        timestamp: new Date().toISOString(),
+        version: process.env.APP_VERSION || 'dev',
+        database: 'disconnected'
+      });
+    }
+  } catch (error) {
+    res.status(503).json({ 
+      status: 'not ready', 
+      timestamp: new Date().toISOString(),
+      version: process.env.APP_VERSION || 'dev',
+      database: 'error',
+      error: error.message
+    });
   }
-  return res.status(200).json({ status: 'ok', version: process.env.APP_VERSION || 'dev', db: dbOk ? 'up' : 'down' });
+});
+
+// Legacy health endpoint for backward compatibility
+app.get("/health", async (req, res) => {
+  try {
+    const isDbReady = await checkConnection();
+    return res.status(200).json({ 
+      status: 'ok', 
+      version: process.env.APP_VERSION || 'dev', 
+      database: isDbReady ? 'up' : 'down' 
+    });
+  } catch (error) {
+    return res.status(200).json({ 
+      status: 'ok', 
+      version: process.env.APP_VERSION || 'dev', 
+      database: 'down' 
+    });
+  }
 });
 
 // 404 handler
@@ -241,6 +314,52 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
+// Create HTTP server for Socket.IO
+const httpServer = require('http').createServer(app);
+
+// Initialize Socket.IO with Redis adapter
+const { Server } = require('socket.io');
+const { createAdapter } = require('@socket.io/redis-adapter');
+const redis = require('redis');
+
+const pubClient = redis.createClient();
+const subClient = pubClient.duplicate();
+
+const io = new Server(httpServer, {
+  cors: {
+    origin: (process.env.CORS_ORIGINS || "").split(',').map(s => s.trim()).filter(Boolean),
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
+io.adapter(createAdapter(pubClient, subClient));
+
+// Socket.IO authentication middleware
+io.of('/live-score').use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) return next(new Error('Authentication error'));
+    const decoded = require('./middleware/authMiddleware').verifyToken(token);
+    socket.user = decoded;
+    next();
+  } catch (err) {
+    next(new Error('Invalid token'));
+  }
+});
+
+// Socket.IO connection handler
+io.of('/live-score').on('connection', (socket) => {
+  socket.on('subscribe', (matchId) => {
+    socket.join(`match:${matchId}`);
+    console.log(`User ${socket.user.id} subscribed to match ${matchId}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`User ${socket.user?.id} disconnected`);
+  });
+});
+
 // ✅ Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
+httpServer.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));

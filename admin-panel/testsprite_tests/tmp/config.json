@@ -1,0 +1,19 @@
+{
+  "status": "commited",
+  "type": "backend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "backendAuthType": "basic token",
+  "backendUsername": "123456789",
+  "backendPassword": "123456789",
+  "executionArgs": {
+    "projectName": "admin-panel",
+    "projectPath": "C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app\\admin-panel",
+    "testIds": [],
+    "additionalInstruction": "",
+    "envs": {
+      "API_KEY": "sk-user-WcHjayY_PtwmltouZBltsMQxzGSjijQjLv5VJZkFx_5MSW4tWsdl-GbwkFZCzYr87k17dIkS5eATaBQ71q-hee7olYqR17Aukcr_3OFL_XDEYvbZ4rf6q1jln5yrEDKfOv8"
+    }
+  },
+  "proxy": "http://da33ea01-620e-4407-8259-96346691e328:91ubhFXT2x8pm27jGydmxWGf2o2PYT2K@tun.testsprite.com:8080"
+}

@@ -30,19 +30,79 @@ class AuthProvider extends ChangeNotifier {
   // Check if user has required role
   bool hasRole(String role) => _roles.contains(role);
 
+  // Decode JWT token and extract claims
+  Map<String, dynamic>? _decodeJWT(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+
+      // Decode the payload (middle part)
+      final payload = parts[1];
+      // Add padding if needed
+      final paddedPayload = payload.padRight((payload.length + 3) & ~3, '=');
+      final decoded = utf8.decode(base64Url.decode(paddedPayload));
+      return jsonDecode(decoded) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('Error decoding JWT: $e');
+      return null;
+    }
+  }
+
+  // Extract user info from JWT token
+  void _extractUserInfoFromToken(String token) {
+    final claims = _decodeJWT(token);
+    if (claims == null) return;
+
+    // Extract user ID and phone number
+    _userId = claims['sub']?.toString();
+    _phoneNumber = claims['phone_number']?.toString();
+
+    // Extract roles and scopes
+    _roles.clear();
+    _scopes.clear();
+
+    // Extract roles
+    if (claims['roles'] is List) {
+      _roles.addAll((claims['roles'] as List).map((e) => e.toString()));
+    } else if (claims['role'] != null) {
+      _roles.add(claims['role'].toString());
+    }
+
+    // Extract scopes
+    if (claims['scopes'] is List) {
+      _scopes.addAll((claims['scopes'] as List).map((e) => e.toString()));
+    }
+
+    // Validate token expiration
+    final exp = claims['exp'];
+    if (exp != null) {
+      final expirationTime = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+      if (expirationTime.isBefore(DateTime.now())) {
+        debugPrint('JWT token has expired');
+        _clearAuth();
+        return;
+      }
+    }
+
+    debugPrint(
+      'Extracted user info - ID: $_userId, Phone: $_phoneNumber, Roles: $_roles, Scopes: $_scopes',
+    );
+  }
+
   // Initialize auth state from stored token
   Future<void> initializeAuth() async {
     _setLoading(true);
     try {
       final token = await ApiClient.instance.token;
       if (token != null && token.isNotEmpty) {
+        // Extract user info from JWT token
+        _extractUserInfoFromToken(token);
+
         // Token exists, verify it's still valid by making a test request
         try {
           final response = await ApiClient.instance.get('/api/teams/my-team');
           if (response.statusCode == 200) {
             _setAuthenticated(true);
-            // Extract user info from token if needed
-            // For now, we'll rely on the API response
           } else if (response.statusCode == 401) {
             // Token is invalid, clear it
             await logout();
@@ -75,11 +135,8 @@ class AuthProvider extends ChangeNotifier {
         final data = jsonDecode(response.body);
         await ApiClient.instance.setToken(data['token']);
 
-        // Extract user info from response
-        if (data['user'] != null) {
-          _userId = data['user']['id']?.toString();
-          _phoneNumber = data['user']['phone_number'];
-        }
+        // Extract user info from JWT token
+        _extractUserInfoFromToken(data['token']);
 
         _setAuthenticated(true);
         return true;
@@ -104,9 +161,19 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Logout error: $e');
     } finally {
-      _setAuthenticated(false);
+      _clearAuth();
       _setLoading(false);
     }
+  }
+
+  // Clear authentication state
+  void _clearAuth() {
+    _isAuthenticated = false;
+    _userId = null;
+    _phoneNumber = null;
+    _roles.clear();
+    _scopes.clear();
+    notifyListeners();
   }
 
   // Refresh authentication state

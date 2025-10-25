@@ -68,6 +68,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
     try {
       // Initialize ApiClient before any API calls
       await ApiClient.instance.init();
+
       setState(() {
         _isInitialized = true;
       });
@@ -123,9 +124,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
         //
         // Creating it like this avoids calling notifyListeners() while the
         // framework is still mounting widgets which triggers the `_dirty` assertion.
-        ChangeNotifierProvider(
-          create: (_) => ThemeNotifier(),
-        ),
+        ChangeNotifierProvider(create: (_) => ThemeNotifier()),
 
         // AuthProvider created normally. Its initialization which needs context
         // will be done inside AuthInitializer (after the first frame).
@@ -308,16 +307,16 @@ class _AuthInitializerState extends State<AuthInitializer> {
                         .toString(),
                     runs:
                         int.tryParse(args['runs']?.toString() ?? '') ??
-                            (args['runs'] is int ? args['runs'] as int : 0),
+                        (args['runs'] is int ? args['runs'] as int : 0),
                     battingAvg:
                         double.tryParse(args['battingAvg']?.toString() ?? '') ??
-                            0,
+                        0,
                     strikeRate:
                         double.tryParse(args['strikeRate']?.toString() ?? '') ??
-                            0,
+                        0,
                     wickets:
                         int.tryParse(args['wickets']?.toString() ?? '') ??
-                            (args['wickets'] is int ? args['wickets'] as int : 0),
+                        (args['wickets'] is int ? args['wickets'] as int : 0),
                   ),
                 );
             }

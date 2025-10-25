@@ -2,6 +2,7 @@ require('dotenv').config();
 
 function validateEnv() {
   const isDevelopment = process.env.NODE_ENV === 'development';
+  const isTest = process.env.NODE_ENV === 'test';
   
   const required = [
     'DB_HOST', 'DB_USER', 'DB_PASS', 'DB_NAME',
@@ -13,8 +14,8 @@ function validateEnv() {
   if (missing.length > 0) {
     const errorMsg = `❌ FATAL: Missing required environment variables: ${missing.join(', ')}`;
     
-    if (isDevelopment) {
-      console.warn('⚠️  WARNING (Development Mode): ' + errorMsg);
+    if (isDevelopment || isTest) {
+      console.warn('⚠️  WARNING (Development/Test Mode): ' + errorMsg);
       console.warn('⚠️  The application may not function correctly without these variables.');
       console.warn('⚠️  Please set them in your .env file or environment.');
     } else {
@@ -40,13 +41,13 @@ function validateEnv() {
   if (jwtSecretLen < secretMinLength || refreshSecretLen < secretMinLength) {
     const errorMsg = `❌ FATAL: JWT secrets must be at least ${secretMinLength} characters (JWT_SECRET: ${jwtSecretLen}, JWT_REFRESH_SECRET: ${refreshSecretLen})`;
     
-    if (isDevelopment && allowWeakSecrets) {
-      console.warn('⚠️  WARNING (Development Mode): ' + errorMsg);
-      console.warn('⚠️  Using short secrets in development is insecure.');
+    if ((isDevelopment || isTest) && allowWeakSecrets) {
+      console.warn('⚠️  WARNING (Development/Test Mode): ' + errorMsg);
+      console.warn('⚠️  Using short secrets in development/test is insecure.');
       console.warn('⚠️  Set ALLOW_WEAK_SECRETS=true to suppress this warning.');
-    } else if (isDevelopment) {
-      console.warn('⚠️  WARNING (Development Mode): ' + errorMsg);
-      console.warn('⚠️  Using short secrets in development is insecure.');
+    } else if (isDevelopment || isTest) {
+      console.warn('⚠️  WARNING (Development/Test Mode): ' + errorMsg);
+      console.warn('⚠️  Using short secrets in development/test is insecure.');
       console.warn('⚠️  Set ALLOW_WEAK_SECRETS=true to suppress this warning.');
     } else {
       console.error(errorMsg);
@@ -55,17 +56,17 @@ function validateEnv() {
     }
   }
   
-  // Log a prominent banner if weak secrets are detected even in development
-  if (isDevelopment && (jwtSecretLen < secretMinLength || refreshSecretLen < secretMinLength)) {
+  // Log a prominent banner if weak secrets are detected even in development/test
+  if ((isDevelopment || isTest) && (jwtSecretLen < secretMinLength || refreshSecretLen < secretMinLength)) {
     console.log('\n' + '='.repeat(80));
-    console.log('🚨 WEAK SECRETS DETECTED IN DEVELOPMENT 🚨');
+    console.log('🚨 WEAK SECRETS DETECTED IN DEVELOPMENT/TEST 🚨');
     console.log('='.repeat(80));
     console.log('Your JWT secrets are shorter than recommended for security.');
-    console.log('This is acceptable for development but NEVER use in production.');
+    console.log('This is acceptable for development/test but NEVER use in production.');
     console.log('='.repeat(80) + '\n');
   }
   
-  console.log('✅ Environment validation passed' + (isDevelopment ? ' (development mode)' : ''));
+  console.log('✅ Environment validation passed' + (isDevelopment ? ' (development mode)' : isTest ? ' (test mode)' : ''));
 }
 
 module.exports = validateEnv;

@@ -70,7 +70,6 @@ const getTournaments = async (req, res) => {
 // Status transition validation
 const validateStatusTransition = (currentStatus, newStatus) => {
   const validTransitions = {
-    'not_started': ['upcoming', 'live', 'abandoned'],
     'upcoming': ['live', 'abandoned'],
     'live': ['completed', 'abandoned'],
     'completed': [], // No transitions from completed

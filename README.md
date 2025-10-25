@@ -79,21 +79,49 @@ The application uses role-based access control with the following scopes:
 - For Android emulator, Flutter uses `http://10.0.2.2:5000` as base URL
 - To override API URL at build time: `flutter run --dart-define=API_BASE_URL=http://your-custom-url:5000`
 
-## Database Setup and Migrations
+## Database Setup
 
-The backend automatically handles database setup on first run:
+The application uses a schema-based approach for database setup:
 
-1. **Schema Bootstrap**: On startup, if the `users` table doesn't exist, the app runs `cricket-league-db/schema.sql` to create the base schema
-2. **Migrations**: After schema setup, all pending migrations from `backend/migrations/` are executed in order
-3. **Migration Tracking**: A `migrations` table tracks which migrations have been applied
+1. **Schema Setup**: Run the complete schema from `cricket-league-db/schema.sql` to create all tables and constraints
+2. **No Migrations**: The current setup does not use a migration system - the schema file contains the complete database structure
+3. **Manual Setup**: You need to manually run the schema file to set up the database
+
+### Database Setup Steps
+
+1. Create the database:
+```sql
+CREATE DATABASE cricket_league;
+```
+
+2. Run the complete schema:
+```bash
+mysql -u root -p cricket_league < cricket-league-db/schema.sql
+```
+
+Or if using the backend's database connection:
+```bash
+cd backend
+node -e "
+const db = require('./config/db');
+const fs = require('fs');
+const schema = fs.readFileSync('../cricket-league-db/schema.sql', 'utf8');
+db.query(schema).then(() => {
+  console.log('Schema applied successfully');
+  process.exit(0);
+}).catch(err => {
+  console.error('Schema application failed:', err);
+  process.exit(1);
+});
+"
+```
 
 ### Running the Application
 
 **Recommended**: Always start the backend with `npm start` from the `backend/` directory. This ensures:
 - Environment variables are validated
 - Database connection is established
-- Schema is created if needed
-- All pending migrations are applied automatically
+- Application is ready to serve requests
 
 ```bash
 cd backend

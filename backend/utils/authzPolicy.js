@@ -7,44 +7,73 @@ const ROLE_SCOPE_MAPPING = {
     'team:manage', 
     'match:score',
     'player:manage',
-    'tournament:manage'
+    'player:read',
+    'tournament:manage',
+    'tournament:read'
   ],
   admin: [
     'team:read',
     'team:manage',
     'match:score', 
     'player:manage',
+    'player:read',
     'tournament:manage',
+    'tournament:read',
     'admin:all'
   ]
 };
 
 const ROUTE_SCOPE_REQUIREMENTS = {
   // Team management
-  'POST /api/teams': ['team:manage'],
-  'PUT /api/teams/:id': ['team:manage'],
-  'DELETE /api/teams/:id': ['team:manage'],
+  'GET /api/teams': [], // Public
   'GET /api/teams/my-team': ['team:read'],
+  'PUT /api/teams/update': ['team:manage'],
+  'DELETE /api/teams/my-team': ['team:manage'],
+  'GET /api/teams/:id': [], // Public
   
   // Player management
   'POST /api/players': ['player:manage'],
+  'GET /api/players/my-players': ['player:read'],
   'PUT /api/players/:id': ['player:manage'],
   'DELETE /api/players/:id': ['player:manage'],
-  'GET /api/players/my-players': ['player:read'],
+  'GET /api/players/team/:team_id': [], // Public
   
   // Match scoring
   'POST /api/live-score/start-innings': ['match:score'],
   'POST /api/live-score/ball': ['match:score'],
   'POST /api/live-score/end-innings': ['match:score'],
-  'POST /api/deliveries': ['match:score'],
+  'GET /api/live-score/:match_id': [], // Public
+  'POST /api/live-score/deliveries': ['match:score'],
   
   // Tournament management
   'POST /api/tournaments': ['tournament:manage'],
+  'GET /api/tournaments': [], // Public
   'PUT /api/tournaments/:id': ['tournament:manage'],
   'DELETE /api/tournaments/:id': ['tournament:manage'],
   'POST /api/tournaments/create': ['tournament:manage'],
   'PUT /api/tournaments/update': ['tournament:manage'],
-  'DELETE /api/tournaments/delete': ['tournament:manage']
+  'DELETE /api/tournaments/delete': ['tournament:manage'],
+  
+  // Admin routes
+  'GET /api/admin/dashboard': ['admin:all'],
+  'GET /api/admin/users': ['admin:all'],
+  'PUT /api/admin/users/:userId/admin': ['admin:all'],
+  'DELETE /api/admin/users/:userId': ['admin:all'],
+  'GET /api/admin/teams': ['admin:all'],
+  'GET /api/admin/teams/:teamId': ['admin:all'],
+  'PUT /api/admin/teams/:teamId': ['admin:all'],
+  'DELETE /api/admin/teams/:teamId': ['admin:all'],
+  
+  // Auth routes (no scopes required)
+  'POST /api/auth/register': [],
+  'POST /api/auth/login': [],
+  'POST /api/auth/refresh': [],
+  'POST /api/auth/logout': [],
+  'POST /api/auth/forgot-password': [],
+  'POST /api/auth/verify-reset': [],
+  'POST /api/auth/reset-password': [],
+  'PUT /api/auth/change-password': [],
+  'PUT /api/auth/change-phone': []
 };
 
 /**

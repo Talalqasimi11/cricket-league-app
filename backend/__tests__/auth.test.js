@@ -50,13 +50,19 @@ describe('Auth API Integration Tests', () => {
     server = app.listen(0);
   });
 
+  beforeEach(async () => {
+    // Start a transaction for each test
+    await db.execute('START TRANSACTION');
+  });
+
+  afterEach(async () => {
+    // Rollback transaction after each test
+    await db.execute('ROLLBACK');
+  });
+
   afterAll(async () => {
     // Cleanup
     if (db) {
-      await db.execute('DELETE FROM auth_failures WHERE phone_number = ?', [testPhone]);
-      await db.execute('DELETE FROM refresh_tokens WHERE user_id IN (SELECT id FROM users WHERE phone_number = ?)', [testPhone]);
-      await db.execute('DELETE FROM teams WHERE owner_id IN (SELECT id FROM users WHERE phone_number = ?)', [testPhone]);
-      await db.execute('DELETE FROM users WHERE phone_number = ?', [testPhone]);
       await db.end();
     }
     if (server) {

@@ -155,7 +155,27 @@ const updatePlayer = async (req, res) => {
     roleToUse = roleToCheck;
   }
 
+  let conn;
   try {
+    // Start transaction
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    // Lock player row for update to prevent concurrent modifications
+    const [playerRows] = await conn.query(
+      `SELECT p.id, p.team_id FROM players p
+       JOIN teams t ON p.team_id = t.id
+       WHERE p.id = ? AND t.owner_id = ? FOR UPDATE`,
+      [playerId, req.user.id]
+    );
+
+    if (playerRows.length === 0) {
+      await conn.rollback();
+      return res.status(403).json({ error: "Not allowed to update this player or player not found" });
+    }
+
+    const teamId = playerRows[0].team_id;
+
     // Build dynamic UPDATE query with only provided fields
     const updateFields = [];
     const updateValues = [];
@@ -211,26 +231,28 @@ const updatePlayer = async (req, res) => {
     }
 
     if (updateFields.length === 0) {
+      await conn.rollback();
       return res.status(400).json({ error: "No valid fields provided for update" });
     }
 
-    updateValues.push(playerId, req.user.id);
+    updateValues.push(playerId);
 
     // Execute dynamic UPDATE with ownership check
-    const [result] = await db.query(
+    const [result] = await conn.query(
       `UPDATE players p
        JOIN teams t ON p.team_id = t.id
        SET ${updateFields.join(', ')}
        WHERE p.id = ? AND t.owner_id = ?`,
-      updateValues
+      [...updateValues, req.user.id]
     );
 
     if (result.affectedRows === 0) {
+      await conn.rollback();
       return res.status(403).json({ error: "Not allowed to update this player or player not found" });
     }
 
     // Return updated player data
-    const [updated] = await db.query(
+    const [updated] = await conn.query(
       `SELECT 
          p.id, p.player_name, p.player_role, p.player_image_url, p.runs, p.matches_played, 
          p.hundreds, p.fifties, p.batting_average, p.strike_rate, p.wickets, p.team_id
@@ -240,10 +262,21 @@ const updatePlayer = async (req, res) => {
       [playerId, req.user.id]
     );
 
+    // Commit transaction
+    await conn.commit();
+
     res.json({ message: "Player updated successfully", player: updated[0] });
   } catch (err) {
+    if (conn) {
+      await conn.rollback();
+    }
+    
     logDatabaseError(req.log, "updatePlayer", err, { userId: req.user?.id, playerId });
     res.status(500).json({ error: "Server error" });
+  } finally {
+    if (conn) {
+      conn.release();
+    }
   }
 };
 

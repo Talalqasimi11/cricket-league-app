@@ -70,4 +70,13 @@ const requireScope = (required) => (req, res, next) => {
   return next();
 };
 
-module.exports = { verifyToken, requireScope };
+// Admin role guard - requires admin role in JWT token
+const requireAdmin = (req, res, next) => {
+  const roles = req.user?.roles || [];
+  if (!roles.includes('admin')) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
+};
+
+module.exports = { verifyToken, requireScope, requireAdmin };

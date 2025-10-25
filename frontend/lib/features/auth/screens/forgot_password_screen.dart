@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/api_client.dart';
+import '../../../core/error_handler.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -27,9 +28,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Future<void> _request() async {
     final phone = _phoneController.text.trim();
     if (phone.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Enter phone number')));
+      ErrorHandler.showErrorSnackBar(context, 'Enter phone number');
       return;
     }
     setState(() => _isRequesting = true);
@@ -39,8 +38,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         body: {'phone_number': phone},
       );
       setState(() => _requested = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('If account exists, reset started.')),
+      ErrorHandler.showSuccessSnackBar(
+        context, 
+        'If account exists, reset started.'
       );
       // For dev, if token returned, show it
       final token = (resp as Map<String, dynamic>)['token']?.toString();
@@ -48,9 +48,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         _tokenController.text = token;
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Request failed: $e')));
+      ErrorHandler.showErrorSnackBar(context, e);
     } finally {
       if (mounted) setState(() => _isRequesting = false);
     }
@@ -61,9 +59,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final token = _tokenController.text.trim();
     final newPass = _newPassController.text.trim();
     if (phone.isEmpty || token.isEmpty || newPass.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Fill all fields')));
+      ErrorHandler.showErrorSnackBar(context, 'Fill all fields');
       return;
     }
     setState(() => _isConfirming = true);
@@ -73,16 +69,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         body: {'phone_number': phone, 'token': token, 'new_password': newPass},
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password reset successful. Please login.'),
-        ),
+      ErrorHandler.showSuccessSnackBar(
+        context,
+        'Password reset successful. Please login.',
       );
       Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Reset failed: $e')));
+      ErrorHandler.showErrorSnackBar(context, e);
     } finally {
       if (mounted) setState(() => _isConfirming = false);
     }

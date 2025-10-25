@@ -64,10 +64,7 @@ CREATE TABLE IF NOT EXISTS teams (
     vice_captain_player_id INT NULL,
     -- Foreign key to the user who owns the team
     CONSTRAINT fk_team_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
-    -- Foreign key to the captain player (must be from this team)
-    CONSTRAINT fk_team_captain FOREIGN KEY (captain_player_id) REFERENCES players(id) ON DELETE SET NULL,
-    -- Foreign key to the vice-captain player (must be from this team)
-    CONSTRAINT fk_team_vice_captain FOREIGN KEY (vice_captain_player_id) REFERENCES players(id) ON DELETE SET NULL,
+    -- Foreign key constraints for captain and vice-captain will be added after players table is created
     -- Ensure captain and vice-captain are different
     CONSTRAINT teams_captain_vice_distinct CHECK (captain_player_id IS NULL OR vice_captain_player_id IS NULL OR captain_player_id <> vice_captain_player_id),
     -- Ensure only one team per captain
@@ -92,15 +89,22 @@ CREATE TABLE IF NOT EXISTS players (
     CONSTRAINT fk_player_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- Add foreign key constraints for team captain and vice-captain after players table is created
+ALTER TABLE teams ADD CONSTRAINT fk_team_captain FOREIGN KEY (captain_player_id) REFERENCES players(id) ON DELETE SET NULL;
+ALTER TABLE teams ADD CONSTRAINT fk_team_vice_captain FOREIGN KEY (vice_captain_player_id) REFERENCES players(id) ON DELETE SET NULL;
+
+-- Migrate existing 'not_started' tournament status to 'upcoming'
+UPDATE tournaments SET status = 'upcoming' WHERE status = 'not_started';
+
 -- 4. Tournaments
 -- Tournaments are created by a user.
--- Note: 'upcoming' and 'not_started' are treated as synonyms; 'upcoming' added via migrations
+-- Status values: 'upcoming' (default), 'live', 'completed', 'abandoned'
 CREATE TABLE IF NOT EXISTS tournaments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tournament_name VARCHAR(100) NOT NULL,
     location VARCHAR(100) NOT NULL,
     start_date DATE NOT NULL,
-    status ENUM('upcoming','not_started','live','completed','abandoned') NOT NULL DEFAULT 'not_started',
+    status ENUM('upcoming','live','completed','abandoned') NOT NULL DEFAULT 'upcoming',
     created_by INT NOT NULL,
     CONSTRAINT fk_tournament_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
@@ -181,6 +185,7 @@ CREATE TABLE IF NOT EXISTS match_innings (
     runs INT DEFAULT 0,
     wickets INT DEFAULT 0,
     overs_decimal DECIMAL(4,1) DEFAULT 0.0,
+    legal_balls INT DEFAULT 0,
     CONSTRAINT fk_innings_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
     CONSTRAINT fk_innings_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
     CONSTRAINT fk_innings_batting FOREIGN KEY (batting_team_id) REFERENCES teams(id) ON DELETE SET NULL,
@@ -204,7 +209,9 @@ CREATE TABLE IF NOT EXISTS player_match_stats (
     catches INT DEFAULT 0,
     stumpings INT DEFAULT 0,
     CONSTRAINT fk_stats_player FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
-    CONSTRAINT fk_stats_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
+    CONSTRAINT fk_stats_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+    -- Add unique constraint for player_match_stats upsert semantics
+    CONSTRAINT uq_player_match_stats UNIQUE (match_id, player_id)
 ) ENGINE=InnoDB;
 
 -- 9. Ball-by-Ball
@@ -228,7 +235,19 @@ CREATE TABLE IF NOT EXISTS ball_by_ball (
     CONSTRAINT fk_ball_out_player FOREIGN KEY (out_player_id) REFERENCES players(id) ON DELETE SET NULL,
     CONSTRAINT uq_ball_pos UNIQUE (inning_id, over_number, ball_number)
 ) ENGINE=InnoDB;
--- 10. Auth failures table (for rate limiting)
+-- 10. Team Tournament Summary table
+CREATE TABLE IF NOT EXISTS team_tournament_summary (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tournament_id INT NOT NULL,
+    team_id INT NOT NULL,
+    matches_played INT DEFAULT 0,
+    matches_won INT DEFAULT 0,
+    CONSTRAINT fk_tts_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tts_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+    CONSTRAINT uq_team_tournament_summary UNIQUE (tournament_id, team_id)
+) ENGINE=InnoDB;
+
+-- 11. Auth failures table (for rate limiting)
 CREATE TABLE IF NOT EXISTS auth_failures (
     id INT AUTO_INCREMENT PRIMARY KEY,
     phone_number VARCHAR(20) NOT NULL,

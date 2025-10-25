@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../core/api_client.dart';
+import '../../../core/error_handler.dart';
 import 'post_match_screen.dart';
 
 class LiveMatchScoringScreen extends StatefulWidget {
@@ -74,12 +75,12 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
             overs = lastInning['overs'].toString();
           });
         }
+      } else {
+        throw response;
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error loading match data: $e')));
+        ErrorHandler.showErrorSnackBar(context, e);
       }
     } finally {
       setState(() => isLoading = false);

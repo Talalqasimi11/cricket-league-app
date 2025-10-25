@@ -1,0 +1,47 @@
+[
+  {
+    "id": "TC001",
+    "title": "admin login with valid credentials",
+    "description": "Test the /api/auth/login POST endpoint to verify that admin can successfully log in with valid phone number and password, receiving a JWT token and user details in response."
+  },
+  {
+    "id": "TC002",
+    "title": "fetch dashboard statistics successfully",
+    "description": "Test the /api/admin/dashboard GET endpoint to ensure it returns accurate and complete dashboard statistics including total users, admins, teams, tournaments, and matches."
+  },
+  {
+    "id": "TC003",
+    "title": "retrieve all users list",
+    "description": "Test the /api/admin/users GET endpoint to verify it returns a list of all users with correct details such as id, phone number, team name, team location, and admin status."
+  },
+  {
+    "id": "TC004",
+    "title": "update user admin status",
+    "description": "Test the /api/admin/users/{id}/admin PUT endpoint to confirm that admin privileges can be granted or revoked for a user by updating the is_admin field."
+  },
+  {
+    "id": "TC005",
+    "title": "delete user with safeguards",
+    "description": "Test the /api/admin/users/{id} DELETE endpoint to ensure users can be deleted except for self-deletion, and proper authorization and validation are enforced."
+  },
+  {
+    "id": "TC006",
+    "title": "list all teams with details",
+    "description": "Test the /api/admin/teams GET endpoint to verify it returns a list of all teams with detailed information including team name, location, logo URL, player count, owner info, matches played and won, and trophies."
+  },
+  {
+    "id": "TC007",
+    "title": "get team details with players",
+    "description": "Test the /api/admin/teams/{id} GET endpoint to ensure it returns detailed information about a specific team along with its players' details."
+  },
+  {
+    "id": "TC008",
+    "title": "update team information",
+    "description": "Test the /api/admin/teams/{id} PUT endpoint to verify that team details such as name, location, and logo URL can be updated successfully with proper validation."
+  },
+  {
+    "id": "TC009",
+    "title": "delete team with validation",
+    "description": "Test the /api/admin/teams/{id} DELETE endpoint to confirm that teams can be deleted only if they are not involved in matches, enforcing safeguards and proper authorization."
+  }
+]

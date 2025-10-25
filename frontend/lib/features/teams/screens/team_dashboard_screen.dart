@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/api_client.dart';
 import '../../../core/cache_service.dart';
+import '../../../core/error_handler.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/player.dart';
@@ -203,9 +204,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       } else if (teamResponse.statusCode == 404) {
         // Team not found
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Team not found.')));
+          ErrorHandler.showErrorSnackBar(context, 'Team not found.');
         }
       } else if (teamResponse.statusCode >= 500) {
         // Server error - retry with exponential backoff
@@ -214,12 +213,9 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         );
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Could not refresh team data (${teamResponse.statusCode}).',
-              ),
-            ),
+          ErrorHandler.showErrorSnackBar(
+            context,
+            'Could not refresh team data (${teamResponse.statusCode}).',
           );
         }
       }

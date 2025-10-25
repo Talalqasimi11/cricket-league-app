@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { registerCaptain, loginCaptain, refreshToken, logout, requestPasswordReset, verifyPasswordReset, confirmPasswordReset, changePassword, changePhoneNumber, clearAuthFailures } = require('../controllers/authController');
+const { registerCaptain, loginCaptain, refreshToken, logout, requestPasswordReset, verifyPasswordReset, confirmPasswordReset, changePassword, changePhoneNumber, getCsrfToken, clearAuthFailures } = require('../controllers/authController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const rateLimit = require('express-rate-limit');
 
@@ -43,6 +43,9 @@ router.post('/login', loginLimiter, loginCaptain);
 
 // Refresh access token
 router.post('/refresh', refreshToken);
+
+// Get CSRF token for web platform
+router.get('/csrf', getCsrfToken);
 
 // Logout
 router.post('/logout', logout);

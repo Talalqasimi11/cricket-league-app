@@ -92,14 +92,20 @@ const updateMyTeam = async (req, res) => {
     return res.status(400).json({ error: "Captain and Vice Captain must be different players" });
   }
 
+  let conn;
   try {
-    // First check if user owns a team
-    const [teamRows] = await db.query(
-      "SELECT id FROM teams WHERE owner_id = ?",
+    // Start transaction
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    // Lock team row for update to prevent concurrent modifications
+    const [teamRows] = await conn.query(
+      "SELECT id FROM teams WHERE owner_id = ? FOR UPDATE",
       [req.user.id]
     );
 
     if (teamRows.length === 0) {
+      await conn.rollback();
       return res.status(404).json({ error: "Team not found" });
     }
 
@@ -107,21 +113,23 @@ const updateMyTeam = async (req, res) => {
 
     // Validate captain and vice captain belong to the team if provided
     if (captain_player_id) {
-      const [captainRows] = await db.query(
+      const [captainRows] = await conn.query(
         "SELECT id FROM players WHERE id = ? AND team_id = ?",
         [captain_player_id, teamId]
       );
       if (captainRows.length === 0) {
+        await conn.rollback();
         return res.status(400).json({ error: "Captain must be a player on your team" });
       }
     }
 
     if (vice_captain_player_id) {
-      const [viceRows] = await db.query(
+      const [viceRows] = await conn.query(
         "SELECT id FROM players WHERE id = ? AND team_id = ?",
         [vice_captain_player_id, teamId]
       );
       if (viceRows.length === 0) {
+        await conn.rollback();
         return res.status(400).json({ error: "Vice Captain must be a player on your team" });
       }
     }
@@ -162,12 +170,13 @@ const updateMyTeam = async (req, res) => {
     
     // Ensure at least one field is being updated
     if (updateFields.length === 0) {
+      await conn.rollback();
       return res.status(400).json({ error: "No valid fields provided for update" });
     }
     
     updateValues.push(req.user.id);
     
-    const [result] = await db.query(
+    const [result] = await conn.query(
       `UPDATE teams 
        SET ${updateFields.join(', ')}
        WHERE owner_id = ?`,
@@ -175,11 +184,12 @@ const updateMyTeam = async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
+      await conn.rollback();
       return res.status(500).json({ error: "Failed to update team" });
     }
 
     // Query the updated team row to return it
-    const [updatedRows] = await db.query(
+    const [updatedRows] = await conn.query(
       `SELECT 
          t.id,
          t.team_name,
@@ -197,16 +207,33 @@ const updateMyTeam = async (req, res) => {
     );
 
     if (updatedRows.length === 0) {
+      await conn.rollback();
       return res.status(500).json({ error: "Team updated but could not retrieve updated data" });
     }
+
+    // Commit transaction
+    await conn.commit();
 
     res.json({ 
       message: "Team updated successfully",
       team: updatedRows[0]
     });
   } catch (err) {
+    if (conn) {
+      await conn.rollback();
+    }
+    
+    // Map ER_DUP_ENTRY on uq_teams_captain_player_id to friendly message
+    if (err && err.code === 'ER_DUP_ENTRY' && err.sqlMessage && err.sqlMessage.includes('uq_teams_captain_player_id')) {
+      return res.status(400).json({ error: "This player is already captain of another team" });
+    }
+    
     logDatabaseError(req.log, "updateMyTeam", err, { userId: req.user?.id });
     res.status(500).json({ error: "Server error" });
+  } finally {
+    if (conn) {
+      conn.release();
+    }
   }
 };
 

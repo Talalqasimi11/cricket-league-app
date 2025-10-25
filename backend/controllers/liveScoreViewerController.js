@@ -1,4 +1,4 @@
-const db = require("../config/db");
+const { db } = require("../config/db");
 
 /**
  * 📌 Get live score of a match (for viewers)

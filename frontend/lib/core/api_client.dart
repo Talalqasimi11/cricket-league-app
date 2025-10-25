@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform, debugPrint;
+    show defaultTargetPlatform, TargetPlatform, debugPrint, kIsWeb;
+import 'error_handler.dart';
 
 class ApiClient {
   ApiClient._() : _client = http.Client();
@@ -138,10 +139,16 @@ class ApiClient {
       final authHeaders = await _authHeaders(headers);
       final baseUrl = await _getBaseUrl();
 
-      return _client.get(
+      final response = await _client.get(
         Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
       );
+
+      if (response.statusCode >= 400) {
+        throw ApiHttpException.fromResponse(response);
+      }
+
+      return response;
     });
   }
 
@@ -160,11 +167,17 @@ class ApiClient {
         authHeaders['Content-Type'] = 'application/json';
       }
 
-      return _client.post(
+      final response = await _client.post(
         Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
         body: encoded,
       );
+
+      if (response.statusCode >= 400) {
+        throw ApiHttpException.fromResponse(response);
+      }
+
+      return response;
     });
   }
 
@@ -183,11 +196,17 @@ class ApiClient {
         authHeaders['Content-Type'] = 'application/json';
       }
 
-      return _client.put(
+      final response = await _client.put(
         Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
         body: encoded,
       );
+
+      if (response.statusCode >= 400) {
+        throw ApiHttpException.fromResponse(response);
+      }
+
+      return response;
     });
   }
 
@@ -206,11 +225,17 @@ class ApiClient {
         authHeaders['Content-Type'] = 'application/json';
       }
 
-      return _client.delete(
+      final response = await _client.delete(
         Uri.parse(_joinUrl(baseUrl, path)),
         headers: authHeaders,
         body: encoded,
       );
+
+      if (response.statusCode >= 400) {
+        throw ApiHttpException.fromResponse(response);
+      }
+
+      return response;
     });
   }
 
@@ -258,7 +283,9 @@ class ApiClient {
 
   void _throwIfNotOk(http.Response resp) {
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
+      // Return the response object instead of throwing a generic exception
+      // This allows more detailed error handling in the UI
+      throw resp;
     }
   }
 
@@ -283,31 +310,74 @@ class ApiClient {
     // try refresh
     final baseUrl = await _getBaseUrl();
 
-    // On mobile, use body-based refresh
-    final rt = await refreshToken;
-    if (rt == null || rt.isEmpty) return first;
+    // Detect platform and use appropriate refresh method
+    if (kIsWeb) {
+      // Web platform: use cookie-based refresh with CSRF support
+      final csrfToken = await _getCsrfToken();
+      final refreshResp = await _client.post(
+        Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
+        headers: {
+          'Content-Type': 'application/json',
+          if (csrfToken != null) 'X-CSRF-Token': csrfToken,
+        },
+        // Include credentials for cookie-based auth
+      );
 
-    final refreshResp = await _client.post(
-      Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'refresh_token': rt}),
-    );
+      if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
+        try {
+          final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
+          final newAccess = data['token']?.toString();
 
-    if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
-      try {
-        final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
-        final newAccess = data['token']?.toString();
-        final newRefresh = data['refresh_token']?.toString();
-
-        if (newAccess != null && newAccess.isNotEmpty) {
-          await setToken(newAccess);
-          if (newRefresh != null && newRefresh.isNotEmpty) {
-            await setRefreshToken(newRefresh);
+          if (newAccess != null && newAccess.isNotEmpty) {
+            await setToken(newAccess);
+            return await fn();
           }
-          return await fn();
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
+    } else {
+      // Mobile platform: use body-based refresh
+      final rt = await refreshToken;
+      if (rt == null || rt.isEmpty) return first;
+
+      final refreshResp = await _client.post(
+        Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': rt}),
+      );
+
+      if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
+        try {
+          final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
+          final newAccess = data['token']?.toString();
+          final newRefresh = data['refresh_token']?.toString();
+
+          if (newAccess != null && newAccess.isNotEmpty) {
+            await setToken(newAccess);
+            if (newRefresh != null && newRefresh.isNotEmpty) {
+              await setRefreshToken(newRefresh);
+            }
+            return await fn();
+          }
+        } catch (_) {}
+      }
     }
     return first;
+  }
+
+  // Helper method to get CSRF token for web platform
+  Future<String?> _getCsrfToken() async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final response = await _client.get(
+        Uri.parse(_joinUrl(baseUrl, '/api/auth/csrf')),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['csrf_token']?.toString();
+      }
+    } catch (_) {}
+    return null;
   }
 }

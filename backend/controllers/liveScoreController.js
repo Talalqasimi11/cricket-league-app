@@ -1,4 +1,4 @@
-const db = require("../config/db");
+const { db } = require("../config/db");
 
 /**
  * Helper function to check if user can score for a match
@@ -144,7 +144,7 @@ const addBall = async (req, res) => {
 
     // Check innings status
     const [[inningStatus]] = await db.query(
-      `SELECT status FROM match_innings WHERE id = ?`,
+      `SELECT status, batting_team_id, bowling_team_id FROM match_innings WHERE id = ?`,
       [inning_id]
     );
     
@@ -154,6 +154,26 @@ const addBall = async (req, res) => {
 
     if (inningStatus.status !== 'in_progress') {
       return res.status(400).json({ error: "Innings is not in progress" });
+    }
+
+    // Verify batsman is in batting team
+    const [batsmanTeam] = await db.query(
+      `SELECT team_id FROM players WHERE id = ?`,
+      [batsman_id]
+    );
+    
+    if (batsmanTeam.length === 0 || batsmanTeam[0].team_id !== inningStatus.batting_team_id) {
+      return res.status(400).json({ error: "Batsman must be from the batting team" });
+    }
+
+    // Verify bowler is in bowling team
+    const [bowlerTeam] = await db.query(
+      `SELECT team_id FROM players WHERE id = ?`,
+      [bowler_id]
+    );
+    
+    if (bowlerTeam.length === 0 || bowlerTeam[0].team_id !== inningStatus.bowling_team_id) {
+      return res.status(400).json({ error: "Bowler must be from the bowling team" });
     }
 
     // Check for duplicate delivery
@@ -190,7 +210,7 @@ const addBall = async (req, res) => {
         });
       }
     } else if (over_number !== 0 || ball_number !== 1) {
-      // First ball must be 0.1
+      // First ball must be 0.1 (0-based over numbering)
       return res.status(400).json({ 
         error: "First ball must be over 0, ball 1" 
       });
@@ -227,22 +247,14 @@ const addBall = async (req, res) => {
     // Update overs - only count legal balls (exclude wides/no-balls)
     const isLegalBall = !extras || (extras !== 'wide' && extras !== 'no-ball');
     if (isLegalBall) {
-      // Calculate total legal balls for this innings
-      const [legalBallsResult] = await db.query(
-        `SELECT COUNT(*) as total_legal_balls 
-         FROM ball_by_ball 
-         WHERE inning_id = ? AND (extras IS NULL OR extras NOT IN ('wide', 'no-ball'))`,
-        [inning_id]
-      );
-      
-      const totalLegalBalls = legalBallsResult[0].total_legal_balls;
-      const oversDecimal = totalLegalBalls / 6;
-      const oversInteger = Math.floor(oversDecimal);
-      
-      // Update both overs_decimal and overs
+      // Incrementally update legal_balls and derive overs
       await db.query(
-        `UPDATE match_innings SET overs_decimal = ?, overs = ? WHERE id = ?`, 
-        [oversDecimal, oversInteger, inning_id]
+        `UPDATE match_innings 
+         SET legal_balls = legal_balls + 1,
+             overs_decimal = (legal_balls + 1) / 6,
+             overs = FLOOR((legal_balls + 1) / 6)
+         WHERE id = ?`, 
+        [inning_id]
       );
     }
 
@@ -289,11 +301,16 @@ const addBall = async (req, res) => {
     const [[inningCheck]] = await db.query(`SELECT * FROM match_innings WHERE id = ?`, [inning_id]);
     const [[matchCheck]] = await db.query(`SELECT overs FROM matches WHERE id = ?`, [match_id]);
 
-    // Convert overs to legal balls for comparison (overs * 6)
-    const legalBallsBowled = Math.floor(inningCheck.overs) * 6 + (ball_number % 6);
+    // Get legal balls from match_innings table
+    const [[inningData]] = await db.query(
+      `SELECT legal_balls FROM match_innings WHERE id = ?`,
+      [inning_id]
+    );
+    
+    const totalLegalBalls = inningData.legal_balls;
     const maxLegalBalls = matchCheck.overs * 6;
 
-    if (inningCheck.wickets >= 10 || legalBallsBowled >= maxLegalBalls) {
+    if (inningCheck.wickets >= 10 || totalLegalBalls >= maxLegalBalls) {
       await db.query(`UPDATE match_innings SET status = 'completed' WHERE id = ?`, [inning_id]);
       return res.json({ message: "Ball recorded. Innings ended automatically", autoEnded: true });
     }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../core/api_client.dart';
 import '../../../core/cache_service.dart';
 import '../../../core/json_utils.dart';
+import '../../../core/error_handler.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'team_dashboard_screen.dart';
 import '../models/player.dart';
@@ -162,9 +163,7 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _error = e.toString());
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_error)));
+        ErrorHandler.showErrorSnackBar(context, _error);
       }
     } finally {
       if (mounted) {

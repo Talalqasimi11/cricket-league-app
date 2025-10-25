@@ -1,0 +1,542 @@
+[
+  {
+    "id": "TC001",
+    "title": "Admin Login Success",
+    "description": "Verify that admin can login successfully using correct phone number and password and receive a valid JWT token.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the login page"
+      },
+      {
+        "type": "action",
+        "description": "Input valid phone number and password"
+      },
+      {
+        "type": "action",
+        "description": "Click on the login button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that response contains a valid JWT token and user data"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is redirected to dashboard"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Admin Login Failure with Incorrect Credentials",
+    "description": "Verify login fails when incorrect phone number or password is provided with appropriate error message.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the login page"
+      },
+      {
+        "type": "action",
+        "description": "Input invalid phone number or password"
+      },
+      {
+        "type": "action",
+        "description": "Click login button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify login fails with appropriate error message indicating invalid credentials"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Token Expiration Auto Logout",
+    "description": "Verify that when the JWT token expires, the user is automatically logged out and redirected to login page.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login successfully and obtain a JWT token with short expiration"
+      },
+      {
+        "type": "action",
+        "description": "Wait until the token expires or simulate token expiration"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to perform any admin action"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that user is logged out and redirected to the login page with session cleared"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Dashboard Statistics Display Correct Totals",
+    "description": "Verify the dashboard displays correct real-time metrics: total users, total admins, total teams, total tournaments, and total matches.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as admin"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the dashboard page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that the totalUsers displayed matches backend data"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify totalAdmins count displayed is accurate"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify totalTeams count displayed is accurate"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify totalTournaments and totalMatches numbers are correct"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "User Management List Display",
+    "description": "Verify that the User Management page lists all users with correct details including phone number, team info, and admin status.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as admin"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to User Management page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify all users are listed with correct phone numbers"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify associated team name and location is correct for each user"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the admin privilege status is correctly shown for each user"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Grant Admin Privileges to User",
+    "description": "Verify that admin can successfully grant admin privileges to a user and the change is persisted.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to User Management page"
+      },
+      {
+        "type": "action",
+        "description": "Select a user without admin privileges"
+      },
+      {
+        "type": "action",
+        "description": "Toggle admin privileges ON and save"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the API call to update admin status returns success"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is now shown as admin in the UI"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Revoke Admin Privileges from User",
+    "description": "Verify that admin can revoke admin privileges from another user and changes are reflected correctly.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to User Management page"
+      },
+      {
+        "type": "action",
+        "description": "Select a user with admin privileges"
+      },
+      {
+        "type": "action",
+        "description": "Toggle admin privileges OFF and save"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the API call to update admin status returns success"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is no longer shown as admin"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Prevent Self-Revocation of Admin Privileges",
+    "description": "Verify that an admin cannot revoke their own admin privileges to prevent loss of access.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as admin"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to User Management and attempt to revoke own admin privileges"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that the UI prevents toggling off self admin status"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no API call is made to revoke own admin privileges"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Delete User with Safety Checks",
+    "description": "Verify user deletion works correctly for users other than the logged-in admin, with confirmation prompts and successful removal.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to User Management page"
+      },
+      {
+        "type": "action",
+        "description": "Select a user other than logged-in admin to delete"
+      },
+      {
+        "type": "action",
+        "description": "Confirm delete action in prompt"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the API call to delete user returns success"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is removed from the user list"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Prevent Self-Deletion of Admin User",
+    "description": "Verify that the admin user cannot delete their own account through the UI or API.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as admin"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to delete own user account from User Management"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify delete option is disabled or not shown for the logged-in admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no API call is made to delete own user account"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Team Management List Display",
+    "description": "Verify Team Management page lists all teams with correct data including team name, location, logo, player count, owner info, matches played, won, and trophies.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as admin"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to Team Management page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify all teams are displayed with correct team details"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify each team displays player count, owner phone, matches played and won, and trophies accurately"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "View Team Details and Player Information",
+    "description": "Verify that clicking on a team shows detailed team info including the full list of players with roles.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to Team Management page"
+      },
+      {
+        "type": "action",
+        "description": "Select a team from the list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify detailed team info including name, location, logo is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify list of players with player_name and player_role is shown correctly"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Edit Team Details Successfully",
+    "description": "Verify that admin can edit team details such as name, location, and logo, and changes persist after saving.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to Team Management page"
+      },
+      {
+        "type": "action",
+        "description": "Select a team and open edit mode"
+      },
+      {
+        "type": "action",
+        "description": "Update team name, location, and/or logo URL"
+      },
+      {
+        "type": "action",
+        "description": "Save changes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the API PUT request to update team returns success"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify updated team data is displayed in UI"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Delete Team with Safeguards",
+    "description": "Verify that deleting a team is allowed only if it is not involved in matches and appropriate confirmation is required.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to Team Management page"
+      },
+      {
+        "type": "action",
+        "description": "Select a team with zero matches played"
+      },
+      {
+        "type": "action",
+        "description": "Trigger delete team action and confirm deletion"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the API delete call succeeds"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the team is removed from the team list"
+      },
+      {
+        "type": "action",
+        "description": "Select a team involved in matches and attempt delete"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that deletion is blocked and an appropriate error message is shown"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "API Authentication and Role Enforcement",
+    "description": "Verify that all API endpoints reject requests without a valid JWT token or from users without admin roles.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Attempt to access /api/admin/users without JWT token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify response is 401 Unauthorized"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access /api/admin/users with JWT token of non-admin user"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify response is 403 Forbidden"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Frontend Validation on Input Fields",
+    "description": "Verify that frontend input fields for login, user admin toggle, team edits validate input data before sending API requests.",
+    "category": "error handling",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "On login page, enter invalid phone number formats and empty password"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify client-side validation prevents form submission and displays error messages"
+      },
+      {
+        "type": "action",
+        "description": "On team edit form, enter invalid URLs or empty required fields"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify validation errors block submission"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Error Handling for API Failures",
+    "description": "Verify that the UI shows meaningful error messages and handles API failure responses gracefully for user and team management actions.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Simulate API failure for user list retrieval"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify UI shows a user-friendly error message indicating failure to load users"
+      },
+      {
+        "type": "action",
+        "description": "Simulate API failure when updating user admin status"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify error message is displayed and UI state is reverted"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Local Storage Token Persistence",
+    "description": "Verify that JWT token is properly stored in local storage on login and used for API requests on page reloads.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login successfully and verify token is saved in local storage"
+      },
+      {
+        "type": "action",
+        "description": "Reload the page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user remains logged in and token is sent with API requests"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "UI Rendering and Styling Verification",
+    "description": "Verify all frontend components render correctly with Tailwind CSS styling applied and responsive layout under different screen sizes.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Open login, dashboard, user management, and team management pages"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify all UI elements display correctly with expected styles"
+      },
+      {
+        "type": "action",
+        "description": "Resize browser to mobile and tablet widths"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify layout adjusts properly and remains usable"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Setup and Deployment Verification",
+    "description": "Verify that following setup instructions leads to a fully functional Cricket League Admin Panel with all features operational.",
+    "category": "functional",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Follow project setup and deployment instructions"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify application builds without error"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify admin login, dashboard, user and team management features function as expected in deployed environment"
+      }
+    ]
+  }
+]

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../../../core/api_client.dart';
+import '../../../core/error_handler.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -46,12 +47,14 @@ class _LoginScreenState extends State<LoginScreen> {
         await ApiClient.instance.setRefreshToken(refresh);
       }
       if (!mounted) return;
+      
+      // Show success message
+      ErrorHandler.showSuccessSnackBar(context, 'Login successful');
       Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Login failed: $e')));
+      // Use the error handler to show a user-friendly error message
+      ErrorHandler.showErrorSnackBar(context, e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

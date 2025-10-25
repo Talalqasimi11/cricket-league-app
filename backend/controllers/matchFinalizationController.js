@@ -7,38 +7,66 @@ const db = require("../config/db");
 const finalizeMatch = async (req, res) => {
   const { match_id } = req.body;
 
+  let conn;
   try {
-    // 1️⃣ Fetch match
-    const [[match]] = await db.query("SELECT * FROM matches WHERE id = ?", [match_id]);
-    if (!match) return res.status(404).json({ error: "Match not found" });
+    // Start transaction
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    // 1️⃣ Fetch match with defensive status check
+    const [[match]] = await conn.query("SELECT * FROM matches WHERE id = ? FOR UPDATE", [match_id]);
+    if (!match) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Match not found" });
+    }
 
     if (match.status === "completed") {
+      await conn.rollback();
       return res.status(400).json({ error: "Match already finalized" });
     }
 
-    // 2️⃣ Get innings scores
-    const [innings] = await db.query(
+    if (match.status !== "live") {
+      await conn.rollback();
+      return res.status(400).json({ error: "Match must be live to finalize" });
+    }
+
+    // 2️⃣ Get innings scores grouped by inning_number
+    const [innings] = await conn.query(
       "SELECT * FROM match_innings WHERE match_id = ? ORDER BY inning_number ASC",
       [match_id]
     );
 
+    // Validate there are at least first innings for both teams
     if (innings.length < 2) {
+      await conn.rollback();
       return res.status(400).json({ error: "Match must have at least 2 innings to finalize" });
     }
 
-    const team1Score = innings[0].runs;
-    const team2Score = innings[1].runs;
+    // Map innings to match teams deterministically
+    const team1Innings = innings.filter(inning => inning.batting_team_id === match.team1_id);
+    const team2Innings = innings.filter(inning => inning.batting_team_id === match.team2_id);
+
+    if (team1Innings.length === 0 || team2Innings.length === 0) {
+      await conn.rollback();
+      return res.status(400).json({ error: "Both teams must have at least one innings" });
+    }
+
+    // Calculate total runs for each team
+    const team1TotalRuns = team1Innings.reduce((sum, inning) => sum + inning.runs, 0);
+    const team2TotalRuns = team2Innings.reduce((sum, inning) => sum + inning.runs, 0);
 
     let winnerTeamId = null;
 
-    if (team1Score > team2Score) {
-      winnerTeamId = innings[0].batting_team_id;
-    } else if (team2Score > team1Score) {
-      winnerTeamId = innings[1].batting_team_id;
+    // Handle ties explicitly - set winner_team_id to null for ties
+    if (team1TotalRuns > team2TotalRuns) {
+      winnerTeamId = match.team1_id;
+    } else if (team2TotalRuns > team1TotalRuns) {
+      winnerTeamId = match.team2_id;
     }
+    // If scores are equal, winnerTeamId remains null (tie)
 
-    // 3️⃣ Update match record
-    await db.query(
+    // 3️⃣ Update match record with transaction
+    await conn.query(
       "UPDATE matches SET status = 'completed', winner_team_id = ? WHERE id = ?",
       [winnerTeamId, match_id]
     );
@@ -49,7 +77,7 @@ const finalizeMatch = async (req, res) => {
 
       for (const teamId of teams) {
         // Matches played +1
-        await db.query(
+        await conn.query(
           `INSERT INTO team_tournament_summary (tournament_id, team_id, matches_played, matches_won) 
            VALUES (?, ?, 1, ?) 
            ON DUPLICATE KEY UPDATE 
@@ -61,13 +89,13 @@ const finalizeMatch = async (req, res) => {
     }
 
     // 5️⃣ Update players permanent stats (from player_match_stats)
-    const [playerStats] = await db.query(
+    const [playerStats] = await conn.query(
       "SELECT * FROM player_match_stats WHERE match_id = ?",
       [match_id]
     );
 
     for (const stat of playerStats) {
-      await db.query(
+      await conn.query(
         `UPDATE players 
          SET 
            runs = runs + ?, 
@@ -80,13 +108,25 @@ const finalizeMatch = async (req, res) => {
       );
     }
 
+    // Commit transaction
+    await conn.commit();
+
     res.json({
       message: "✅ Match finalized successfully",
       winner: winnerTeamId || "Match tied",
+      team1Runs: team1TotalRuns,
+      team2Runs: team2TotalRuns
     });
   } catch (err) {
+    if (conn) {
+      await conn.rollback();
+    }
     console.error("❌ Error in finalizeMatch:", err);
     res.status(500).json({ error: "Server error" });
+  } finally {
+    if (conn) {
+      conn.release();
+    }
   }
 };
 

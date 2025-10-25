@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../../../core/api_client.dart';
+import '../../../core/error_handler.dart';
 import 'dart:convert';
 
 class RegisterScreen extends StatefulWidget {
@@ -30,9 +31,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   /// Register user after verifying OTP
   void _register() async {
     if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Passwords do not match")));
+      ErrorHandler.showErrorSnackBar(context, "Passwords do not match");
       return;
     }
 
@@ -54,20 +53,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? "Registration successful")),
+        ErrorHandler.showSuccessSnackBar(
+          context, 
+          data['message'] ?? "Registration successful"
         );
         Navigator.pushReplacementNamed(context, "/login");
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['error'] ?? "Registration failed")),
-        );
+        throw response;
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Server error: $e")));
+      ErrorHandler.showErrorSnackBar(context, e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

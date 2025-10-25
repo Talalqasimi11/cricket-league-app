@@ -13,8 +13,8 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 
 ### 1.3 Target Audience
 - **Primary Users:** Registered users who become team owners
-- **Secondary Users:** Players, match scorers, tournament organizers
-- **Tertiary Users:** Spectators and cricket enthusiasts
+
+-  Users:** Spectators and cricket enthusiasts
 
 ### 1.4 Platform
 - **Frontend:** Flutter mobile application (iOS & Android)
@@ -43,7 +43,7 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 
 ## 3. User Personas
 
-### 3.1 Captain Raj - Team Owner
+### 3.1 team registrar
 **Age:** 28 | **Location:** Urban India | **Tech Savviness:** Medium
 
 **Background:**
@@ -62,24 +62,6 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Manual scorekeeping is error-prone
 - Difficult to track player statistics over time
 - Hard to coordinate tournament schedules
-
-### 3.2 Priya - Tournament Organizer
-**Age:** 35 | **Location:** Metropolitan City | **Tech Savviness:** High
-
-**Background:**
-- Organizes quarterly cricket tournaments
-- Manages 8-16 teams per tournament
-- Needs efficient match scheduling and result tracking
-
-**Goals:**
-- Create and manage tournaments efficiently
-- Track tournament progress in real-time
-- Generate final standings and statistics
-
-**Pain Points:**
-- Complex manual fixture management
-- Difficulty collecting match results from captains
-- Time-consuming result compilation
 
 ### 3.3 Arjun - Active Player
 **Age:** 24 | **Location:** Suburban Area | **Tech Savviness:** High

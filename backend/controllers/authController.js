@@ -1,4 +1,4 @@
-const db = require("../config/db");
+const { db } = require("../config/db");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
@@ -71,7 +71,72 @@ const registerCaptain = async (req, res) => {
       [team_name, team_location, team_logo_url || null, ownerId]
     );
 
-    res.status(201).json({ message: "Owner and team registered successfully" });
+    // Step 3: Issue tokens on successful registration (same as login)
+    // Check if user is admin
+    const [adminCheck] = await db.query("SELECT is_admin FROM users WHERE id = ?", [ownerId]);
+    const isAdmin = adminCheck.length > 0 && adminCheck[0].is_admin;
+    
+    const roles = ['captain'];
+    const scopes = ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'];
+    
+    if (isAdmin) {
+      roles.push('admin');
+      scopes.push('admin:manage', 'user:manage', 'team:admin');
+    }
+    
+    const jwtPayload = { 
+      sub: ownerId, 
+      phone_number: phone_number, 
+      roles: roles,
+      scopes: scopes,
+      typ: 'access', // Token type for validation
+      iss: process.env.JWT_ISS, 
+      aud: process.env.JWT_AUD 
+    };
+    const accessToken = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: "15m" });
+    const refreshToken = jwt.sign({ sub: ownerId, typ: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
+
+    // Step 4: Persist refresh token (basic blacklist table)
+    await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [ownerId, refreshToken]);
+
+    // Step 5: Set httpOnly cookie with env-based security flags
+    // Use sameSite: 'none' for cross-site flows (mobile/web); requires secure: true
+    const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
+    res.cookie("refresh_token", refreshToken, {
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: isSecure ? "none" : "lax", // 'none' requires secure; fallback to 'lax' for local dev
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    // Set CSRF token for web clients
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    res.cookie("csrf-token", csrfToken, {
+      httpOnly: false, // Must be accessible to JavaScript for CSRF protection
+      secure: isSecure,
+      sameSite: "lax", // Use 'lax' for CSRF token regardless of environment
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    // Step 6: Respond access token and conditionally refresh token (for mobile clients)
+    const response = {
+      message: "Owner and team registered successfully",
+      token: accessToken,
+      user: { id: ownerId, phone_number: phone_number },
+    };
+    
+    // Only include refresh token in body for mobile clients
+    // For web clients, refresh tokens are handled via cookies only
+    const isMobileClient = req.headers['x-client-type'] === 'mobile';
+    const allowRefreshInBody = process.env.ALLOW_REFRESH_IN_BODY === 'true' && isMobileClient;
+    
+    if (allowRefreshInBody) {
+      response.refresh_token = refreshToken;
+    }
+
+    res.status(201).json(response);
   } catch (err) {
     req.log?.error("registerCaptain: Database error", { error: err.message, code: err.code });
     if (err && err.code === 'ER_DUP_ENTRY') {
@@ -161,11 +226,22 @@ const loginCaptain = async (req, res) => {
     );
 
     // 4️⃣ Create short-lived access token and long-lived refresh token
+    // Check if user is admin
+    const isAdmin = user.is_admin || false;
+    
+    const roles = ['captain'];
+    const scopes = ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'];
+    
+    if (isAdmin) {
+      roles.push('admin');
+      scopes.push('admin:manage', 'user:manage', 'team:admin');
+    }
+    
     const jwtPayload = { 
       sub: user.id, 
       phone_number: user.phone_number, 
-      roles: ['captain'], // All registered users are team captains
-      scopes: ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'], // Basic scopes for captains
+      roles: roles,
+      scopes: scopes,
       typ: 'access', // Token type for validation
       iss: process.env.JWT_ISS, 
       aud: process.env.JWT_AUD 
@@ -292,14 +368,23 @@ const refreshToken = async (req, res) => {
     }
 
     // Get user details for token claims
-    const [userRows] = await db.query("SELECT phone_number FROM users WHERE id = ?", [userId]);
+    const [userRows] = await db.query("SELECT phone_number, is_admin FROM users WHERE id = ?", [userId]);
     const user = userRows[0];
+    
+    const isAdmin = user.is_admin || false;
+    const roles = ['captain'];
+    const scopes = ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'];
+    
+    if (isAdmin) {
+      roles.push('admin');
+      scopes.push('admin:manage', 'user:manage', 'team:admin');
+    }
     
     const accessToken = jwt.sign({ 
       sub: userId, 
       phone_number: user.phone_number,
-      roles: ['captain'], // All registered users are team captains
-      scopes: ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'], // Basic scopes for captains
+      roles: roles,
+      scopes: scopes,
       typ: 'access', // Token type for validation
       iss: process.env.JWT_ISS, 
       aud: process.env.JWT_AUD 
@@ -519,6 +604,29 @@ const changePhoneNumber = async (req, res) => {
 };
 
 // ========================
+// CSRF TOKEN ENDPOINT
+// ========================
+const getCsrfToken = async (req, res) => {
+  try {
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    const isSecure = process.env.NODE_ENV === 'production';
+    
+    res.cookie("csrf-token", csrfToken, {
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: isSecure ? "none" : "lax",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    
+    res.json({ csrf_token: csrfToken });
+  } catch (err) {
+    req.log?.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// ========================
 // TEST CLEANUP (Development only)
 // ========================
 const clearAuthFailures = async (req, res) => {
@@ -539,4 +647,4 @@ const clearAuthFailures = async (req, res) => {
   }
 };
 
-module.exports = { registerCaptain, loginCaptain, refreshToken, logout, requestPasswordReset, verifyPasswordReset, confirmPasswordReset, changePassword, changePhoneNumber, clearAuthFailures };
+module.exports = { registerCaptain, loginCaptain, refreshToken, logout, requestPasswordReset, verifyPasswordReset, confirmPasswordReset, changePassword, changePhoneNumber, getCsrfToken, clearAuthFailures };
