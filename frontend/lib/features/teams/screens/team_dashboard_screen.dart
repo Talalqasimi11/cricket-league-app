@@ -1,9 +1,8 @@
-// lib/features/teams/screens/team_dashboard_screen.dart
-
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../../core/api_client.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../../services/api_client.dart';
 import '../../../core/cache_service.dart';
 import '../../../core/error_handler.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -12,7 +11,6 @@ import '../models/player.dart';
 import 'player_dashboard_screen.dart';
 
 class TeamDashboardScreen extends StatefulWidget {
-  // These initial values are useful for a faster perceived load time.
   final int? teamId;
   final String? teamName;
   final String? teamLogoUrl;
@@ -41,9 +39,8 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   int _retryCount = 0;
   static const int _maxRetries = 3;
   static const Duration _baseDelay = Duration(seconds: 1);
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<ConnectivityResult>? _connectivitySubscription;
 
-  // --- State variables ---
   String teamName = '';
   String teamLogoUrl = '';
   String teamLocation = '';
@@ -55,16 +52,13 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    // Use initial widget data to build the UI instantly
     teamName = widget.teamName ?? 'Team';
     teamLogoUrl = widget.teamLogoUrl ?? '';
     trophies = widget.trophies ?? 0;
     players = widget.players ?? [];
 
-    // Start connectivity monitoring
     _startConnectivityMonitoring();
 
-    // Load from cache first, then fetch fresh data
     _loadFromCacheAndFetch();
   }
 
@@ -75,40 +69,32 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   }
 
   void _startConnectivityMonitoring() {
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
-      List<ConnectivityResult> results,
-    ) {
-      final isConnected = results.any(
-        (result) =>
-            result == ConnectivityResult.mobile ||
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
+      (ConnectivityResult result) {
+        final isConnected = result == ConnectivityResult.mobile ||
             result == ConnectivityResult.wifi ||
-            result == ConnectivityResult.ethernet,
-      );
+            result == ConnectivityResult.ethernet;
 
-      if (mounted) {
-        setState(() {
-          _isOffline = !isConnected;
-        });
+        if (mounted) {
+          setState(() {
+            _isOffline = !isConnected;
+          });
 
-        // If we come back online and were offline, retry fetching
-        if (isConnected && _isOffline) {
-          _retryCount = 0; // Reset retry count when back online
-          _fetchTeamDetails();
+          if (isConnected && _isOffline) {
+            _retryCount = 0; 
+            _fetchTeamDetails();
+          }
         }
-      }
-    });
+      },
+    );
   }
 
-  /// Load from cache first, then fetch fresh data
   Future<void> _loadFromCacheAndFetch() async {
-    // First, try to load from cache for instant display
     await _loadFromCache();
 
-    // Then fetch fresh data in the background
     _fetchTeamDetails();
   }
 
-  /// Load team data from cache
   Future<void> _loadFromCache() async {
     try {
       setState(() => _isLoadingFromCache = true);
@@ -126,8 +112,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                 cachedTeamData['team_location']?.toString() ?? teamLocation;
             trophies =
                 (cachedTeamData['trophies'] as num?)?.toInt() ?? trophies;
-            captainPlayerId = (cachedTeamData['captain_player_id'] as num?)
-                ?.toInt();
+            captainPlayerId = (cachedTeamData['captain_player_id'] as num?)?.toInt();
             viceCaptainPlayerId =
                 (cachedTeamData['vice_captain_player_id'] as num?)?.toInt();
           });
@@ -142,7 +127,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         }
       }
     } catch (e) {
-      // Cache load failure shouldn't break the app
       debugPrint('Failed to load from cache: $e');
     } finally {
       if (mounted) {
@@ -156,7 +140,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
     final token = await storage.read(key: 'jwt_token');
 
     try {
-      // Fetch team data which includes players
       final teamResponse = await ApiClient.instance.get(
         '/api/teams/my-team',
         headers: {'Authorization': 'Bearer $token'},
@@ -172,42 +155,33 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         teamLocation = data['team_location']?.toString() ?? teamLocation;
         trophies = (data['trophies'] as num?)?.toInt() ?? trophies;
 
-        // --- Safer Captain/Vice-Captain ID resolution ---
-        // It's crucial that the backend sends IDs. Name matching is unreliable.
         captainPlayerId = (data['captain_player_id'] as num?)?.toInt();
         viceCaptainPlayerId = (data['vice_captain_player_id'] as num?)?.toInt();
 
-        // Process players from team response
         if (data['players'] != null) {
           final playersList = data['players'] as List;
           players = playersList.map((p) => Player.fromJson(p)).toList();
 
-          // Cache players data
           final playersData = playersList.cast<Map<String, dynamic>>();
           await cacheService.cachePlayersData(playersData);
         }
 
-        // Cache team data (excluding players as they're cached separately)
         final teamDataToCache = Map<String, dynamic>.from(data);
         teamDataToCache.remove(
           'players',
-        ); // Remove players as they're cached separately
+        ); 
         await cacheService.cacheTeamData(teamDataToCache);
 
-        // Reset retry count on successful fetch
         _retryCount = 0;
       } else if (teamResponse.statusCode == 401 ||
           teamResponse.statusCode == 403) {
-        // Auth error - logout and redirect to login
         _logout();
         return;
       } else if (teamResponse.statusCode == 404) {
-        // Team not found
         if (mounted) {
           ErrorHandler.showErrorSnackBar(context, 'Team not found.');
         }
       } else if (teamResponse.statusCode >= 500) {
-        // Server error - retry with exponential backoff
         await _handleRetryableError(
           'Server error (${teamResponse.statusCode})',
         );
@@ -220,7 +194,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         }
       }
     } catch (e) {
-      // Network or other errors - retry with exponential backoff
       await _handleRetryableError('Network error: $e');
     } finally {
       if (mounted) {
@@ -269,7 +242,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
     }
   }
 
-  /// Adds a new player with optimistic UI update.
   Future<void> _addPlayer(String name, String role) async {
     final token = await storage.read(key: 'jwt_token');
     final placeholderId = DateTime.now().millisecondsSinceEpoch * -1;
@@ -286,7 +258,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       wickets: 0,
     );
 
-    // Optimistic UI update
     setState(() => players.add(placeholder));
 
     try {
@@ -298,7 +269,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
 
       if (response.statusCode == 201) {
         final newPlayer = Player.fromJson(jsonDecode(response.body));
-        // Replace placeholder with the real player from the server
         setState(() {
           final index = players.indexWhere((p) => p.id == placeholderId);
           if (index != -1) players[index] = newPlayer;
@@ -307,7 +277,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         throw 'Failed to add player: ${response.body}';
       }
     } catch (e) {
-      // Revert on failure
       setState(() => players.removeWhere((p) => p.id == placeholderId));
       if (mounted) {
         ScaffoldMessenger.of(
@@ -317,7 +286,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
     }
   }
 
-  /// Edits the team details.
   Future<void> _editTeam(
     String newName,
     String newLocation, {
@@ -334,7 +302,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           'team_name': newName,
           'team_location': newLocation,
           if (logoUrl != null) 'team_logo_url': logoUrl,
-          // Always send current captain/vice-captain IDs to avoid nulling them out
           'captain_player_id': captainId ?? captainPlayerId,
           'vice_captain_player_id': viceCaptainId ?? viceCaptainPlayerId,
         },
@@ -343,7 +310,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
-        // Update local state using response data instead of request payload
         if (data['team'] != null) {
           final teamData = data['team'];
           setState(() {
@@ -378,7 +344,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   }
 
   Future<void> _deleteTeam() async {
-    // Show confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -416,7 +381,6 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Team deleted successfully')),
           );
-          // Navigate back to home or login
           Navigator.of(context).popUntil((route) => route.isFirst);
         }
       } else if (response.statusCode == 400) {
@@ -459,46 +423,44 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       backgroundColor: const Color(0xFF122118),
       body: Column(
         children: [
-          // Offline banner with improved accessibility
           if (_isOffline)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              color: Colors.orange.shade800, // Better contrast
+              color: Colors.orange.shade800, 
               child: Row(
                 children: [
                   Icon(
                     Icons.wifi_off,
                     color: Colors.white,
                     size: 20,
-                  ), // Larger icon
+                  ), 
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'You are offline. Showing cached data. Will sync when connection is restored.',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16, // Larger font for better readability
-                        fontWeight: FontWeight.w600, // Bolder text
+                        fontSize: 16, 
+                        fontWeight: FontWeight.w600, 
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-          // Cache loading indicator
           if (_isLoadingFromCache && !_isOffline)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              color: Colors.blue.shade800, // Better contrast
+              color: Colors.blue.shade800, 
               child: const Row(
                 children: [
                   SizedBox(
-                    width: 18, // Slightly larger
+                    width: 18, 
                     height: 18,
                     child: CircularProgressIndicator(
-                      strokeWidth: 2.5, // Thicker stroke
+                      strokeWidth: 2.5, 
                       valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   ),
@@ -509,7 +471,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                       color: Colors.white,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                    ), // Larger, bolder text
+                    ), 
                   ),
                 ],
               ),
@@ -525,7 +487,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
-                    fontSize: 20, // Larger title
+                    fontSize: 20, 
                   ),
                 ),
                 centerTitle: true,
@@ -534,9 +496,9 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                     Icons.arrow_back,
                     color: Colors.white,
                     size: 24,
-                  ), // Larger icon
+                  ), 
                   onPressed: () => Navigator.pop(context),
-                  tooltip: 'Go back', // Accessibility tooltip
+                  tooltip: 'Go back', 
                 ),
               ),
               body: _isLoading && players.isEmpty
@@ -564,33 +526,96 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
 
   Widget _buildTeamHeader() => Column(
     children: [
-      CircleAvatar(
-        radius: 60,
-        backgroundColor: Colors.grey.shade800,
-        backgroundImage: teamLogoUrl.isNotEmpty
-            ? NetworkImage(teamLogoUrl)
-            : null,
-        child: teamLogoUrl.isEmpty
-            ? const Icon(Icons.shield, color: Colors.white54, size: 60)
-            : null,
+      Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.grey.shade800,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipOval(
+          child: SizedBox(
+            width: 120,
+            height: 120,
+            child: teamLogoUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: teamLogoUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                    errorWidget: (context, url, error) => const Center(
+                      child: Icon(
+                        Icons.shield,
+                        color: Colors.white54,
+                        size: 60,
+                      ),
+                    ),
+                  )
+                : const Center(
+                    child: Icon(
+                      Icons.shield,
+                      color: Colors.white54,
+                      size: 60,
+                    ),
+                  ),
+          ),
+        ),
       ),
-      const SizedBox(height: 8),
+      const SizedBox(height: 16),
       Text(
         teamName,
         style: const TextStyle(
-          fontSize: 24, // Larger team name
+          fontSize: 24,
           fontWeight: FontWeight.bold,
           color: Colors.white,
         ),
       ),
-      Text(
-        "$trophies Trophies",
-        style: const TextStyle(
-          color: Color(0xFFB8E6C1), // Better contrast green
-          fontSize: 16, // Larger text
-          fontWeight: FontWeight.w500,
-        ),
+      const SizedBox(height: 8),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.emoji_events,
+            color: Colors.amber.shade400,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            "$trophies ${trophies == 1 ? 'Trophy' : 'Trophies'}",
+            style: TextStyle(
+              color: Colors.grey.shade300,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
+      if (teamLocation.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.location_on,
+              color: Colors.grey.shade400,
+              size: 18,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              teamLocation,
+              style: TextStyle(
+                color: Colors.grey.shade400,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ],
     ],
   );
 
@@ -602,13 +627,13 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
               Icon(
                 Icons.people_outline,
                 size: 64,
-                color: Colors.grey.shade400, // Better contrast
+                color: Colors.grey.shade400, 
               ),
               const SizedBox(height: 16),
               Text(
                 "No players in this team yet.",
                 style: TextStyle(
-                  color: Colors.grey.shade300, // Better contrast
+                  color: Colors.grey.shade300, 
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
                 ),
@@ -625,17 +650,17 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
             return Card(
               color: const Color(0xFF1A2C22),
               margin: const EdgeInsets.only(bottom: 10),
-              elevation: 2, // Add elevation for better visual separation
+              elevation: 2, 
               child: ListTile(
                 leading: CircleAvatar(
-                  radius: 26, // Slightly larger
+                  radius: 26, 
                   backgroundColor: const Color(
                     0xFF2D4A3A,
-                  ), // Better contrast background
+                  ), 
                   child: Icon(
                     Icons.person,
                     color: Colors.white,
-                    size: 24, // Larger icon
+                    size: 24, 
                   ),
                 ),
                 title: Text(
@@ -643,14 +668,14 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
-                    fontSize: 16, // Larger text
+                    fontSize: 16, 
                   ),
                 ),
                 subtitle: Text(
                   "${player.playerRole}\nRuns: ${player.runs} | Avg: ${player.battingAverage.toStringAsFixed(1)}",
                   style: const TextStyle(
-                    color: Color(0xFFB8E6C1), // Better contrast green
-                    fontSize: 14, // Larger text
+                    color: Color(0xFFB8E6C1), 
+                    fontSize: 14, 
                     fontWeight: FontWeight.w400,
                   ),
                 ),
@@ -665,7 +690,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                           ),
                         ),
                         backgroundColor:
-                            Colors.amber.shade700, // Better contrast
+                            Colors.amber.shade700, 
                       )
                     : isViceCaptain
                     ? Chip(
@@ -678,7 +703,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                           ),
                         ),
                         backgroundColor:
-                            Colors.blue.shade700, // Better contrast
+                            Colors.blue.shade700, 
                       )
                     : null,
                 onTap: () async {
@@ -712,19 +737,19 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                   padding: const EdgeInsets.symmetric(
                     vertical: 14,
                     horizontal: 16,
-                  ), // More padding
-                  elevation: 2, // Add elevation
+                  ), 
+                  elevation: 2, 
                 ),
                 icon: const Icon(
                   Icons.person_add,
                   color: Colors.white,
                   size: 20,
-                ), // Larger icon
+                ), 
                 label: const Text(
                   "Add Player",
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 16, // Larger text
+                    fontSize: 16, 
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -739,19 +764,19 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                   padding: const EdgeInsets.symmetric(
                     vertical: 14,
                     horizontal: 16,
-                  ), // More padding
-                  elevation: 2, // Add elevation
+                  ), 
+                  elevation: 2, 
                 ),
                 icon: const Icon(
                   Icons.edit,
                   color: Colors.white,
                   size: 20,
-                ), // Larger icon
+                ), 
                 label: const Text(
                   "Edit Team",
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 16, // Larger text
+                    fontSize: 16, 
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -763,14 +788,14 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         const SizedBox(height: 10),
         TextButton.icon(
           style: TextButton.styleFrom(
-            foregroundColor: Colors.red.shade600, // Better contrast red
+            foregroundColor: Colors.red.shade600, 
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
           ),
-          icon: const Icon(Icons.delete, size: 20), // Larger icon
+          icon: const Icon(Icons.delete, size: 20), 
           label: const Text(
             "Delete Team",
             style: TextStyle(
-              fontSize: 16, // Larger text
+              fontSize: 16, 
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -809,7 +834,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              initialValue: selectedRole,
+              value: selectedRole,
               decoration: const InputDecoration(
                 labelText: "Role",
                 border: OutlineInputBorder(),
@@ -822,12 +847,11 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                   .map(
                     (r) => DropdownMenuItem(
                       value: r,
-                      child: Text(r, style: TextStyle(fontSize: 16)),
+                      child: Text(r, style: const TextStyle(fontSize: 16)),
                     ),
                   )
                   .toList(),
               onChanged: (value) => selectedRole = value,
-              style: const TextStyle(fontSize: 16),
             ),
           ],
         ),
@@ -860,162 +884,189 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   }
 
   void _showEditTeamDialog(BuildContext context) {
+    final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: teamName);
     final locationController = TextEditingController(text: teamLocation);
     final logoController = TextEditingController(text: teamLogoUrl);
+    
+    void disposeControllers() {
+      nameController.dispose();
+      locationController.dispose();
+      logoController.dispose();
+    }
+
     int? tempCaptainId = captainPlayerId;
     int? tempViceCaptainId = viceCaptainPlayerId;
 
-    showDialog(
+    void onSubmit() {
+      if (formKey.currentState?.validate() != true) {
+        return;
+      }
+
+      if (tempCaptainId != null && tempCaptainId == tempViceCaptainId) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Captain and Vice Captain must be different players.',
+              style: TextStyle(fontSize: 16),
+            ),
+          ),
+        );
+        return;
+      }
+
+      _editTeam(
+        nameController.text.trim(),
+        locationController.text.trim(),
+        captainId: tempCaptainId,
+        viceCaptainId: tempViceCaptainId,
+        logoUrl: logoController.text.trim().isNotEmpty
+            ? logoController.text.trim()
+            : null,
+      );
+      disposeControllers();
+      Navigator.pop(context);
+    }
+
+    void onCancel() {
+      disposeControllers();
+      Navigator.pop(context);
+    }
+
+    showDialog<void>(
       context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setStateDialog) {
-          return AlertDialog(
-            title: const Text(
-              "Edit Team",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: "Team Name",
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
-                      ),
-                    ),
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: locationController,
-                    decoration: const InputDecoration(
-                      labelText: "Team Location",
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
-                      ),
-                    ),
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: logoController,
-                    decoration: const InputDecoration(
-                      labelText: "Team Logo URL",
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
-                      ),
-                    ),
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<int>(
-                    initialValue: tempCaptainId,
-                    decoration: const InputDecoration(
-                      labelText: "Captain",
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
-                      ),
-                    ),
-                    items: players
-                        .map(
-                          (p) => DropdownMenuItem<int>(
-                            value: p.id,
-                            child: Text(
-                              p.playerName,
-                              style: TextStyle(fontSize: 16),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) => setStateDialog(() => tempCaptainId = v),
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<int>(
-                    initialValue: tempViceCaptainId,
-                    decoration: const InputDecoration(
-                      labelText: "Vice Captain",
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
-                      ),
-                    ),
-                    items: players
-                        .map(
-                          (p) => DropdownMenuItem<int>(
-                            value: p.id,
-                            child: Text(
-                              p.playerName,
-                              style: TextStyle(fontSize: 16),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) =>
-                        setStateDialog(() => tempViceCaptainId = v),
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) {
+          return WillPopScope(
+            onWillPop: () async {
+              disposeControllers();
+              return true;
+            },
+            child: AlertDialog(
+              title: const Text(
+                "Edit Team",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  "Cancel",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-                onPressed: () {
-                  if (tempCaptainId != null &&
-                      tempCaptainId == tempViceCaptainId) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Captain and Vice Captain must be different.',
-                          style: TextStyle(fontSize: 16),
+              content: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: "Team Name",
+                          border: OutlineInputBorder(),
                         ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Team name is required';
+                          }
+                          if (value.trim().length < 3) {
+                            return 'Team name must be at least 3 characters';
+                          }
+                          return null;
+                        },
                       ),
-                    );
-                    return;
-                  }
-                  _editTeam(
-                    nameController.text.trim(),
-                    locationController.text.trim(),
-                    captainId: tempCaptainId,
-                    viceCaptainId: tempViceCaptainId,
-                    logoUrl: logoController.text.trim().isNotEmpty
-                        ? logoController.text.trim()
-                        : null,
-                  );
-                  Navigator.pop(context);
-                },
-                child: const Text(
-                  "Save",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: locationController,
+                        decoration: const InputDecoration(
+                          labelText: "Team Location",
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Team location is required';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: logoController,
+                        decoration: const InputDecoration(
+                          labelText: "Team Logo URL",
+                          border: OutlineInputBorder(),
+                          helperText: 'Leave empty to remove logo',
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return null;
+                          }
+                          try {
+                            final uri = Uri.parse(value);
+                            if (!uri.hasScheme || !uri.hasAuthority) {
+                              return 'Please enter a valid URL';
+                            }
+                          } catch (_) {
+                            return 'Please enter a valid URL';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<int>(
+                        value: tempCaptainId,
+                        decoration: const InputDecoration(
+                          labelText: "Captain",
+                          border: OutlineInputBorder(),
+                        ),
+                        items: players
+                            .map(
+                              (p) => DropdownMenuItem<int>(
+                                value: p.id,
+                                child: Text(p.playerName),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => tempCaptainId = v),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<int>(
+                        value: tempViceCaptainId,
+                        decoration: const InputDecoration(
+                          labelText: "Vice Captain",
+                          border: OutlineInputBorder(),
+                        ),
+                        items: players
+                            .map(
+                              (p) => DropdownMenuItem<int>(
+                                value: p.id,
+                                child: Text(p.playerName),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => tempViceCaptainId = v),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
+              actions: [
+                TextButton(
+                  onPressed: onCancel,
+                  child: const Text(
+                    "Cancel",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                  ),
+                  onPressed: onSubmit,
+                  child: const Text(
+                    "Save",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
           );
         },
       ),

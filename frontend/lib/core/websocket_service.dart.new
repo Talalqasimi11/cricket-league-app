@@ -1,0 +1,174 @@
+import 'dart:async';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'api_client.dart';
+
+class WebSocketService {
+  // Private constructor
+  WebSocketService._();
+  
+  // Singleton instance
+  static final WebSocketService instance = WebSocketService._();
+
+  // Constants
+  static const int _maxReconnectAttempts = 5;
+  static const int _initialReconnectDelay = 1000;
+  static const int _maxReconnectDelay = 5000;
+
+  // State
+  IO.Socket? _socket;
+  String? _currentMatchId;
+  bool _isConnected = false;
+  int _reconnectAttempts = 0;
+  Timer? _reconnectTimer;
+
+  // Public getters
+  bool get isConnected => _isConnected;
+  String? get currentMatchId => _currentMatchId;
+
+  // Callbacks
+  Function(Map<String, dynamic>)? onScoreUpdate;
+  Function(Map<String, dynamic>)? onInningsEnded;
+  Function(String)? onError;
+  Function()? onConnected;
+  Function()? onDisconnected;
+
+  // WebSocket URL helper
+  String _getWebSocketUrl(String baseUrl) {
+    return baseUrl.startsWith('https://')
+        ? baseUrl.replaceFirst('https://', 'wss://')
+        : baseUrl.replaceFirst('http://', 'ws://');
+  }
+
+  // Connection management
+  Future<void> connect(String matchId) async {
+    if (_isConnected && _currentMatchId == matchId) {
+      return;
+    }
+
+    if (_currentMatchId != null && _currentMatchId != matchId) {
+      await disconnect();
+    }
+
+    _currentMatchId = matchId;
+
+    try {
+      final token = await ApiClient.instance.getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('No authentication token found');
+      }
+
+      final wsUrl = _getWebSocketUrl(ApiClient.instance.getBaseUrl());
+
+      _socket = IO.io(
+        '$wsUrl/live-score',
+        IO.OptionBuilder()
+            .setTransports(['websocket'])
+            .setAuth({'token': token})
+            .enableAutoConnect()
+            .enableReconnection()
+            .setReconnectionDelay(_initialReconnectDelay)
+            .setReconnectionDelayMax(_maxReconnectDelay)
+            .setTimeout(20000)
+            .build(),
+      );
+
+      _setupEventHandlers(matchId);
+
+    } catch (e) {
+      _handleError('Failed to connect: $e');
+    }
+  }
+
+  void _setupEventHandlers(String matchId) {
+    _socket!
+      ..onConnect((_) {
+        _isConnected = true;
+        _reconnectAttempts = 0;
+        _cancelReconnectTimer();
+        _socket!.emit('subscribe', matchId);
+        onConnected?.call();
+      })
+      
+      ..onDisconnect((_) {
+        _isConnected = false;
+        onDisconnected?.call();
+        _handleDisconnect();
+      })
+      
+      ..onConnectError((data) {
+        _handleError('Connection error: ${data.toString()}');
+        _handleDisconnect();
+      })
+      
+      ..onError((data) {
+        _handleError('Socket error: ${data.toString()}');
+        _handleDisconnect();
+      })
+      
+      ..on('scoreUpdate', (data) {
+        if (data is Map<String, dynamic>) {
+          onScoreUpdate?.call(data);
+        }
+      })
+      
+      ..on('inningsEnded', (data) {
+        if (data is Map<String, dynamic>) {
+          onInningsEnded?.call(data);
+        }
+      });
+  }
+
+  void _handleError(String message) {
+    _isConnected = false;
+    onError?.call(message);
+  }
+
+  void _handleDisconnect() {
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      onError?.call('Max reconnection attempts reached');
+      return;
+    }
+
+    _reconnectAttempts++;
+    final delay = _initialReconnectDelay * _reconnectAttempts;
+    final cappedDelay = delay > _maxReconnectDelay ? _maxReconnectDelay : delay;
+
+    _cancelReconnectTimer();
+    _reconnectTimer = Timer(Duration(milliseconds: cappedDelay), () {
+      if (_currentMatchId != null) {
+        connect(_currentMatchId!);
+      }
+    });
+  }
+
+  void _cancelReconnectTimer() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+  }
+
+  Future<void> disconnect() async {
+    _cancelReconnectTimer();
+    _socket?.disconnect();
+    _socket?.dispose();
+    _socket = null;
+    _isConnected = false;
+    _currentMatchId = null;
+    _reconnectAttempts = 0;
+  }
+
+  Future<void> subscribeToMatch(String matchId) async {
+    if (_isConnected && _socket != null) {
+      if (_currentMatchId != null) {
+        _socket!.emit('unsubscribe', _currentMatchId);
+      }
+      _socket!.emit('subscribe', matchId);
+      _currentMatchId = matchId;
+    } else {
+      await connect(matchId);
+    }
+  }
+
+  void dispose() {
+    disconnect();
+  }
+}

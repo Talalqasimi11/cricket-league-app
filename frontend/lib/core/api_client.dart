@@ -1,9 +1,19 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform, debugPrint, kIsWeb;
 import 'error_handler.dart';
+
+class _CacheEntry {
+  final http.Response response;
+  final DateTime expiresAt;
+
+  _CacheEntry({required this.response, required this.expiresAt});
+
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
+}
 
 class ApiClient {
   ApiClient._() : _client = http.Client();
@@ -134,50 +144,193 @@ class ApiClient {
     _client.close();
   }
 
-  Future<http.Response> get(String path, {Map<String, String>? headers}) async {
-    return _withRefreshRetry(() async {
-      final authHeaders = await _authHeaders(headers);
-      final baseUrl = await _getBaseUrl();
+  // In-memory cache for GET requests
+  final Map<String, _CacheEntry> _cache = {};
+  static const Duration _defaultCacheDuration = Duration(minutes: 5);
+  static const Duration _defaultTimeout = Duration(seconds: 30);
+  static const _maxRetries = 3;
+  static const _retryDelays = [
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+  ];
 
-      final response = await _client.get(
-        Uri.parse(_joinUrl(baseUrl, path)),
-        headers: authHeaders,
-      );
+  Future<T> _withRetry<T>(Future<T> Function() fn) async {
+    Exception? lastError;
 
-      if (response.statusCode >= 400) {
-        throw ApiHttpException.fromResponse(response);
+    for (var i = 0; i < _maxRetries; i++) {
+      try {
+        return await fn();
+      } on TimeoutException catch (e) {
+        lastError = e;
+        if (i < _maxRetries - 1) {
+          await Future.delayed(_retryDelays[i]);
+        }
+      } on http.ClientException catch (e) {
+        lastError = e;
+        if (i < _maxRetries - 1) {
+          await Future.delayed(_retryDelays[i]);
+        }
+      }
+    }
+
+    throw lastError ?? Exception('Request failed after $_maxRetries retries');
+  }
+
+  Future<http.Response> get(
+    String path, {
+    Map<String, String>? headers,
+    Duration? cacheDuration,
+    Duration timeout = _defaultTimeout,
+    bool forceRefresh = false,
+  }) async {
+    return _withRetry(() async {
+      // Check cache first if not forcing refresh
+      if (!forceRefresh) {
+        final cacheKey = _getCacheKey(path, headers);
+        final cachedResponse = _getCachedResponse(cacheKey);
+        if (cachedResponse != null) {
+          return cachedResponse;
+        }
       }
 
-      return response;
+      final authHeaders = await _authHeaders(headers);
+      final baseUrl = await _getBaseUrl();
+      final url = _joinUrl(baseUrl, path);
+
+      final completer = Completer<http.Response>();
+      Timer? timeoutTimer;
+
+      try {
+        // Set timeout
+        timeoutTimer = Timer(timeout, () {
+          if (!completer.isCompleted) {
+            completer.completeError(
+              TimeoutException('Request timed out', timeout),
+            );
+          }
+        });
+
+        final response = await _withRefreshRetry(() async {
+          final resp = await _client.get(Uri.parse(url), headers: authHeaders);
+
+          if (resp.statusCode >= 400) {
+            throw ApiHttpException.fromResponse(resp);
+          }
+
+          // Cache successful responses
+          if (resp.statusCode >= 200 && resp.statusCode < 300) {
+            final cacheKey = _getCacheKey(path, headers);
+            _cacheResponse(
+              cacheKey,
+              resp,
+              cacheDuration ?? _defaultCacheDuration,
+            );
+          }
+
+          return resp;
+        });
+
+        if (!completer.isCompleted) {
+          completer.complete(response);
+        }
+
+        return response;
+      } catch (error) {
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
+        rethrow;
+      } finally {
+        timeoutTimer?.cancel();
+      }
     });
+  }
+
+  // Helper methods for caching
+  String _getCacheKey(String path, Map<String, String>? headers) {
+    final headerString = headers?.toString() ?? '';
+    return '$path:$headerString';
+  }
+
+  http.Response? _getCachedResponse(String key) {
+    final entry = _cache[key];
+    if (entry != null && !entry.isExpired) {
+      return entry.response;
+    }
+    return null;
+  }
+
+  void _cacheResponse(String key, http.Response response, Duration duration) {
+    _cache[key] = _CacheEntry(
+      response: response,
+      expiresAt: DateTime.now().add(duration),
+    );
+
+    // Clean up expired cache entries periodically
+    if (_cache.length % 10 == 0) {
+      _cleanCache();
+    }
+  }
+
+  void _cleanCache() {
+    _cache.removeWhere((_, entry) => entry.isExpired);
   }
 
   Future<http.Response> post(
     String path, {
     Object? body,
     Map<String, String>? headers,
+    Duration timeout = _defaultTimeout,
   }) async {
-    return _withRefreshRetry(() async {
-      final authHeaders = await _authHeaders(headers);
-      final baseUrl = await _getBaseUrl();
-      final encoded = body == null ? null : jsonEncode(body);
+    return _withRetry(() async {
+      final completer = Completer<http.Response>();
+      Timer? timeoutTimer;
 
-      // Add Content-Type only when there is a request body
-      if (encoded != null) {
-        authHeaders['Content-Type'] = 'application/json';
+      try {
+        timeoutTimer = Timer(timeout, () {
+          if (!completer.isCompleted) {
+            completer.completeError(
+              TimeoutException('Request timed out', timeout),
+            );
+          }
+        });
+
+        final response = await _withRefreshRetry(() async {
+          final authHeaders = await _authHeaders(headers);
+          final baseUrl = await _getBaseUrl();
+          final encoded = body == null ? null : jsonEncode(body);
+
+          if (encoded != null) {
+            authHeaders['Content-Type'] = 'application/json';
+          }
+
+          final resp = await _client.post(
+            Uri.parse(_joinUrl(baseUrl, path)),
+            headers: authHeaders,
+            body: encoded,
+          );
+
+          if (resp.statusCode >= 400) {
+            throw ApiHttpException.fromResponse(resp);
+          }
+
+          return resp;
+        });
+
+        if (!completer.isCompleted) {
+          completer.complete(response);
+        }
+
+        return response;
+      } catch (error) {
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
+        rethrow;
+      } finally {
+        timeoutTimer?.cancel();
       }
-
-      final response = await _client.post(
-        Uri.parse(_joinUrl(baseUrl, path)),
-        headers: authHeaders,
-        body: encoded,
-      );
-
-      if (response.statusCode >= 400) {
-        throw ApiHttpException.fromResponse(response);
-      }
-
-      return response;
     });
   }
 
@@ -185,28 +338,56 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, String>? headers,
+    Duration timeout = _defaultTimeout,
   }) async {
-    return _withRefreshRetry(() async {
-      final authHeaders = await _authHeaders(headers);
-      final baseUrl = await _getBaseUrl();
-      final encoded = body == null ? null : jsonEncode(body);
+    return _withRetry(() async {
+      final completer = Completer<http.Response>();
+      Timer? timeoutTimer;
 
-      // Add Content-Type only when there is a request body
-      if (encoded != null) {
-        authHeaders['Content-Type'] = 'application/json';
+      try {
+        timeoutTimer = Timer(timeout, () {
+          if (!completer.isCompleted) {
+            completer.completeError(
+              TimeoutException('Request timed out', timeout),
+            );
+          }
+        });
+
+        final response = await _withRefreshRetry(() async {
+          final authHeaders = await _authHeaders(headers);
+          final baseUrl = await _getBaseUrl();
+          final encoded = body == null ? null : jsonEncode(body);
+
+          if (encoded != null) {
+            authHeaders['Content-Type'] = 'application/json';
+          }
+
+          final resp = await _client.put(
+            Uri.parse(_joinUrl(baseUrl, path)),
+            headers: authHeaders,
+            body: encoded,
+          );
+
+          if (resp.statusCode >= 400) {
+            throw ApiHttpException.fromResponse(resp);
+          }
+
+          return resp;
+        });
+
+        if (!completer.isCompleted) {
+          completer.complete(response);
+        }
+
+        return response;
+      } catch (error) {
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
+        rethrow;
+      } finally {
+        timeoutTimer?.cancel();
       }
-
-      final response = await _client.put(
-        Uri.parse(_joinUrl(baseUrl, path)),
-        headers: authHeaders,
-        body: encoded,
-      );
-
-      if (response.statusCode >= 400) {
-        throw ApiHttpException.fromResponse(response);
-      }
-
-      return response;
     });
   }
 
@@ -214,28 +395,56 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, String>? headers,
+    Duration timeout = _defaultTimeout,
   }) async {
-    return _withRefreshRetry(() async {
-      final authHeaders = await _authHeaders(headers);
-      final baseUrl = await _getBaseUrl();
-      final encoded = body == null ? null : jsonEncode(body);
+    return _withRetry(() async {
+      final completer = Completer<http.Response>();
+      Timer? timeoutTimer;
 
-      // Add Content-Type only when there is a request body
-      if (encoded != null) {
-        authHeaders['Content-Type'] = 'application/json';
+      try {
+        timeoutTimer = Timer(timeout, () {
+          if (!completer.isCompleted) {
+            completer.completeError(
+              TimeoutException('Request timed out', timeout),
+            );
+          }
+        });
+
+        final response = await _withRefreshRetry(() async {
+          final authHeaders = await _authHeaders(headers);
+          final baseUrl = await _getBaseUrl();
+          final encoded = body == null ? null : jsonEncode(body);
+
+          if (encoded != null) {
+            authHeaders['Content-Type'] = 'application/json';
+          }
+
+          final resp = await _client.delete(
+            Uri.parse(_joinUrl(baseUrl, path)),
+            headers: authHeaders,
+            body: encoded,
+          );
+
+          if (resp.statusCode >= 400) {
+            throw ApiHttpException.fromResponse(resp);
+          }
+
+          return resp;
+        });
+
+        if (!completer.isCompleted) {
+          completer.complete(response);
+        }
+
+        return response;
+      } catch (error) {
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
+        rethrow;
+      } finally {
+        timeoutTimer?.cancel();
       }
-
-      final response = await _client.delete(
-        Uri.parse(_joinUrl(baseUrl, path)),
-        headers: authHeaders,
-        body: encoded,
-      );
-
-      if (response.statusCode >= 400) {
-        throw ApiHttpException.fromResponse(response);
-      }
-
-      return response;
     });
   }
 

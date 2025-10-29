@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
+import 'package:flutter/foundation.dart';
+import 'core/theme/theme_data.dart';
 import 'screens/splash/splash_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/forgot_password_screen.dart';
@@ -24,7 +25,7 @@ import 'screens/settings/developer_settings_screen.dart';
 import 'screens/support/contact_screen.dart';
 import 'screens/support/feedback_screen.dart';
 
-void main() {
+Future<void> main() async {
   // Ensure Flutter bindings are initialized before doing any platform / binding work.
   // This prevents timing issues when ChangeNotifiers or other initialization
   // code use WidgetsBinding or schedule post-frame callbacks.
@@ -43,6 +44,14 @@ void main() {
     debugPrint('Stack trace: $stack');
     return true;
   };
+
+  // Enable faster scheduling for better performance in development
+  if (kDebugMode) {
+    // ignore: unnecessary_cast
+    (PlatformDispatcher.instance as dynamic).schedulerPeriod = const Duration(
+      milliseconds: 16,
+    ); // ~60 FPS
+  }
 
   runApp(const AppBootstrap());
 }
@@ -67,13 +76,19 @@ class _AppBootstrapState extends State<AppBootstrap> {
   Future<void> _initializeApp() async {
     try {
       // Initialize ApiClient before any API calls
-      await ApiClient.instance.init();
+      await Future.wait([
+        ApiClient.instance.init(),
+        // Add other async initialization here
+        // e.g., load preferences, initialize plugins, etc.
+      ], eagerError: true);
 
+      if (!mounted) return;
       setState(() {
         _isInitialized = true;
       });
     } catch (e) {
       debugPrint('App initialization error: $e');
+      if (!mounted) return;
       setState(() {
         _initError = e.toString();
       });
@@ -202,16 +217,8 @@ class _AuthInitializerState extends State<AuthInitializer> {
           title: 'CricLeague',
           debugShowCheckedModeBanner: false,
           themeMode: theme.mode,
-          theme: ThemeData(
-            brightness: Brightness.light,
-            primaryColor: const Color(0xFF20DF6C),
-            useMaterial3: true,
-          ),
-          darkTheme: ThemeData(
-            brightness: Brightness.dark,
-            colorScheme: const ColorScheme.dark(),
-            useMaterial3: true,
-          ),
+          theme: AppThemeData.light(),
+          darkTheme: AppThemeData.dark(),
           home: const SplashScreen(),
           routes: {
             '/login': (context) => const LoginScreen(),

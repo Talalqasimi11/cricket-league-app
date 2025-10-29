@@ -38,19 +38,28 @@ dependencies:
   share_plus: ^12.0.0
   flutter_secure_storage: ^9.2.4
   url_launcher: ^6.2.1
-  connectivity_plus: ^7.0.0  # Temporarily disabled due to web dependency conflicts
+  connectivity_plus: ^5.0.2  # Use stable version compatible with all platforms
+  socket_io_client: ^2.0.3+1
+  web_socket_channel: ^2.4.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  cached_network_image: ^3.3.0
+  flutter_cache_manager: ^3.3.1
+  performance: 0.1.1  # For performance monitoring
+  # workmanager: ^0.5.2  # For background sync - Commented out due to compatibility issues
+  flutter_offline: ^3.0.1  # For offline detection
+  device_info_plus: ^9.1.2  # For device information
 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  mockito: ^5.4.4
+  build_runner: ^2.4.8
+  test: ^1.24.9
+  integration_test:
+    sdk: flutter
 
 # Dependency overrides to fix compatibility issues
 dependency_overrides:
@@ -66,10 +75,21 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  # App assets
+  assets:
+    
+
+  # App fonts
+  # fonts:
+  #   - family: Poppins
+  #     fonts:
+  #       - asset: assets/fonts/Poppins-Regular.ttf
+  #       - asset: assets/fonts/Poppins-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Poppins-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/Poppins-Bold.ttf
+  #         weight: 700
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

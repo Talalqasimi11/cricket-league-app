@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:async';
 import '../../../core/api_client.dart';
+import '../../../core/websocket_service.dart';
 
 class LiveMatchViewScreen extends StatefulWidget {
   final String matchId;
@@ -20,39 +21,133 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
   String currentOvers = '0.0';
   List<Map<String, String>> ballByBall = const [];
 
-  // Real-time update configuration
-  Timer? _refreshTimer;
-  static const Duration _refreshInterval = Duration(seconds: 5);
   bool _isRefreshing = false;
+  bool _websocketConnected = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchLive();
-    _startPeriodicRefresh();
+    _setupWebSocket();
+    _fetchLive(); // Initial fetch
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    WebSocketService.instance.disconnect();
     super.dispose();
   }
 
-  void _startPeriodicRefresh() {
-    _refreshTimer = Timer.periodic(_refreshInterval, (timer) {
-      if (mounted && !_isRefreshing) {
+  void _setupWebSocket() {
+    // Set up WebSocket callbacks
+    WebSocketService.instance.onScoreUpdate = (data) {
+      if (mounted) {
+        _handleScoreUpdate(data);
+      }
+    };
+
+    WebSocketService.instance.onInningsEnded = (data) {
+      if (mounted) {
+        _handleInningsEnded(data);
+      }
+    };
+
+    WebSocketService.instance.onConnected = () {
+      if (mounted) {
+        setState(() {
+          _websocketConnected = true;
+        });
+      }
+    };
+
+    WebSocketService.instance.onDisconnected = () {
+      if (mounted) {
+        setState(() {
+          _websocketConnected = false;
+        });
+      }
+    };
+
+    WebSocketService.instance.onError = (error) {
+      if (mounted) {
+        debugPrint('WebSocket error: $error');
+        // Fallback to polling if WebSocket fails
         _fetchLive();
       }
-    });
+    };
+
+    // Connect to WebSocket
+    WebSocketService.instance.connect(widget.matchId);
+  }
+
+  void _handleScoreUpdate(Map<String, dynamic> data) {
+    try {
+      // Update innings data
+      if (data['inning'] != null) {
+        final inning = data['inning'] as Map<String, dynamic>;
+        final runs = (inning['runs'] ?? 0).toString();
+        final wkts = (inning['wickets'] ?? 0).toString();
+        final ov = (inning['overs'] ?? 0).toString();
+        
+        setState(() {
+          score = '$runs/$wkts';
+          currentOvers = ov;
+        });
+      }
+
+      // Update ball-by-ball data
+      if (data['allBalls'] != null) {
+        final balls = data['allBalls'] as List;
+        final mapped = balls.map<Map<String, String>>((b) {
+          final m = b as Map<String, dynamic>;
+          final overNo = (m['over_number'] ?? '').toString();
+          final ballNo = (m['ball_number'] ?? '').toString();
+          final runs = (m['runs'] ?? '').toString();
+          final wicketType = (m['wicket_type'] ?? '').toString();
+          final result = wicketType.isNotEmpty ? 'W' : runs;
+          final bowler = (m['bowler_name'] ?? '').toString();
+          final batsman = (m['batsman_name'] ?? '').toString();
+          final commentary = wicketType.isNotEmpty
+              ? 'Wicket: $wicketType'
+              : 'Runs: $runs';
+          return {
+            'over': '$overNo.$ballNo',
+            'bowler': bowler,
+            'batsman': batsman,
+            'commentary': commentary,
+            'result': result,
+          };
+        }).toList();
+        
+        setState(() {
+          ballByBall = mapped;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error handling score update: $e');
+    }
+  }
+
+  void _handleInningsEnded(Map<String, dynamic> data) {
+    _fetchLive(); // Refresh all data
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Innings ended'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   Future<void> _fetchLive() async {
     if (_isRefreshing) return; // Prevent concurrent refreshes
 
-    setState(() {
-      _loading = true;
-      _isRefreshing = true;
-    });
+    if (!_loading) {
+      setState(() {
+        _loading = true;
+        _isRefreshing = true;
+      });
+    }
 
     try {
       final resp = await ApiClient.instance.get(
@@ -158,6 +253,12 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                 arguments: {'matchId': widget.matchId},
               );
             },
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: _websocketConnected
+                ? const Icon(Icons.wifi, color: Colors.green, size: 18)
+                : const Icon(Icons.wifi_off, color: Colors.grey, size: 18),
           ),
         ],
       ),

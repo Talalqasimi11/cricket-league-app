@@ -1,5 +1,20 @@
 const { db } = require("../config/db");
 
+// Lazy import io instance to avoid circular dependency
+let io = null;
+const getIo = () => {
+  if (!io) {
+    // Only import when needed (after index.js has been fully loaded)
+    try {
+      const indexModule = require("../index");
+      io = indexModule.io;
+    } catch (err) {
+      console.warn("Socket.IO not available:", err.message);
+    }
+  }
+  return io;
+};
+
 /**
  * Helper function to check if user can score for a match
  */
@@ -20,15 +35,16 @@ const canScoreForMatch = async (userId, matchId) => {
     // Check if user is tournament creator
     if (matchData.tournament_creator === userId) return true;
 
-    // Check if user is owner of either team (registered user)
+    // Check if user is owner or player of either team
     const [teams] = await db.query(
-      `SELECT t.id, t.owner_id
+      `SELECT t.id, t.owner_id 
        FROM teams t
-       WHERE t.id IN (?, ?)`,
-      [matchData.team1_id, matchData.team2_id]
+       INNER JOIN team_players tp ON t.id = tp.team_id
+       WHERE t.id IN (?, ?) AND (t.owner_id = ? OR tp.player_id = ?)`,
+      [matchData.team1_id, matchData.team2_id, userId, userId]
     );
 
-    return teams.some(team => team.owner_id === userId);
+    return teams.length > 0;
   } catch (err) {
     // Note: No req.log available in helper function
     console.error("Error checking scoring authorization:", err);
@@ -310,8 +326,64 @@ const addBall = async (req, res) => {
     const totalLegalBalls = inningData.legal_balls;
     const maxLegalBalls = matchCheck.overs * 6;
 
+    // Get updated innings data for Socket.IO emission
+    const [[updatedInning]] = await db.query(
+      `SELECT * FROM match_innings WHERE id = ?`,
+      [inning_id]
+    );
+
+    // Emit WebSocket event to all clients subscribed to this match
+    const socketIo = getIo();
+    if (socketIo) {
+      const [balls] = await db.query(
+        `SELECT b.*, 
+                bats.player_name AS batsman_name,
+                bowl.player_name AS bowler_name,
+                outp.player_name AS out_player_name
+         FROM ball_by_ball b
+         LEFT JOIN players bats ON b.batsman_id = bats.id
+         LEFT JOIN players bowl ON b.bowler_id = bowl.id
+         LEFT JOIN players outp ON b.out_player_id = outp.id
+         WHERE b.match_id = ? 
+         ORDER BY b.id ASC`,
+        [match_id]
+      );
+
+      socketIo.of('/live-score').to(`match:${match_id}`).emit('scoreUpdate', {
+        matchId: match_id,
+        inningId: inning_id,
+        inning: updatedInning,
+        ballAdded: {
+          over_number,
+          ball_number,
+          batsman_id,
+          bowler_id,
+          runs,
+          extras,
+          wicket_type,
+          out_player_id,
+        },
+        allBalls: balls,
+        autoEnded: false,
+      });
+    }
+
     if (inningCheck.wickets >= 10 || totalLegalBalls >= maxLegalBalls) {
       await db.query(`UPDATE match_innings SET status = 'completed' WHERE id = ?`, [inning_id]);
+      
+      // Emit innings end event
+      if (socketIo) {
+        const [[finalInning]] = await db.query(
+          `SELECT * FROM match_innings WHERE id = ?`,
+          [inning_id]
+        );
+        socketIo.of('/live-score').to(`match:${match_id}`).emit('inningsEnded', {
+          matchId: match_id,
+          inningId: inning_id,
+          inning: finalInning,
+        });
+      }
+      
       return res.json({ message: "Ball recorded. Innings ended automatically", autoEnded: true });
     }
 
@@ -342,6 +414,22 @@ const endInnings = async (req, res) => {
       return res.status(400).json({ error: "Innings already ended" });
 
     await db.query(`UPDATE match_innings SET status = 'completed' WHERE id = ?`, [inning_id]);
+
+    // Emit innings end event via WebSocket
+    const socketIo = getIo();
+    if (socketIo) {
+      const matchId = inning.match_id;
+      const [[updatedInning]] = await db.query(
+        `SELECT * FROM match_innings WHERE id = ?`,
+        [inning_id]
+      );
+      
+      socketIo.of('/live-score').to(`match:${matchId}`).emit('inningsEnded', {
+        matchId,
+        inningId: inning_id,
+        inning: updatedInning,
+      });
+    }
 
     res.json({ message: `Innings ${inning.inning_number} ended manually` });
   } catch (err) {

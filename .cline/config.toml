@@ -1,8 +1,0 @@
-[providers]
-openrouter = "https://openrouter.ai/api/v1"
-
-[models]
-default = "anthropic/claude-3.5-sonnet"
-codegen = "deepseek/deepseek-coder"
-refactor = "mistral/mistral-large"
-ops = "gpt-4o-mini"

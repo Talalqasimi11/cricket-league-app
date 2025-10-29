@@ -322,43 +322,176 @@ const { Server } = require('socket.io');
 const { createAdapter } = require('@socket.io/redis-adapter');
 const redis = require('redis');
 
-const pubClient = redis.createClient();
-const subClient = pubClient.duplicate();
+// Redis client configuration
+const redisConfig = {
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  retry_strategy: function(options) {
+    if (options.error && options.error.code === 'ECONNREFUSED') {
+      console.error('Redis connection refused. Check if Redis server is running.');
+      return new Error('Redis connection refused');
+    }
+    if (options.total_retry_time > 1000 * 60 * 60) {
+      console.error('Redis retry time exhausted');
+      return new Error('Redis retry time exhausted');
+    }
+    if (options.attempt > 10) {
+      console.error('Redis maximum retry attempts reached');
+      return new Error('Redis maximum retry attempts reached');
+    }
+    // Retry delays: 1s, 2s, 4s, 8s, 16s, 32s
+    return Math.min(options.attempt * 1000, 3000);
+  }
+};
+
+let pubClient;
+let subClient;
+
+try {
+  pubClient = redis.createClient(redisConfig);
+  subClient = pubClient.duplicate();
+
+  // Redis error handling
+  pubClient.on('error', (err) => {
+    console.error('Redis Pub Client Error:', err);
+  });
+
+  subClient.on('error', (err) => {
+    console.error('Redis Sub Client Error:', err);
+  });
+
+  // Redis connection monitoring
+  pubClient.on('connect', () => {
+    console.log('✅ Redis Pub Client Connected');
+  });
+
+  subClient.on('connect', () => {
+    console.log('✅ Redis Sub Client Connected');
+  });
+
+  pubClient.on('reconnecting', () => {
+    console.log('⚠️ Redis Pub Client Reconnecting...');
+  });
+
+  subClient.on('reconnecting', () => {
+    console.log('⚠️ Redis Sub Client Reconnecting...');
+  });
+
+} catch (err) {
+  console.error('Redis Client Creation Error:', err);
+  process.exit(1);
+}
 
 const io = new Server(httpServer, {
   cors: {
     origin: (process.env.CORS_ORIGINS || "").split(',').map(s => s.trim()).filter(Boolean),
     methods: ["GET", "POST"],
     credentials: true
-  }
+  },
+  // Socket.IO configuration
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['websocket', 'polling'],
+  allowUpgrades: true,
+  upgradeTimeout: 10000,
+  maxHttpBufferSize: 1e6 // 1MB
 });
 
-io.adapter(createAdapter(pubClient, subClient));
+try {
+  io.adapter(createAdapter(pubClient, subClient));
+  console.log('✅ Socket.IO Redis Adapter Configured');
+} catch (err) {
+  console.error('Socket.IO Redis Adapter Error:', err);
+  process.exit(1);
+}
 
 // Socket.IO authentication middleware
-io.of('/live-score').use(async (socket, next) => {
+const liveScoreNamespace = io.of('/live-score');
+
+liveScoreNamespace.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
-    if (!token) return next(new Error('Authentication error'));
+    if (!token) {
+      return next(new Error('Authentication error: No token provided'));
+    }
     const decoded = require('./middleware/authMiddleware').verifyToken(token);
     socket.user = decoded;
     next();
   } catch (err) {
+    console.error('WebSocket Authentication Error:', err);
     next(new Error('Invalid token'));
   }
 });
 
-// Socket.IO connection handler
-io.of('/live-score').on('connection', (socket) => {
-  socket.on('subscribe', (matchId) => {
-    socket.join(`match:${matchId}`);
-    console.log(`User ${socket.user.id} subscribed to match ${matchId}`);
+// Room cleanup interval (every 5 minutes)
+const cleanupInterval = setInterval(() => {
+  liveScoreNamespace.adapter.rooms.forEach((_, room) => {
+    if (room.startsWith('match:')) {
+      const sockets = liveScoreNamespace.adapter.rooms.get(room);
+      if (!sockets || sockets.size === 0) {
+        console.log(`Cleaning up empty room: ${room}`);
+        liveScoreNamespace.adapter.rooms.delete(room);
+      }
+    }
   });
+}, 5 * 60 * 1000);
 
-  socket.on('disconnect', () => {
-    console.log(`User ${socket.user?.id} disconnected`);
+// Cleanup on server shutdown
+process.on('SIGTERM', () => {
+  clearInterval(cleanupInterval);
+  io.close(() => {
+    console.log('Socket.IO server closed');
   });
 });
+
+// Socket.IO connection handler
+liveScoreNamespace.on('connection', (socket) => {
+  console.log(`User ${socket.user?.id} connected`);
+
+  // Track subscribed matches for cleanup
+  const subscribedMatches = new Set();
+
+  socket.on('subscribe', (matchId) => {
+    if (typeof matchId !== 'string' && typeof matchId !== 'number') {
+      socket.emit('error', { message: 'Invalid match ID' });
+      return;
+    }
+
+    const roomName = `match:${matchId}`;
+    socket.join(roomName);
+    subscribedMatches.add(matchId);
+    console.log(`User ${socket.user.id} subscribed to match ${matchId}`);
+    
+    // Notify client of successful subscription
+    socket.emit('subscribed', { matchId });
+  });
+
+  socket.on('unsubscribe', (matchId) => {
+    if (!matchId) return;
+    
+    const roomName = `match:${matchId}`;
+    socket.leave(roomName);
+    subscribedMatches.delete(matchId);
+    console.log(`User ${socket.user.id} unsubscribed from match ${matchId}`);
+  });
+
+  socket.on('disconnect', (reason) => {
+    // Clean up all subscribed matches
+    subscribedMatches.forEach(matchId => {
+      const roomName = `match:${matchId}`;
+      socket.leave(roomName);
+    });
+    subscribedMatches.clear();
+    
+    console.log(`User ${socket.user?.id} disconnected. Reason: ${reason}`);
+  });
+
+  socket.on('error', (error) => {
+    console.error(`Socket Error for user ${socket.user?.id}:`, error);
+  });
+});
+
+// Export io instance for use in controllers
+module.exports.io = io;
 
 // ✅ Start server
 const PORT = process.env.PORT || 5000;

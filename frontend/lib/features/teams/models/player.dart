@@ -88,4 +88,33 @@ class Player {
       'wickets': wickets,
     };
   }
+
+  /// Creates a copy of this Player with the given fields replaced with new values.
+  Player copyWith({
+    int? id,
+    String? playerName,
+    String? playerRole,
+    String? playerImageUrl,
+    int? runs,
+    int? matchesPlayed,
+    int? hundreds,
+    int? fifties,
+    double? battingAverage,
+    double? strikeRate,
+    int? wickets,
+  }) {
+    return Player(
+      id: id ?? this.id,
+      playerName: playerName ?? this.playerName,
+      playerRole: playerRole ?? this.playerRole,
+      playerImageUrl: playerImageUrl ?? this.playerImageUrl,
+      runs: runs ?? this.runs,
+      matchesPlayed: matchesPlayed ?? this.matchesPlayed,
+      hundreds: hundreds ?? this.hundreds,
+      fifties: fifties ?? this.fifties,
+      battingAverage: battingAverage ?? this.battingAverage,
+      strikeRate: strikeRate ?? this.strikeRate,
+      wickets: wickets ?? this.wickets,
+    );
+  }
 }

@@ -1,3 +1,15 @@
+# Cricket League Management Application
+
+A comprehensive digital platform for organizing, managing, and tracking cricket tournaments and matches.
+
+## 📚 Documentation
+
+- **[Quick Start Guide](QUICK_START.md)** - Get up and running in 5 minutes
+- **[Complete Documentation](DOCUMENTATION.md)** - Full system documentation
+- **[API Reference](API_REFERENCE.md)** - Complete API endpoint documentation
+- **[Developer Guide](DEVELOPER_GUIDE.md)** - Development best practices and guidelines
+- **[Product Requirements](PRD.md)** - Product requirements document
+
 ## Stack
 - Flutter for app (Provider, flutter_secure_storage)
 - Node.js + Express + JWT + Socket.IO for backend

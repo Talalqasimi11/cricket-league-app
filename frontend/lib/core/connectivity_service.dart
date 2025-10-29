@@ -8,7 +8,7 @@ class ConnectivityService {
   factory ConnectivityService() => _instance;
   ConnectivityService._internal();
 
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<ConnectivityResult>? _connectivitySubscription;
   bool _isOffline = false;
 
   /// Returns the current offline status
@@ -20,17 +20,15 @@ class ConnectivityService {
   }) {
     // Cancel any existing subscription
     _connectivitySubscription?.cancel();
-    
+
     // Start new subscription
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
-      List<ConnectivityResult> results,
+      ConnectivityResult result,
     ) {
-      final isConnected = results.any(
-        (result) =>
-            result == ConnectivityResult.mobile ||
-            result == ConnectivityResult.wifi ||
-            result == ConnectivityResult.ethernet,
-      );
+      final isConnected =
+          result == ConnectivityResult.mobile ||
+          result == ConnectivityResult.wifi ||
+          result == ConnectivityResult.ethernet;
 
       _isOffline = !isConnected;
       onConnectivityChanged(_isOffline);
@@ -39,13 +37,11 @@ class ConnectivityService {
 
   /// Check current connectivity status
   Future<bool> checkConnectivity() async {
-    final results = await Connectivity().checkConnectivity();
-    _isOffline = !results.any(
-      (result) =>
-          result == ConnectivityResult.mobile ||
-          result == ConnectivityResult.wifi ||
-          result == ConnectivityResult.ethernet,
-    );
+    final result = await Connectivity().checkConnectivity();
+    _isOffline =
+        !(result == ConnectivityResult.mobile ||
+            result == ConnectivityResult.wifi ||
+            result == ConnectivityResult.ethernet);
     return _isOffline;
   }
 

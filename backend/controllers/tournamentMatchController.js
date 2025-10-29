@@ -260,7 +260,17 @@ const startTournamentMatch = async (req, res) => {
     }
 
     // Create actual match record for live scoring
-    const oversDefault = 20; // TODO: derive from tournament config if available
+    // Get tournament configuration for overs
+    const [[tournament]] = await db.query(
+      `SELECT t.id, m.overs 
+       FROM tournaments t
+       LEFT JOIN matches m ON m.tournament_id = t.id
+       WHERE t.id = ?
+       LIMIT 1`,
+      [tournament_id]
+    );
+    
+    const oversDefault = tournament?.overs || 20; // Use tournament overs or default to 20
     const [ins] = await db.query(
       `INSERT INTO matches (team1_id, team2_id, overs, status, tournament_id) VALUES (?, ?, ?, 'live', ?)`,
       [row.team1_id, row.team2_id, oversDefault, row.tournament_id]
