@@ -1,5 +1,36 @@
 const jwt = require("jsonwebtoken");
 
+// ✅ Utility function to verify JWT token and return decoded payload
+const verifyJWTToken = (token) => {
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+      audience: process.env.JWT_AUD,
+      issuer: process.env.JWT_ISS,
+      clockTolerance: 5,
+    });
+
+    // Validate token type
+    if (decoded.typ !== 'access') {
+      throw new Error('Invalid token type');
+    }
+
+    // Validate sub field is a positive integer
+    const userId = decoded.sub;
+    if (!userId || !Number.isInteger(Number(userId)) || Number(userId) <= 0) {
+      throw new Error('Invalid token');
+    }
+
+    return {
+      id: Number(userId),
+      phone_number: decoded.phone_number,
+      scopes: decoded.scopes || [],
+      roles: decoded.roles || [],
+    };
+  } catch (err) {
+    throw err;
+  }
+};
+
 // ✅ Middleware to verify JWT token with aud/iss and clock tolerance
 const verifyToken = (req, res, next) => {
   // Only log in debug mode and never log sensitive data
@@ -79,4 +110,4 @@ const requireAdmin = (req, res, next) => {
   return next();
 };
 
-module.exports = { verifyToken, requireScope, requireAdmin };
+module.exports = { verifyToken, verifyJWTToken, requireScope, requireAdmin };

@@ -91,7 +91,7 @@ class TournamentProvider extends ChangeNotifier {
         apiCall: () => ApiClient.instance.get('/api/tournaments'),
       );
 
-      final List<dynamic> data = await response.body as List<dynamic>;
+      final List<dynamic> data = response.body as List<dynamic>;
       _tournaments.clear();
       _tournaments.addAll(
         data.map((json) => Tournament.fromJson(json)).toList(),

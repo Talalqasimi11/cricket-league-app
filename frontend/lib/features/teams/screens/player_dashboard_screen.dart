@@ -166,7 +166,7 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
                           ),
                           const SizedBox(height: 12),
                           DropdownButtonFormField<String>(
-                            value: currentRole,
+                            initialValue: currentRole,
                             decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
                             items: _allowedRoles.map((role) => DropdownMenuItem(value: role, child: Text(role))).toList(),
                             onChanged: isSubmitting ? null : (value) {

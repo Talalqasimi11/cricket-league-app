@@ -3,6 +3,8 @@ const mysql = require('mysql2/promise');
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const fs = require('fs').promises;
+const path = require('path');
 
 // Test database setup
 const setupTestDB = async () => {
@@ -35,7 +37,17 @@ describe('Auth API Integration Tests', () => {
     
     // Setup test database
     db = await setupTestDB();
-    
+
+    // Initialize schema
+    const schemaPath = path.join(__dirname, '../../cricket-league-db/schema.sql');
+    const schemaSQL = await fs.readFile(schemaPath, 'utf8');
+    const statements = schemaSQL.split(';').filter(stmt => stmt.trim());
+    for (const statement of statements) {
+      if (statement.trim()) {
+        await db.execute(statement);
+      }
+    }
+
     // Create Express app for testing
     app = express();
     app.use(cors({ origin: true, credentials: true }));
@@ -304,4 +316,3 @@ describe('Auth API Integration Tests', () => {
     });
   });
 });
-

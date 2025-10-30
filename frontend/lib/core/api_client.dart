@@ -185,18 +185,17 @@ class ApiClient {
     bool forceRefresh = false,
   }) async {
     return _withRetry(() async {
+      final authHeaders = await _authHeaders(headers);
+      final baseUrl = await _getBaseUrl();
+      final url = _joinUrl(baseUrl, path);
+
       // Check cache first if not forcing refresh
       if (!forceRefresh) {
-        final cacheKey = _getCacheKey(path, headers);
-        final cachedResponse = _getCachedResponse(cacheKey);
+        final cachedResponse = await _getCachedResponse(path, authHeaders, headers);
         if (cachedResponse != null) {
           return cachedResponse;
         }
       }
-
-      final authHeaders = await _authHeaders(headers);
-      final baseUrl = await _getBaseUrl();
-      final url = _joinUrl(baseUrl, path);
 
       final completer = Completer<http.Response>();
       Timer? timeoutTimer;
@@ -220,12 +219,7 @@ class ApiClient {
 
           // Cache successful responses
           if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            final cacheKey = _getCacheKey(path, headers);
-            _cacheResponse(
-              cacheKey,
-              resp,
-              cacheDuration ?? _defaultCacheDuration,
-            );
+            _cacheResponse(path, authHeaders, headers, resp, cacheDuration ?? _defaultCacheDuration);
           }
 
           return resp;
@@ -248,12 +242,14 @@ class ApiClient {
   }
 
   // Helper methods for caching
-  String _getCacheKey(String path, Map<String, String>? headers) {
+  String _getCacheKey(String path, Map<String, String> authHeaders, Map<String, String>? headers) {
     final headerString = headers?.toString() ?? '';
-    return '$path:$headerString';
+    final authToken = authHeaders['Authorization'] ?? '';
+    return '$path:$headerString:$authToken';
   }
 
-  http.Response? _getCachedResponse(String key) {
+  http.Response? _getCachedResponse(String path, Map<String, String> authHeaders, Map<String, String>? headers) {
+    final key = _getCacheKey(path, authHeaders, headers);
     final entry = _cache[key];
     if (entry != null && !entry.isExpired) {
       return entry.response;
@@ -261,7 +257,8 @@ class ApiClient {
     return null;
   }
 
-  void _cacheResponse(String key, http.Response response, Duration duration) {
+  void _cacheResponse(String path, Map<String, String> authHeaders, Map<String, String>? headers, http.Response response, Duration duration) {
+    final key = _getCacheKey(path, authHeaders, headers);
     _cache[key] = _CacheEntry(
       response: response,
       expiresAt: DateTime.now().add(duration),

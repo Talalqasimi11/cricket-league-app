@@ -1,4 +1,4 @@
-const db = require("../config/db");
+const { db } = require("../config/db");
 const { getValidationMessage, createErrorResponse, createSuccessResponse } = require("../utils/validationMessages");
 const { sendSuccess, sendError, sendValidationError, sendAuthError, sendForbiddenError, sendServerError, sendCreated, sendUpdated, sendDeleted } = require("../utils/responseUtils");
 

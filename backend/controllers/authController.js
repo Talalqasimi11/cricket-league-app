@@ -610,15 +610,15 @@ const getCsrfToken = async (req, res) => {
   try {
     const csrfToken = crypto.randomBytes(32).toString('hex');
     const isSecure = process.env.NODE_ENV === 'production';
-    
+
     res.cookie("csrf-token", csrfToken, {
-      httpOnly: true,
+      httpOnly: false,
       secure: isSecure,
       sameSite: isSecure ? "none" : "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-    
+
     res.json({ csrf_token: csrfToken });
   } catch (err) {
     req.log?.error(err);

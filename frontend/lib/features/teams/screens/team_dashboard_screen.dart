@@ -834,7 +834,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: selectedRole,
+              initialValue: selectedRole,
               decoration: const InputDecoration(
                 labelText: "Role",
                 border: OutlineInputBorder(),
@@ -1008,7 +1008,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<int>(
-                        value: tempCaptainId,
+                        initialValue: tempCaptainId,
                         decoration: const InputDecoration(
                           labelText: "Captain",
                           border: OutlineInputBorder(),
@@ -1025,7 +1025,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<int>(
-                        value: tempViceCaptainId,
+                        initialValue: tempViceCaptainId,
                         decoration: const InputDecoration(
                           labelText: "Vice Captain",
                           border: OutlineInputBorder(),

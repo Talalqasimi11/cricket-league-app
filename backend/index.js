@@ -311,7 +311,11 @@ app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   req.log?.error(err);
-  res.status(500).json({ error: 'Internal Server Error' });
+  const errorResponse = { error: 'Internal Server Error' };
+  if (process.env.NODE_ENV !== 'production') {
+    errorResponse.details = err.message;
+  }
+  res.status(500).json(errorResponse);
 });
 
 // Create HTTP server for Socket.IO
@@ -383,7 +387,7 @@ try {
 
 const io = new Server(httpServer, {
   cors: {
-    origin: (process.env.CORS_ORIGINS || "").split(',').map(s => s.trim()).filter(Boolean),
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -413,7 +417,7 @@ liveScoreNamespace.use(async (socket, next) => {
     if (!token) {
       return next(new Error('Authentication error: No token provided'));
     }
-    const decoded = require('./middleware/authMiddleware').verifyToken(token);
+    const decoded = require('./middleware/authMiddleware').verifyJWTToken(token);
     socket.user = decoded;
     next();
   } catch (err) {

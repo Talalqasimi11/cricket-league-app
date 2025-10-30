@@ -35,13 +35,12 @@ const canScoreForMatch = async (userId, matchId) => {
     // Check if user is tournament creator
     if (matchData.tournament_creator === userId) return true;
 
-    // Check if user is owner or player of either team
+    // Check if user is owner of either team
     const [teams] = await db.query(
-      `SELECT t.id, t.owner_id 
+      `SELECT t.id, t.owner_id
        FROM teams t
-       INNER JOIN team_players tp ON t.id = tp.team_id
-       WHERE t.id IN (?, ?) AND (t.owner_id = ? OR tp.player_id = ?)`,
-      [matchData.team1_id, matchData.team2_id, userId, userId]
+       WHERE t.id IN (?, ?) AND t.owner_id = ?`,
+      [matchData.team1_id, matchData.team2_id, userId]
     );
 
     return teams.length > 0;
