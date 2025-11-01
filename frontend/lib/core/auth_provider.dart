@@ -1,4 +1,5 @@
 // lib/core/auth_provider.dart
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -11,6 +12,9 @@ class AuthProvider extends ChangeNotifier {
   final List<String> _scopes = [];
   final List<String> _roles = [];
   bool _isLoading = false;
+  Timer? _tokenRefreshTimer;
+  DateTime? _tokenExpiry;
+  String? _lastError;
 
   // Getters
   bool get isAuthenticated => _isAuthenticated;
@@ -19,6 +23,8 @@ class AuthProvider extends ChangeNotifier {
   List<String> get scopes => List.unmodifiable(_scopes);
   List<String> get roles => List.unmodifiable(_roles);
   bool get isLoading => _isLoading;
+  String? get lastError => _lastError;
+  DateTime? get tokenExpiry => _tokenExpiry;
 
   // Check if user has required scope
   bool hasScope(String scope) => _scopes.contains(scope);
@@ -76,12 +82,14 @@ class AuthProvider extends ChangeNotifier {
     // Validate token expiration
     final exp = claims['exp'];
     if (exp != null) {
-      final expirationTime = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
-      if (expirationTime.isBefore(DateTime.now())) {
+      _tokenExpiry = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+      if (_tokenExpiry!.isBefore(DateTime.now())) {
         debugPrint('JWT token has expired');
         _clearAuth();
         return;
       }
+      // Schedule token refresh before expiry (5 minutes before)
+      _scheduleTokenRefresh();
     }
 
     debugPrint(
@@ -116,6 +124,7 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Auth initialization error: $e');
+      _lastError = e.toString();
       _setAuthenticated(false);
     } finally {
       _setLoading(false);
@@ -146,11 +155,25 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Login error: $e');
+      _lastError = e.toString();
       _setAuthenticated(false);
       return false;
     } finally {
       _setLoading(false);
     }
+  }
+
+  // Check if user has all required scopes
+  bool hasAllScopes(List<String> scopes) =>
+      scopes.every((scope) => _scopes.contains(scope));
+
+  // Get user role (for permission checking)
+  String? getUserRole() => _roles.isNotEmpty ? _roles.first : null;
+
+  // Check if token is about to expire
+  bool isTokenExpiringSoon({Duration threshold = const Duration(minutes: 5)}) {
+    if (_tokenExpiry == null) return false;
+    return _tokenExpiry!.difference(DateTime.now()) < threshold;
   }
 
   // Logout user
@@ -166,6 +189,48 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // Schedule token refresh before expiry
+  void _scheduleTokenRefresh() {
+    _tokenRefreshTimer?.cancel();
+    if (_tokenExpiry == null) return;
+
+    final timeUntilExpiry = _tokenExpiry!.difference(DateTime.now());
+    final refreshTime = timeUntilExpiry - const Duration(minutes: 5);
+
+    if (refreshTime.isNegative) {
+      // Token expires in less than 5 minutes, refresh immediately
+      _refreshToken();
+    } else {
+      _tokenRefreshTimer = Timer(refreshTime, _refreshToken);
+    }
+  }
+
+  // Refresh access token using refresh token
+  Future<void> _refreshToken() async {
+    try {
+      final response = await ApiClient.instance.post(
+        '/api/auth/refresh',
+        body: {'refresh_token': await ApiClient.instance.refreshToken},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final newToken = data['token']?.toString();
+        if (newToken != null && newToken.isNotEmpty) {
+          await ApiClient.instance.setToken(newToken);
+          _extractUserInfoFromToken(newToken);
+          debugPrint('Token refreshed successfully');
+        }
+      } else {
+        // Refresh failed, logout user
+        await logout();
+      }
+    } catch (e) {
+      debugPrint('Token refresh error: $e');
+      // Continue auth state, UI can handle offline scenarios
+    }
+  }
+
   // Clear authentication state
   void _clearAuth() {
     _isAuthenticated = false;
@@ -173,12 +238,28 @@ class AuthProvider extends ChangeNotifier {
     _phoneNumber = null;
     _roles.clear();
     _scopes.clear();
+    _tokenExpiry = null;
+    _lastError = null;
+    _tokenRefreshTimer?.cancel();
     notifyListeners();
   }
 
   // Refresh authentication state
   Future<void> refreshAuth() async {
     await initializeAuth();
+  }
+
+  // Sync state across app instances (for multi-window/tab scenarios)
+  void syncAuthState(AuthProvider other) {
+    _isAuthenticated = other._isAuthenticated;
+    _userId = other._userId;
+    _phoneNumber = other._phoneNumber;
+    _roles.clear();
+    _roles.addAll(other._roles);
+    _scopes.clear();
+    _scopes.addAll(other._scopes);
+    _tokenExpiry = other._tokenExpiry;
+    notifyListeners();
   }
 
   // Private methods
@@ -190,6 +271,9 @@ class AuthProvider extends ChangeNotifier {
         _phoneNumber = null;
         _scopes.clear();
         _roles.clear();
+        _tokenExpiry = null;
+        _tokenRefreshTimer?.cancel();
+        _lastError = null;
       }
       notifyListeners();
     }
@@ -200,5 +284,12 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = loading;
       notifyListeners();
     }
+  }
+
+  // Dispose resources
+  @override
+  void dispose() {
+    _tokenRefreshTimer?.cancel();
+    super.dispose();
   }
 }

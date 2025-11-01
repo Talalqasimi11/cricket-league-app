@@ -24,6 +24,7 @@ const playerStatsRoutes = require("./routes/playerStatsRoutes");
 const teamTournamentSummaryRoutes = require("./routes/teamTournamentSummaryRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const uploadRoutes = require("./routes/uploadRoutes");
 
 validateEnv();
 
@@ -245,6 +246,7 @@ app.use("/api/tournament-matches", tournamentMatchRoutes); // ✅ Register here
 app.use("/api/live", liveScoreRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/uploads", uploadRoutes);
 
 // Health check endpoints
 // Liveness probe - always returns 200 if server is running

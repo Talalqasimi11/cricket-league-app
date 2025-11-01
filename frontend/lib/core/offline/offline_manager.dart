@@ -1,167 +1,489 @@
 import 'dart:async';
-import '../caching/cache_manager.dart';
-import '../api_client.dart';
+import 'package:flutter/foundation.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import '../database/hive_service.dart';
+import '../database/tournament_repository.dart';
+import '../database/match_repository.dart';
+import '../database/team_repository.dart';
+import '../database/player_repository.dart';
+import '../../models/pending_operation.dart';
+import '../../models/tournament.dart';
+import '../../services/api_service.dart';
 
-/// Manages offline functionality and data synchronization
+/// Conflict resolution strategies
+enum ConflictResolutionStrategy {
+  serverWins,    // Server data takes precedence
+  clientWins,    // Local data takes precedence
+  manual,        // User decides which version to keep
+  merge,         // Attempt to merge conflicting data
+}
+
+/// Result of a sync operation
+class SyncResult {
+  final bool success;
+  final int operationsProcessed;
+  final int operationsFailed;
+  final List<String> errors;
+  final Duration duration;
+
+  SyncResult({
+    required this.success,
+    required this.operationsProcessed,
+    required this.operationsFailed,
+    required this.errors,
+    required this.duration,
+  });
+}
+
+/// Manages offline operations, sync coordination, and conflict resolution
 class OfflineManager {
-  static final OfflineManager _instance = OfflineManager._internal();
-  static OfflineManager get instance => _instance;
+  final HiveService _hiveService;
+  final ApiService _apiService;
+  final Connectivity _connectivity;
 
-  final _pendingOperations = <PendingOperation>[];
-  final _syncController = StreamController<SyncStatus>.broadcast();
-  bool _isSyncing = false;
+  late final TournamentRepository _tournamentRepo;
+  late final MatchRepository _matchRepo;
+  late final TeamRepository _teamRepo;
+  late final PlayerRepository _playerRepo;
+
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Timer? _syncTimer;
+  bool _isOnline = false;
+  bool _isInitialized = false;
 
-  OfflineManager._internal() {
-    // Load any saved operations and start periodic sync
-    _loadPendingOperations().then((_) => _startPeriodicSync());
+  // Sync configuration
+  static const Duration syncInterval = Duration(minutes: 5);
+  static const int maxRetryAttempts = 3;
+  static const Duration retryDelay = Duration(seconds: 30);
+
+  // Streams for UI updates
+  final StreamController<bool> _onlineStatusController = StreamController<bool>.broadcast();
+  final StreamController<SyncResult> _syncResultController = StreamController<SyncResult>.broadcast();
+  final StreamController<int> _pendingOperationsController = StreamController<int>.broadcast();
+
+  OfflineManager({
+    required HiveService hiveService,
+    required ApiService apiService,
+  }) : _hiveService = hiveService,
+       _apiService = apiService,
+       _connectivity = Connectivity();
+
+  /// Initialize the offline manager
+  Future<void> init() async {
+    if (_isInitialized) return;
+
+    try {
+      _tournamentRepo = TournamentRepository(_hiveService);
+      _matchRepo = MatchRepository(_hiveService);
+      _teamRepo = TeamRepository(_hiveService);
+      _playerRepo = PlayerRepository(_hiveService);
+
+      // Check initial connectivity
+      final connectivityResults = await _connectivity.checkConnectivity();
+      _updateOnlineStatus(connectivityResults);
+
+      // Listen to connectivity changes
+      _connectivitySubscription = _connectivity.onConnectivityChanged.listen(_updateOnlineStatus);
+
+      // Start periodic sync
+      _startPeriodicSync();
+
+      _isInitialized = true;
+      debugPrint('[OfflineManager] Initialized successfully');
+    } catch (e) {
+      debugPrint('[OfflineManager] Initialization failed: $e');
+      rethrow;
+    }
   }
 
-  // Stream of sync status updates
-  Stream<SyncStatus> get syncStatus => _syncController.stream;
-
-  void _startPeriodicSync() {
+  /// Dispose resources
+  Future<void> dispose() async {
+    _connectivitySubscription?.cancel();
     _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      syncPendingOperations();
+    await _onlineStatusController.close();
+    await _syncResultController.close();
+    await _pendingOperationsController.close();
+    debugPrint('[OfflineManager] Disposed');
+  }
+
+  // ===== CONNECTIVITY MANAGEMENT =====
+
+  /// Stream of online status changes
+  Stream<bool> get onlineStatus => _onlineStatusController.stream;
+
+  /// Current online status
+  bool get isOnline => _isOnline;
+
+  /// Update online status based on connectivity
+  void _updateOnlineStatus(List<ConnectivityResult> results) {
+    final wasOnline = _isOnline;
+    // Consider online if any connection type is available (not none)
+    _isOnline = results.any((result) => result != ConnectivityResult.none);
+
+    if (_isOnline != wasOnline) {
+      _onlineStatusController.add(_isOnline);
+      debugPrint('[OfflineManager] Online status changed: $_isOnline');
+
+      if (_isOnline && !wasOnline) {
+        // Just came online, trigger sync
+        _performSync();
+      }
+    }
+  }
+
+  // ===== OPERATION QUEUING =====
+
+  /// Stream of pending operations count changes
+  Stream<int> get pendingOperationsCount => _pendingOperationsController.stream;
+
+  /// Get current pending operations count
+  int getPendingOperationsCount() {
+    try {
+      return _hiveService.getBox(HiveService.boxPendingOperations).length;
+    } catch (e) {
+      debugPrint('[OfflineManager] Error getting pending operations count: $e');
+      return 0;
+    }
+  }
+
+  /// Queue an operation for offline sync
+  Future<void> queueOperation({
+    required OperationType operationType,
+    required String entityType,
+    required int entityId,
+    required Map<String, dynamic> data,
+  }) async {
+    try {
+      final operation = PendingOperation.create(
+        operationType: operationType,
+        entityType: entityType,
+        entityId: entityId,
+        data: data,
+      );
+
+      final box = _hiveService.getBox(HiveService.boxPendingOperations);
+      await box.add(operation);
+
+      _pendingOperationsController.add(box.length);
+      debugPrint('[OfflineManager] Queued operation: ${operation.description}');
+
+      // If online, try to sync immediately
+      if (_isOnline) {
+        _performSync();
+      }
+    } catch (e) {
+      debugPrint('[OfflineManager] Error queuing operation: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all pending operations sorted by priority
+  List<PendingOperation> getPendingOperations() {
+    try {
+      final box = _hiveService.getBox(HiveService.boxPendingOperations);
+      final operations = box.values.cast<PendingOperation>().toList();
+
+      // Sort by priority (lower number = higher priority)
+      operations.sort((a, b) => a.priority.compareTo(b.priority));
+      return operations;
+    } catch (e) {
+      debugPrint('[OfflineManager] Error getting pending operations: $e');
+      return [];
+    }
+  }
+
+  // ===== SYNC MANAGEMENT =====
+
+  /// Stream of sync results
+  Stream<SyncResult> get syncResults => _syncResultController.stream;
+
+  /// Manually trigger a sync operation
+  Future<SyncResult> syncNow() async {
+    if (!_isOnline) {
+      return SyncResult(
+        success: false,
+        operationsProcessed: 0,
+        operationsFailed: 0,
+        errors: ['Device is offline'],
+        duration: Duration.zero,
+      );
+    }
+
+    return await _performSync();
+  }
+
+  /// Start periodic sync timer
+  void _startPeriodicSync() {
+    _syncTimer = Timer.periodic(syncInterval, (timer) {
+      if (_isOnline) {
+        _performSync();
+      }
     });
   }
 
-  // Queue an operation for later execution
-  Future<void> queueOperation(PendingOperation operation) async {
-    _pendingOperations.add(operation);
-    await _savePendingOperations();
-    _syncController.add(
-      SyncStatus(pending: _pendingOperations.length, syncing: _isSyncing),
-    );
-  }
-
-  // Save pending operations to persistent storage
-  Future<void> _savePendingOperations() async {
-    await CacheManager.instance.setInPersistent(
-      'pending_operations',
-      _pendingOperations.map((op) => op.toJson()).toList(),
-    );
-  }
-
-  // Load pending operations from persistent storage
-  Future<void> _loadPendingOperations() async {
-    final ops = await CacheManager.instance.getFromPersistent<List>(
-      'pending_operations',
-    );
-    if (ops != null) {
-      _pendingOperations.clear();
-      _pendingOperations.addAll(
-        ops.map((op) => PendingOperation.fromJson(op as Map<String, dynamic>)),
-      );
-    }
-  }
-
-  // Sync all pending operations
-  Future<void> syncPendingOperations() async {
-    if (_isSyncing || _pendingOperations.isEmpty) return;
-
-    _isSyncing = true;
-    _syncController.add(
-      SyncStatus(pending: _pendingOperations.length, syncing: true),
-    );
+  /// Perform the actual sync operation
+  Future<SyncResult> _performSync() async {
+    final startTime = DateTime.now();
+    int processed = 0;
+    int failed = 0;
+    final errors = <String>[];
 
     try {
-      while (_pendingOperations.isNotEmpty) {
-        final operation = _pendingOperations.first;
+      debugPrint('[OfflineManager] Starting sync operation');
+
+      final operations = getPendingOperations();
+      if (operations.isEmpty) {
+        debugPrint('[OfflineManager] No pending operations to sync');
+        return SyncResult(
+          success: true,
+          operationsProcessed: 0,
+          operationsFailed: 0,
+          errors: [],
+          duration: DateTime.now().difference(startTime),
+        );
+      }
+
+      final box = _hiveService.getBox(HiveService.boxPendingOperations);
+
+      for (final operation in operations) {
         try {
-          await operation.execute();
-          _pendingOperations.removeAt(0);
-          await _savePendingOperations();
-        } catch (e) {
-          if (operation.retryCount >= operation.maxRetries) {
-            _pendingOperations.removeAt(0);
-            await _savePendingOperations();
+          final success = await _executeOperation(operation);
+          if (success) {
+            await box.delete(operation.key);
+            processed++;
           } else {
-            operation.retryCount++;
-            // Move to end of queue
-            _pendingOperations.removeAt(0);
-            _pendingOperations.add(operation);
-            await _savePendingOperations();
-            break; // Stop trying for now
+            failed++;
+            if (operation.shouldRetry(maxRetries: maxRetryAttempts)) {
+              // Mark as attempted and keep in queue for retry
+              final updatedOperation = operation.markAttempted();
+              await box.put(operation.key, updatedOperation);
+            } else {
+              // Max retries reached, remove from queue
+              await box.delete(operation.key);
+              errors.add('Max retries reached for ${operation.description}');
+            }
           }
+        } catch (e) {
+          failed++;
+          errors.add('Error processing ${operation.description}: $e');
+          debugPrint('[OfflineManager] Error processing operation: $e');
         }
       }
-    } finally {
-      _isSyncing = false;
-      _syncController.add(
-        SyncStatus(pending: _pendingOperations.length, syncing: false),
+
+      _pendingOperationsController.add(box.length);
+
+      final result = SyncResult(
+        success: failed == 0,
+        operationsProcessed: processed,
+        operationsFailed: failed,
+        errors: errors,
+        duration: DateTime.now().difference(startTime),
+      );
+
+      _syncResultController.add(result);
+      debugPrint('[OfflineManager] Sync completed: $processed processed, $failed failed');
+
+      return result;
+    } catch (e) {
+      debugPrint('[OfflineManager] Sync failed: $e');
+      return SyncResult(
+        success: false,
+        operationsProcessed: processed,
+        operationsFailed: failed + 1,
+        errors: [...errors, e.toString()],
+        duration: DateTime.now().difference(startTime),
       );
     }
   }
 
-  // Check if we're offline
-  Future<bool> isOffline() async {
+  /// Execute a single pending operation
+  Future<bool> _executeOperation(PendingOperation operation) async {
     try {
-      await ApiClient.instance.get('/health');
+      switch (operation.entityType) {
+        case 'tournament':
+          return await _syncTournament(operation);
+        case 'match':
+          return await _syncMatch(operation);
+        case 'team':
+          return await _syncTeam(operation);
+        case 'player':
+          return await _syncPlayer(operation);
+        default:
+          debugPrint('[OfflineManager] Unknown entity type: ${operation.entityType}');
+          return false;
+      }
+    } catch (e) {
+      debugPrint('[OfflineManager] Error executing operation ${operation.description}: $e');
       return false;
-    } catch (_) {
-      return true;
     }
   }
 
-  void dispose() {
-    _syncTimer?.cancel();
-    _syncController.close();
-  }
-}
+  // ===== ENTITY SYNC METHODS =====
 
-class PendingOperation {
-  final String type;
-  final String endpoint;
-  final Map<String, dynamic> data;
-  final int maxRetries;
-  int retryCount = 0;
+  Future<bool> _syncTournament(PendingOperation operation) async {
+    try {
+      switch (operation.operationType) {
+        case OperationType.create:
+          final tournament = Tournament.fromJson(operation.data);
+          await _apiService.createTournament(operation.data);
+          // Update local with server response if needed
+          return true;
 
-  PendingOperation({
-    required this.type,
-    required this.endpoint,
-    required this.data,
-    this.maxRetries = 3,
-  });
+        case OperationType.update:
+          await _apiService.updateTournament(operation.entityId, operation.data);
+          return true;
 
-  Future<void> execute() async {
-    switch (type) {
-      case 'POST':
-        await ApiClient.instance.post(endpoint, body: data);
-        break;
-      case 'PUT':
-        await ApiClient.instance.put(endpoint, body: data);
-        break;
-      case 'DELETE':
-        await ApiClient.instance.delete(endpoint);
-        break;
-      default:
-        throw Exception('Unknown operation type: $type');
+        case OperationType.delete:
+          // Delete not implemented in API service yet
+          debugPrint('[OfflineManager] Delete tournament not supported');
+          return false;
+      }
+    } catch (e) {
+      debugPrint('[OfflineManager] Tournament sync error: $e');
+      return false;
     }
   }
 
-  Map<String, dynamic> toJson() => {
-    'type': type,
-    'endpoint': endpoint,
-    'data': data,
-    'maxRetries': maxRetries,
-    'retryCount': retryCount,
-  };
+  Future<bool> _syncMatch(PendingOperation operation) async {
+    try {
+      switch (operation.operationType) {
+        case OperationType.create:
+          await _apiService.createMatch(operation.data);
+          return true;
 
-  factory PendingOperation.fromJson(Map<String, dynamic> json) {
-    return PendingOperation(
-      type: json['type'] as String,
-      endpoint: json['endpoint'] as String,
-      data: json['data'] as Map<String, dynamic>,
-      maxRetries: json['maxRetries'] as int,
-    )..retryCount = json['retryCount'] as int;
+        case OperationType.update:
+          await _apiService.updateMatch(operation.entityId, operation.data);
+          return true;
+
+        case OperationType.delete:
+          // Delete not implemented in API service yet
+          debugPrint('[OfflineManager] Delete match not supported');
+          return false;
+      }
+    } catch (e) {
+      debugPrint('[OfflineManager] Match sync error: $e');
+      return false;
+    }
   }
-}
 
-class SyncStatus {
-  final int pending;
-  final bool syncing;
+  Future<bool> _syncTeam(PendingOperation operation) async {
+    try {
+      switch (operation.operationType) {
+        case OperationType.create:
+          await _apiService.createTeam(operation.data);
+          return true;
 
-  const SyncStatus({required this.pending, required this.syncing});
+        case OperationType.update:
+          await _apiService.updateTeam(operation.entityId, operation.data);
+          return true;
+
+        case OperationType.delete:
+          // Delete not implemented in API service yet
+          debugPrint('[OfflineManager] Delete team not supported');
+          return false;
+      }
+    } catch (e) {
+      debugPrint('[OfflineManager] Team sync error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _syncPlayer(PendingOperation operation) async {
+    try {
+      switch (operation.operationType) {
+        case OperationType.create:
+          // Create player not implemented in API service yet
+          debugPrint('[OfflineManager] Create player not supported');
+          return false;
+
+        case OperationType.update:
+          // Update player not implemented in API service yet
+          debugPrint('[OfflineManager] Update player not supported');
+          return false;
+
+        case OperationType.delete:
+          // Delete player not implemented in API service yet
+          debugPrint('[OfflineManager] Delete player not supported');
+          return false;
+      }
+    } catch (e) {
+      debugPrint('[OfflineManager] Player sync error: $e');
+      return false;
+    }
+  }
+
+  // ===== CONFLICT RESOLUTION =====
+
+  /// Resolve a conflict manually
+  Future<void> resolveConflict({
+    required PendingOperation operation,
+    required ConflictResolutionStrategy strategy,
+    Map<String, dynamic>? mergedData,
+  }) async {
+    try {
+      switch (strategy) {
+        case ConflictResolutionStrategy.serverWins:
+          // Remove from pending operations, server data will be synced down
+          await _hiveService.getBox(HiveService.boxPendingOperations).delete(operation.key);
+          break;
+
+        case ConflictResolutionStrategy.clientWins:
+          // Force sync the local data
+          await _executeOperation(operation);
+          break;
+
+        case ConflictResolutionStrategy.manual:
+          // Keep the operation for manual resolution (not implemented yet)
+          break;
+
+        case ConflictResolutionStrategy.merge:
+          if (mergedData != null) {
+            final mergedOperation = operation.copyWith(data: mergedData);
+            await _hiveService.getBox(HiveService.boxPendingOperations).put(operation.key, mergedOperation);
+            await _executeOperation(mergedOperation);
+          }
+          break;
+      }
+
+      _pendingOperationsController.add(getPendingOperationsCount());
+    } catch (e) {
+      debugPrint('[OfflineManager] Error resolving conflict: $e');
+    }
+  }
+
+  // ===== UTILITY METHODS =====
+
+  /// Clear all pending operations (for debugging/reset)
+  Future<void> clearPendingOperations() async {
+    try {
+      await _hiveService.getBox(HiveService.boxPendingOperations).clear();
+      _pendingOperationsController.add(0);
+      debugPrint('[OfflineManager] Cleared all pending operations');
+    } catch (e) {
+      debugPrint('[OfflineManager] Error clearing pending operations: $e');
+    }
+  }
+
+  /// Get sync statistics
+  Map<String, dynamic> getSyncStats() {
+    final operations = getPendingOperations();
+    final stats = <String, int>{};
+
+    for (final op in operations) {
+      final key = '${op.entityType}_${op.operationType.name}';
+      stats[key] = (stats[key] ?? 0) + 1;
+    }
+
+    return {
+      'totalPending': operations.length,
+      'byType': stats,
+      'isOnline': _isOnline,
+      'lastSyncAttempt': operations.isNotEmpty
+          ? operations
+              .map((op) => op.lastAttempt)
+              .where((date) => date != null)
+              .fold<DateTime?>(null, (prev, curr) => prev == null || curr!.isAfter(prev) ? curr : prev)
+          : null,
+    };
+  }
 }

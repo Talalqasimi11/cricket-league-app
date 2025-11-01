@@ -47,12 +47,26 @@ Future<void> main() async {
 
   // Enable faster scheduling for better performance in development
   if (kDebugMode) {
-    // ignore: unnecessary_cast
-    (PlatformDispatcher.instance as dynamic).schedulerPeriod = const Duration(
-      milliseconds: 16,
-    ); // ~60 FPS
-  }
+  // Debug-only logging or dev-only flags ok — do NOT try to set internal PlatformDispatcher fields.
+  // Flutter manages frame pacing automatically. Manually changing internal fields can crash on many engines.
+  debugPrint('[main] Running in debug mode. Skipping scheduler hacks — use the profiler for performance issues.');
+}
 
+
+  // Simple test app - uncomment this line to bypass initialization
+  /*
+  runApp(
+    const MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Text('Flutter App Loaded Successfully! Missing Internet or Access Network State permissions could cause connectivity issues.'),
+        ),
+      ),
+    ),
+  );
+  */
+
+  // Enable the actual app with better error handling
   runApp(const AppBootstrap());
 }
 
@@ -74,23 +88,31 @@ class _AppBootstrapState extends State<AppBootstrap> {
   }
 
   Future<void> _initializeApp() async {
+    debugPrint('[AppBootstrap] Starting non-blocking app initialization');
+
     try {
-      // Initialize ApiClient before any API calls
-      await Future.wait([
-        ApiClient.instance.init(),
-        // Add other async initialization here
-        // e.g., load preferences, initialize plugins, etc.
-      ], eagerError: true);
+      // Fire-and-forget ApiClient init (now non-blocking)
+      ApiClient.instance.init();
+
+      debugPrint('[AppBootstrap] ApiClient.init() called (not awaited)');
+
+      // No other initialization needed - everything runs in background
+      // Add other async initialization here if needed (all fire-and-forget)
+
+      await Future.delayed(const Duration(milliseconds: 100)); // Brief delay for stability
 
       if (!mounted) return;
       setState(() {
         _isInitialized = true;
       });
+      debugPrint('[AppBootstrap] _isInitialized set to true - splash screen will appear immediately');
     } catch (e) {
-      debugPrint('App initialization error: $e');
+      debugPrint('[AppBootstrap] App initialization error (should not block): $e');
+      // Even on error, proceed with _isInitialized = true to show splash
       if (!mounted) return;
       setState(() {
-        _initError = e.toString();
+        _isInitialized = true;
+        // Don't set _initError - we want splash to show regardless
       });
     }
   }

@@ -5,6 +5,13 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import UserManagement from './components/UserManagement';
 import TeamManagement from './components/TeamManagement';
+import TournamentManagement from './components/TournamentManagement';
+import MatchManagement from './components/MatchManagement';
+import SystemHealth from './components/SystemHealth';
+import ReportingDashboard from './components/ReportingDashboard';
+import Sidebar from './components/Sidebar';
+import Header from './components/Header';
+import Footer from './components/Footer';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -63,6 +70,14 @@ function App() {
         return <UserManagement onToast={showToast} />;
       case 'teams':
         return <TeamManagement onToast={showToast} />;
+      case 'tournaments':
+        return <TournamentManagement onToast={showToast} />;
+      case 'matches':
+        return <MatchManagement onToast={showToast} />;
+      case 'system-health':
+        return <SystemHealth onToast={showToast} />;
+      case 'reports':
+        return <ReportingDashboard onToast={showToast} />;
       default:
         return <Dashboard onToast={showToast} />;
     }
@@ -90,67 +105,34 @@ function App() {
 
   return (
     <ErrorBoundary onToast={showToast}>
-      <div className="min-h-screen bg-gray-100">
-        {/* Navigation */}
-        <nav className="bg-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="flex justify-between h-16">
-              <div className="flex">
-                <div className="flex-shrink-0 flex items-center">
-                  <h1 className="text-xl font-bold text-gray-900">🏏 Cricket League Admin</h1>
-                </div>
-                <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                  <button
-                    onClick={() => setCurrentView('dashboard')}
-                    className={`${
-                      currentView === 'dashboard'
-                        ? 'border-indigo-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
-                  >
-                    Dashboard
-                  </button>
-                  <button
-                    onClick={() => setCurrentView('users')}
-                    className={`${
-                      currentView === 'users'
-                        ? 'border-indigo-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
-                  >
-                    Users
-                  </button>
-                  <button
-                    onClick={() => setCurrentView('teams')}
-                    className={`${
-                      currentView === 'teams'
-                        ? 'border-indigo-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
-                  >
-                    Teams
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center space-x-4">
-                <span className="text-sm text-gray-700">
-                  {user?.phone_number}
-                </span>
-                <button
-                  onClick={handleLogout}
-                  className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                >
-                  Logout
-                </button>
-              </div>
-            </div>
-          </div>
-        </nav>
+      <div className="flex h-screen bg-gray-100">
+        {/* Sidebar */}
+        <Sidebar 
+          currentView={currentView}
+          onViewChange={setCurrentView}
+          user={user}
+          onLogout={handleLogout}
+        />
 
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          {renderCurrentView()}
-        </main>
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header */}
+          <Header 
+            currentView={currentView}
+            user={user}
+            onLogout={handleLogout}
+          />
+
+          {/* Scrollable Content */}
+          <main className="flex-1 overflow-y-auto bg-gray-100">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              {renderCurrentView()}
+            </div>
+          </main>
+
+          {/* Footer */}
+          <Footer />
+        </div>
 
         {/* Toast Notifications */}
         {toast && <Toast message={toast.message} type={toast.type} />}

@@ -3,8 +3,27 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform, debugPrint, kIsWeb;
+    show defaultTargetPlatform, TargetPlatform, debugPrint, kIsWeb, kDebugMode;
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'error_handler.dart';
+
+class _QueuedRequest {
+  final String method;
+  final String path;
+  final Object? body;
+  final Map<String, String>? headers;
+  final Completer completer;
+  final DateTime timestamp;
+
+  _QueuedRequest({
+    required this.method,
+    required this.path,
+    this.body,
+    this.headers,
+    required this.completer,
+  }) : timestamp = DateTime.now();
+}
 
 class _CacheEntry {
   final http.Response response;
@@ -31,19 +50,68 @@ class ApiClient {
     return instance._cachedBaseUrl ?? instance.getPlatformDefaultUrl();
   }
 
-  // Initialize the cached base URL at app startup
+
+  // Initialize the cached base URL at app startup (now non-blocking)
   Future<void> init() async {
     if (_isInitialized) return;
-    _cachedBaseUrl = await getConfiguredBaseUrl();
+
+    // Asynchronous base URL setup - don't await this
+    getConfiguredBaseUrl().then((url) {
+      _cachedBaseUrl = url;
+      debugPrint('[ApiClient] Base URL configured: $url');
+    }).catchError((error) {
+      debugPrint('[ApiClient] Error configuring base URL: $error');
+      // Fallback to platform default on error
+      _cachedBaseUrl = getPlatformDefaultUrl();
+    });
+
+    // Initialize connectivity listener synchronously
+    _initializeConnectivityListener();
+
     _isInitialized = true;
+    debugPrint('[ApiClient] Init completed (isInitialized=true)');
+
+    // Start background health check
+    _checkServerHealth();
   }
 
+  void _initializeConnectivityListener() {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      List<ConnectivityResult> results,
+    ) {
+      final wasOnline = _isOnline;
+      // ConnectivityResult is now a list
+      _isOnline = !results.contains(ConnectivityResult.none);
+
+      debugPrint('Connectivity changed: $_isOnline');
+
+      // Process queued requests when connection is restored
+      if (!wasOnline && _isOnline) {
+        _processQueuedRequests();
+      }
+    });
+  }
+
+  bool get isOnline => _isOnline;
+
   String getPlatformDefaultUrl() {
+    debugPrint('[Developer] Detecting platform default URL for $defaultTargetPlatform');
+    
     // For mobile platforms
     if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:5000'; // Android emulator
+      const url = 'http://10.0.2.2:5000'; // Android emulator
+      debugPrint('[Developer] Android detected, using emulator URL: $url');
+      return url;
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      // Check if physical device (this is synchronous but may not be perfect)
+      // Physical iOS devices cannot connect to localhost, need IP
+      const url = 'http://localhost:5000'; // iOS simulator or physical with manual config
+      debugPrint('[Developer] iOS detected, using localhost URL: $url (Note: Physical devices may need custom URL in developer settings)');
+      return url;
     } else {
-      return 'http://localhost:5000'; // iOS simulator only - fails on physical devices
+      const url = 'http://localhost:5000';
+      debugPrint('[Developer] Other platform detected, using localhost URL: $url');
+      return url;
     }
   }
 
@@ -139,15 +207,39 @@ class ApiClient {
     await _storage.delete(key: 'refresh_token');
   }
 
+  // Background server health check
+  Future<void> _checkServerHealth() async {
+    try {
+      debugPrint('[ApiClient] Starting background health check');
+      final response = await get(
+        '/api/health',
+        timeout: const Duration(seconds: 3),
+      );
+      if (response.statusCode == 200) {
+        debugPrint('[ApiClient] Server health check PASSED');
+      } else {
+        debugPrint('[ApiClient] Server health check FAILED: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('[ApiClient] Server health check ERROR: $e');
+      // Optionally queue a retry or just log
+    }
+  }
+
   // Dispose method to close the http.Client and prevent resource leaks
   void dispose() {
     _client.close();
+    _connectivitySubscription.cancel();
+    _requestQueue.clear();
   }
 
-  // In-memory cache for GET requests
+  // Request queuing for offline mode
+  final List<_QueuedRequest> _requestQueue = [];
   final Map<String, _CacheEntry> _cache = {};
+  bool _isOnline = true;
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   static const Duration _defaultCacheDuration = Duration(minutes: 5);
-  static const Duration _defaultTimeout = Duration(seconds: 30);
+  static const Duration _defaultTimeout = Duration(seconds: 5);
   static const _maxRetries = 3;
   static const _retryDelays = [
     Duration(seconds: 1),
@@ -177,6 +269,89 @@ class ApiClient {
     throw lastError ?? Exception('Request failed after $_maxRetries retries');
   }
 
+  void _logRequest(
+    String method,
+    String path,
+    Map<String, String> headers, [
+    Object? body,
+  ]) {
+    if (kDebugMode) {
+      debugPrint('[Request] $method $path');
+      debugPrint('  Headers: ${headers.keys.join(", ")}');
+      if (body != null) {
+        final bodyStr = body.toString();
+        debugPrint(
+          '  Body: ${bodyStr.substring(0, bodyStr.length > 200 ? 200 : bodyStr.length)}...',
+        );
+      }
+    }
+  }
+
+  void _logResponse(String method, String path, http.Response response) {
+    if (kDebugMode) {
+      debugPrint('[Response] $method $path - ${response.statusCode}');
+      if (response.statusCode >= 400) {
+        final respBody = response.body;
+        debugPrint(
+          '  Error: ${respBody.substring(0, respBody.length > 200 ? 200 : respBody.length)}...',
+        );
+      }
+    }
+  }
+
+  void _logError(String method, String path, dynamic error) {
+    debugPrint('[Error] $method $path - $error');
+  }
+
+  Future<void> _processQueuedRequests() async {
+    final queue = List.from(_requestQueue);
+    _requestQueue.clear();
+
+    for (final request in queue) {
+      try {
+        debugPrint(
+          'Processing queued ${request.method} request to ${request.path}',
+        );
+
+        late http.Response response;
+        switch (request.method) {
+          case 'GET':
+            response = await get(request.path, headers: request.headers);
+            break;
+          case 'POST':
+            response = await post(
+              request.path,
+              body: request.body,
+              headers: request.headers,
+            );
+            break;
+          case 'PUT':
+            response = await put(
+              request.path,
+              body: request.body,
+              headers: request.headers,
+            );
+            break;
+          case 'DELETE':
+            response = await delete(
+              request.path,
+              body: request.body,
+              headers: request.headers,
+            );
+            break;
+        }
+
+        if (!request.completer.isCompleted) {
+          request.completer.complete(response);
+        }
+      } catch (e) {
+        if (!request.completer.isCompleted) {
+          request.completer.completeError(e);
+        }
+      }
+    }
+  }
+
   Future<http.Response> get(
     String path, {
     Map<String, String>? headers,
@@ -186,15 +361,48 @@ class ApiClient {
   }) async {
     return _withRetry(() async {
       final authHeaders = await _authHeaders(headers);
+      _logRequest('GET', path, authHeaders);
+
       final baseUrl = await _getBaseUrl();
       final url = _joinUrl(baseUrl, path);
 
       // Check cache first if not forcing refresh
       if (!forceRefresh) {
-        final cachedResponse = await _getCachedResponse(path, authHeaders, headers);
+        final cachedResponse = _getCachedResponse(
+          path,
+          authHeaders,
+          headers,
+        );
         if (cachedResponse != null) {
+          debugPrint('[Cache] GET $path - returning cached response');
           return cachedResponse;
         }
+      }
+
+      // If offline, return cached response or queue request
+      if (!_isOnline) {
+        final cachedResponse = _getCachedResponse(
+          path,
+          authHeaders,
+          headers,
+        );
+        if (cachedResponse != null) {
+          debugPrint('[Offline] GET $path - returning cached response');
+          return cachedResponse;
+        }
+
+        // Queue the request for later processing
+        final completer = Completer<http.Response>();
+        _requestQueue.add(
+          _QueuedRequest(
+            method: 'GET',
+            path: path,
+            headers: headers,
+            completer: completer,
+          ),
+        );
+        debugPrint('[Offline] GET $path - queued for processing');
+        return await completer.future;
       }
 
       final completer = Completer<http.Response>();
@@ -212,6 +420,7 @@ class ApiClient {
 
         final response = await _withRefreshRetry(() async {
           final resp = await _client.get(Uri.parse(url), headers: authHeaders);
+          _logResponse('GET', path, resp);
 
           if (resp.statusCode >= 400) {
             throw ApiHttpException.fromResponse(resp);
@@ -219,7 +428,13 @@ class ApiClient {
 
           // Cache successful responses
           if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            _cacheResponse(path, authHeaders, headers, resp, cacheDuration ?? _defaultCacheDuration);
+            _cacheResponse(
+              path,
+              authHeaders,
+              headers,
+              resp,
+              cacheDuration ?? _defaultCacheDuration,
+            );
           }
 
           return resp;
@@ -231,6 +446,7 @@ class ApiClient {
 
         return response;
       } catch (error) {
+        _logError('GET', path, error);
         if (!completer.isCompleted) {
           completer.completeError(error);
         }
@@ -242,13 +458,21 @@ class ApiClient {
   }
 
   // Helper methods for caching
-  String _getCacheKey(String path, Map<String, String> authHeaders, Map<String, String>? headers) {
+  String _getCacheKey(
+    String path,
+    Map<String, String> authHeaders,
+    Map<String, String>? headers,
+  ) {
     final headerString = headers?.toString() ?? '';
     final authToken = authHeaders['Authorization'] ?? '';
     return '$path:$headerString:$authToken';
   }
 
-  http.Response? _getCachedResponse(String path, Map<String, String> authHeaders, Map<String, String>? headers) {
+  http.Response? _getCachedResponse(
+    String path,
+    Map<String, String> authHeaders,
+    Map<String, String>? headers,
+  ) {
     final key = _getCacheKey(path, authHeaders, headers);
     final entry = _cache[key];
     if (entry != null && !entry.isExpired) {
@@ -257,7 +481,13 @@ class ApiClient {
     return null;
   }
 
-  void _cacheResponse(String path, Map<String, String> authHeaders, Map<String, String>? headers, http.Response response, Duration duration) {
+  void _cacheResponse(
+    String path,
+    Map<String, String> authHeaders,
+    Map<String, String>? headers,
+    http.Response response,
+    Duration duration,
+  ) {
     final key = _getCacheKey(path, authHeaders, headers);
     _cache[key] = _CacheEntry(
       response: response,
@@ -281,6 +511,28 @@ class ApiClient {
     Duration timeout = _defaultTimeout,
   }) async {
     return _withRetry(() async {
+      final authHeaders = await _authHeaders(headers);
+      _logRequest('POST', path, authHeaders, body);
+
+      final baseUrl = await _getBaseUrl();
+      final encoded = body == null ? null : jsonEncode(body);
+
+      // If offline, queue the request
+      if (!_isOnline) {
+        final completer = Completer<http.Response>();
+        _requestQueue.add(
+          _QueuedRequest(
+            method: 'POST',
+            path: path,
+            body: body,
+            headers: headers,
+            completer: completer,
+          ),
+        );
+        debugPrint('[Offline] POST $path - queued for processing');
+        return await completer.future;
+      }
+
       final completer = Completer<http.Response>();
       Timer? timeoutTimer;
 
@@ -294,10 +546,6 @@ class ApiClient {
         });
 
         final response = await _withRefreshRetry(() async {
-          final authHeaders = await _authHeaders(headers);
-          final baseUrl = await _getBaseUrl();
-          final encoded = body == null ? null : jsonEncode(body);
-
           if (encoded != null) {
             authHeaders['Content-Type'] = 'application/json';
           }
@@ -307,6 +555,7 @@ class ApiClient {
             headers: authHeaders,
             body: encoded,
           );
+          _logResponse('POST', path, resp);
 
           if (resp.statusCode >= 400) {
             throw ApiHttpException.fromResponse(resp);
@@ -321,6 +570,7 @@ class ApiClient {
 
         return response;
       } catch (error) {
+        _logError('POST', path, error);
         if (!completer.isCompleted) {
           completer.completeError(error);
         }
@@ -338,6 +588,28 @@ class ApiClient {
     Duration timeout = _defaultTimeout,
   }) async {
     return _withRetry(() async {
+      final authHeaders = await _authHeaders(headers);
+      _logRequest('PUT', path, authHeaders, body);
+
+      final baseUrl = await _getBaseUrl();
+      final encoded = body == null ? null : jsonEncode(body);
+
+      // If offline, queue the request
+      if (!_isOnline) {
+        final completer = Completer<http.Response>();
+        _requestQueue.add(
+          _QueuedRequest(
+            method: 'PUT',
+            path: path,
+            body: body,
+            headers: headers,
+            completer: completer,
+          ),
+        );
+        debugPrint('[Offline] PUT $path - queued for processing');
+        return await completer.future;
+      }
+
       final completer = Completer<http.Response>();
       Timer? timeoutTimer;
 
@@ -351,10 +623,6 @@ class ApiClient {
         });
 
         final response = await _withRefreshRetry(() async {
-          final authHeaders = await _authHeaders(headers);
-          final baseUrl = await _getBaseUrl();
-          final encoded = body == null ? null : jsonEncode(body);
-
           if (encoded != null) {
             authHeaders['Content-Type'] = 'application/json';
           }
@@ -364,6 +632,7 @@ class ApiClient {
             headers: authHeaders,
             body: encoded,
           );
+          _logResponse('PUT', path, resp);
 
           if (resp.statusCode >= 400) {
             throw ApiHttpException.fromResponse(resp);
@@ -378,6 +647,7 @@ class ApiClient {
 
         return response;
       } catch (error) {
+        _logError('PUT', path, error);
         if (!completer.isCompleted) {
           completer.completeError(error);
         }
@@ -395,6 +665,28 @@ class ApiClient {
     Duration timeout = _defaultTimeout,
   }) async {
     return _withRetry(() async {
+      final authHeaders = await _authHeaders(headers);
+      _logRequest('DELETE', path, authHeaders, body);
+
+      final baseUrl = await _getBaseUrl();
+      final encoded = body == null ? null : jsonEncode(body);
+
+      // If offline, queue the request
+      if (!_isOnline) {
+        final completer = Completer<http.Response>();
+        _requestQueue.add(
+          _QueuedRequest(
+            method: 'DELETE',
+            path: path,
+            body: body,
+            headers: headers,
+            completer: completer,
+          ),
+        );
+        debugPrint('[Offline] DELETE $path - queued for processing');
+        return await completer.future;
+      }
+
       final completer = Completer<http.Response>();
       Timer? timeoutTimer;
 
@@ -408,10 +700,6 @@ class ApiClient {
         });
 
         final response = await _withRefreshRetry(() async {
-          final authHeaders = await _authHeaders(headers);
-          final baseUrl = await _getBaseUrl();
-          final encoded = body == null ? null : jsonEncode(body);
-
           if (encoded != null) {
             authHeaders['Content-Type'] = 'application/json';
           }
@@ -421,6 +709,7 @@ class ApiClient {
             headers: authHeaders,
             body: encoded,
           );
+          _logResponse('DELETE', path, resp);
 
           if (resp.statusCode >= 400) {
             throw ApiHttpException.fromResponse(resp);
@@ -435,6 +724,7 @@ class ApiClient {
 
         return response;
       } catch (error) {
+        _logError('DELETE', path, error);
         if (!completer.isCompleted) {
           completer.completeError(error);
         }

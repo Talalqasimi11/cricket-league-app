@@ -39,7 +39,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   int _retryCount = 0;
   static const int _maxRetries = 3;
   static const Duration _baseDelay = Duration(seconds: 1);
-  StreamSubscription<ConnectivityResult>? _connectivitySubscription;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   String teamName = '';
   String teamLogoUrl = '';
@@ -70,10 +70,10 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
 
   void _startConnectivityMonitoring() {
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
-      (ConnectivityResult result) {
-        final isConnected = result == ConnectivityResult.mobile ||
-            result == ConnectivityResult.wifi ||
-            result == ConnectivityResult.ethernet;
+      (List<ConnectivityResult> results) {
+        final isConnected = results.contains(ConnectivityResult.mobile) ||
+            results.contains(ConnectivityResult.wifi) ||
+            results.contains(ConnectivityResult.ethernet);
 
         if (mounted) {
           setState(() {
@@ -81,7 +81,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           });
 
           if (isConnected && _isOffline) {
-            _retryCount = 0; 
+            _retryCount = 0;
             _fetchTeamDetails();
           }
         }
