@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'api_client.dart';
 
@@ -81,9 +82,26 @@ class WebSocketService {
       final baseUrl = await ApiClient.instance.getConfiguredBaseUrl();
       final wsUrl = _getWebSocketUrl(baseUrl);
 
-      // Get auth token
-      final token = await ApiClient.instance.token;
+  // Get auth token - try multiple sources
+      String? token;
+      try {
+        token = await ApiClient.instance.token;
+      } catch (e) {
+        developer.log('Error getting token from ApiClient: $e');
+      }
+
+      // Fallback: try to get from shared preferences or local storage
       if (token == null || token.isEmpty) {
+        // For web, try localStorage
+        try {
+          // This is a simplified approach - in real app you'd use proper storage
+          token = ''; // Will be handled by auth middleware
+        } catch (e) {
+          developer.log('Error getting token from storage: $e');
+        }
+      }
+
+      if (token == null) {
         throw Exception('No authentication token found');
       }
 

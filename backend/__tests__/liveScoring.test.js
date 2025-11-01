@@ -65,8 +65,14 @@ describe('Live Scoring API', () => {
     );
     testMatch = { id: matchResult.insertId };
 
-    // Get auth token (simplified for testing)
-    authToken = 'test_token';
+    // Create a proper JWT token for testing
+    const jwt = require('jsonwebtoken');
+    const JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret';
+    authToken = jwt.sign(
+      { id: testUser.id, phone_number: testUser.phone_number },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
   });
 
   afterAll(async () => {

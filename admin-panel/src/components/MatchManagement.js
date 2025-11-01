@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+import api, { adminAPI } from '../services/api';
 
 const MatchManagement = ({ onToast }) => {
   const [matches, setMatches] = useState([]);
@@ -29,7 +29,7 @@ const MatchManagement = ({ onToast }) => {
       // Fetch matches from tournament-matches endpoint
       const matchesRes = await api.get('/tournament-matches');
       setMatches(matchesRes.data || []);
-      
+
       // Fetch tournaments for filter
       const tournamentsRes = await api.get('/tournaments');
       setTournaments(tournamentsRes.data || []);

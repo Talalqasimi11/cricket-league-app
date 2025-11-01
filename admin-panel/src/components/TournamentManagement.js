@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+import { adminAPI } from '../services/api';
 
 const TournamentManagement = ({ onToast }) => {
   const [tournaments, setTournaments] = useState([]);
@@ -25,7 +25,7 @@ const TournamentManagement = ({ onToast }) => {
     try {
       setLoading(true);
       setError('');
-      const response = await api.get('/tournaments');
+      const response = await adminAPI.getAllTournaments();
       setTournaments(response.data);
       onToast?.('Tournaments loaded successfully', 'success');
     } catch (err) {
@@ -66,7 +66,7 @@ const TournamentManagement = ({ onToast }) => {
 
     try {
       setActionLoading(true);
-      await api.delete(`/tournaments/${selectedTournament.id}`);
+      await adminAPI.deleteTournament(selectedTournament.id);
       setTournaments(tournaments.filter(t => t.id !== selectedTournament.id));
       setShowDeleteModal(false);
       setSelectedTournament(null);

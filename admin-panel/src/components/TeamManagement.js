@@ -295,27 +295,27 @@ const TeamManagement = ({ onToast }) => {
               <div className="space-y-3">
                 <div className="border-b pb-2">
                   <p className="text-sm text-gray-600"><strong>Name:</strong></p>
-                  <p className="text-gray-900">{selectedTeam.team?.team_name}</p>
+                  <p className="text-gray-900">{selectedTeam.team_name}</p>
                 </div>
                 <div className="border-b pb-2">
                   <p className="text-sm text-gray-600"><strong>Location:</strong></p>
-                  <p className="text-gray-900">{selectedTeam.team?.team_location}</p>
+                  <p className="text-gray-900">{selectedTeam.team_location}</p>
                 </div>
                 <div className="border-b pb-2">
                   <p className="text-sm text-gray-600"><strong>Owner:</strong></p>
-                  <p className="text-gray-900">{selectedTeam.team?.owner_phone}</p>
+                  <p className="text-gray-900">{selectedTeam.owner_phone}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="text-center p-2 bg-blue-50 rounded">
-                    <div className="text-lg font-bold text-blue-600">{selectedTeam.team?.matches_played}</div>
+                    <div className="text-lg font-bold text-blue-600">{selectedTeam.matches_played || 0}</div>
                     <div className="text-xs text-gray-600">Matches</div>
                   </div>
                   <div className="text-center p-2 bg-green-50 rounded">
-                    <div className="text-lg font-bold text-green-600">{selectedTeam.team?.matches_won}</div>
+                    <div className="text-lg font-bold text-green-600">{selectedTeam.matches_won || 0}</div>
                     <div className="text-xs text-gray-600">Wins</div>
                   </div>
                   <div className="text-center p-2 bg-yellow-50 rounded">
-                    <div className="text-lg font-bold text-yellow-600">{selectedTeam.team?.trophies}</div>
+                    <div className="text-lg font-bold text-yellow-600">{selectedTeam.trophies || 0}</div>
                     <div className="text-xs text-gray-600">Trophies</div>
                   </div>
                 </div>

@@ -193,12 +193,12 @@ const addBall = async (req, res) => {
 
     // Check for duplicate delivery
     const [existingBall] = await db.query(
-      `SELECT id FROM ball_by_ball 
+      `SELECT id FROM ball_by_ball
        WHERE inning_id = ? AND over_number = ? AND ball_number = ?`,
       [inning_id, over_number, ball_number]
     );
 
-    if (existingBall.length > 0) {
+    if (existingBall && existingBall.length > 0) {
       return res.status(409).json({ error: "Ball already exists for this position" });
     }
 

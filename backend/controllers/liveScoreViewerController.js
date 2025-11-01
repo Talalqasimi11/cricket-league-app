@@ -40,46 +40,61 @@ const getLiveScoreViewer = async (req, res) => {
     let last12Balls = [];
 
     if (currentInning) {
-      // Get current batsmen (last 2 batsmen who faced balls)
-      const [batsmen] = await db.query(
-        `SELECT DISTINCT b.batsman_id, p.player_name, pms.runs, pms.balls_faced
-         FROM ball_by_ball b
-         JOIN players p ON b.batsman_id = p.id
-         LEFT JOIN player_match_stats pms ON b.batsman_id = pms.player_id AND pms.match_id = ?
-         WHERE b.inning_id = ? AND b.batsman_id IS NOT NULL
-         ORDER BY b.id DESC
-         LIMIT 2`,
-        [match_id, currentInning.id]
-      );
-      currentBatsmen = batsmen;
+      try {
+        // Get current batsmen (last 2 batsmen who faced balls)
+        const [batsmen] = await db.query(
+          `SELECT DISTINCT b.batsman_id, p.player_name, pms.runs, pms.balls_faced
+           FROM ball_by_ball b
+           JOIN players p ON b.batsman_id = p.id
+           LEFT JOIN player_match_stats pms ON b.batsman_id = pms.player_id AND pms.match_id = ?
+           WHERE b.inning_id = ? AND b.batsman_id IS NOT NULL
+           ORDER BY b.id DESC
+           LIMIT 2`,
+          [match_id, currentInning.id]
+        );
+        currentBatsmen = batsmen || [];
+      } catch (err) {
+        console.warn('Error fetching current batsmen:', err.message);
+        currentBatsmen = [];
+      }
 
-      // Get current bowler (last bowler who bowled)
-      const [bowler] = await db.query(
-        `SELECT b.bowler_id, p.player_name, pms.balls_bowled, pms.runs_conceded, pms.wickets
-         FROM ball_by_ball b
-         JOIN players p ON b.bowler_id = p.id
-         LEFT JOIN player_match_stats pms ON b.bowler_id = pms.player_id AND pms.match_id = ?
-         WHERE b.inning_id = ? AND b.bowler_id IS NOT NULL
-         ORDER BY b.id DESC
-         LIMIT 1`,
-        [match_id, currentInning.id]
-      );
-      currentBowler = bowler[0] || null;
+      try {
+        // Get current bowler (last bowler who bowled)
+        const [bowler] = await db.query(
+          `SELECT b.bowler_id, p.player_name, pms.balls_bowled, pms.runs_conceded, pms.wickets
+           FROM ball_by_ball b
+           JOIN players p ON b.bowler_id = p.id
+           LEFT JOIN player_match_stats pms ON b.bowler_id = pms.player_id AND pms.match_id = ?
+           WHERE b.inning_id = ? AND b.bowler_id IS NOT NULL
+           ORDER BY b.id DESC
+           LIMIT 1`,
+          [match_id, currentInning.id]
+        );
+        currentBowler = bowler.length > 0 ? bowler[0] : null;
+      } catch (err) {
+        console.warn('Error fetching current bowler:', err.message);
+        currentBowler = null;
+      }
 
-      // Get last 12 balls
-      const [lastBalls] = await db.query(
-        `SELECT b.over_number, b.ball_number, b.runs, b.extras, b.wicket_type,
-                bats.player_name AS batsman_name,
-                bowl.player_name AS bowler_name
-         FROM ball_by_ball b
-         LEFT JOIN players bats ON b.batsman_id = bats.id
-         LEFT JOIN players bowl ON b.bowler_id = bowl.id
-         WHERE b.inning_id = ?
-         ORDER BY b.id DESC
-         LIMIT 12`,
-        [currentInning.id]
-      );
-      last12Balls = lastBalls.reverse(); // Show in chronological order
+      try {
+        // Get last 12 balls
+        const [lastBalls] = await db.query(
+          `SELECT b.over_number, b.ball_number, b.runs, b.extras, b.wicket_type,
+                  bats.player_name AS batsman_name,
+                  bowl.player_name AS bowler_name
+           FROM ball_by_ball b
+           LEFT JOIN players bats ON b.batsman_id = bats.id
+           LEFT JOIN players bowl ON b.bowler_id = bowl.id
+           WHERE b.inning_id = ?
+           ORDER BY b.id DESC
+           LIMIT 12`,
+          [currentInning.id]
+        );
+        last12Balls = (lastBalls || []).reverse(); // Show in chronological order
+      } catch (err) {
+        console.warn('Error fetching last balls:', err.message);
+        last12Balls = [];
+      }
     }
 
     // Ball-by-ball info
