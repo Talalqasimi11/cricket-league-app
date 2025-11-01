@@ -117,6 +117,7 @@ if (process.env.NODE_ENV !== 'production' && allowedOrigins.length === 0) {
     'https://foveolar-louetta-unradiant.ngrok-free.dev',
     'http://localhost:3000',
     'http://localhost:5000',
+    'http://localhost:5001', // Admin panel
     'http://localhost:8080', // Flutter web dev server
     'http://127.0.0.1:3000',
     'http://127.0.0.1:5000',

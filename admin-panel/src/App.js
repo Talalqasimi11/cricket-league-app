@@ -1,5 +1,3 @@
-import React from 'react';
-
 import React, { useState, useEffect } from 'react';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
@@ -135,7 +133,7 @@ function App() {
         </div>
 
         {/* Toast Notifications */}
-        {toast && <Toast message={toast.message} type={toast.type} />}
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       </div>
     </ErrorBoundary>
   );

@@ -56,7 +56,11 @@ const Login = ({ onLogin, onToast }) => {
 
       onLogin(userData, token);
       onToast?.('Login successful!', 'success');
+      
     } catch (err) {
+  
+      console.error('Login error:', err);
+
       if (err.response?.status === 403 || err.response?.status === 401) {
         setError('Access denied. Admin privileges required or invalid credentials.');
       } else if (err.response?.status === 400) {
