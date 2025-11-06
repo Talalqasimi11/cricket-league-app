@@ -20,6 +20,8 @@ const tournamentRoutes = require("./routes/tournamentRoutes");
 const tournamentTeamRoutes = require("./routes/tournamentTeamRoutes");
 const tournamentMatchRoutes = require("./routes/tournamentMatchRoutes"); // ✅ Add this
 const liveScoreRoutes = require("./routes/liveScoreRoutes");
+const liveScoreViewerRoutes = require("./routes/liveScoreViewerRoutes");
+const matchInningsRoutes = require("./routes/matchInningsRoutes");
 const playerStatsRoutes = require("./routes/playerStatsRoutes");
 const teamTournamentSummaryRoutes = require("./routes/teamTournamentSummaryRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
@@ -231,7 +233,6 @@ app.use("/api/tournament-summary", teamTournamentSummaryRoutes);
 app.use("/api/player-stats", playerStatsRoutes);
 const ballByBallRoutes = require("./routes/ballByBallRoutes");
 app.use("/api/deliveries", ballByBallRoutes);
-const liveScoreViewerRoutes = require("./routes/liveScoreViewerRoutes");
 app.use("/api/viewer/live-score", liveScoreViewerRoutes);
 const scorecardRoutes = require("./routes/scorecardRoutes");
 app.use("/api/viewer/scorecard", scorecardRoutes);
@@ -245,6 +246,7 @@ app.use("/api/tournaments", tournamentRoutes);
 app.use("/api/tournament-teams", tournamentTeamRoutes);
 app.use("/api/tournament-matches", tournamentMatchRoutes); // ✅ Register here
 app.use("/api/live", liveScoreRoutes);
+app.use("/api/match-innings", matchInningsRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/uploads", uploadRoutes);

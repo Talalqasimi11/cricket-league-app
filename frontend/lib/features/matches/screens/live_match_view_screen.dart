@@ -87,7 +87,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
         final runs = (inning['runs'] ?? 0).toString();
         final wkts = (inning['wickets'] ?? 0).toString();
         final ov = (inning['overs'] ?? 0).toString();
-        
+
         setState(() {
           score = '$runs/$wkts';
           currentOvers = ov;
@@ -96,31 +96,34 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
 
       // Update ball-by-ball data
       if (data['allBalls'] != null) {
-        final balls = data['allBalls'] as List;
-        final mapped = balls.map<Map<String, String>>((b) {
-          final m = b as Map<String, dynamic>;
-          final overNo = (m['over_number'] ?? '').toString();
-          final ballNo = (m['ball_number'] ?? '').toString();
-          final runs = (m['runs'] ?? '').toString();
-          final wicketType = (m['wicket_type'] ?? '').toString();
-          final result = wicketType.isNotEmpty ? 'W' : runs;
-          final bowler = (m['bowler_name'] ?? '').toString();
-          final batsman = (m['batsman_name'] ?? '').toString();
-          final commentary = wicketType.isNotEmpty
-              ? 'Wicket: $wicketType'
-              : 'Runs: $runs';
-          return {
-            'over': '$overNo.$ballNo',
-            'bowler': bowler,
-            'batsman': batsman,
-            'commentary': commentary,
-            'result': result,
-          };
-        }).toList();
-        
-        setState(() {
-          ballByBall = mapped;
-        });
+        final balls = data['allBalls'] as List?;
+        if (balls != null) {
+          final mapped = balls.map<Map<String, String>>((b) {
+            final m = b as Map<String, dynamic>?;
+            if (m == null) return {};
+            final overNo = (m['over_number'] ?? '').toString();
+            final ballNo = (m['ball_number'] ?? '').toString();
+            final runs = (m['runs'] ?? '').toString();
+            final wicketType = (m['wicket_type'] ?? '').toString();
+            final result = wicketType.isNotEmpty ? 'W' : runs;
+            final bowler = (m['bowler_name'] ?? '').toString();
+            final batsman = (m['batsman_name'] ?? '').toString();
+            final commentary = wicketType.isNotEmpty
+                ? 'Wicket: $wicketType'
+                : 'Runs: $runs';
+            return {
+              'over': '$overNo.$ballNo',
+              'bowler': bowler,
+              'batsman': batsman,
+              'commentary': commentary,
+              'result': result,
+            };
+          }).toList();
+
+          setState(() {
+            ballByBall = mapped;
+          });
+        }
       }
     } catch (e) {
       debugPrint('Error handling score update: $e');

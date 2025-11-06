@@ -9,15 +9,14 @@ class TournamentCard extends StatelessWidget {
   const TournamentCard({super.key, required this.tournament, this.onTap});
 
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case "ongoing":
+    final tournamentStatus = TournamentStatus.fromString(status);
+    switch (tournamentStatus) {
+      case TournamentStatus.active:
         return Colors.green[300]!;
-      case "upcoming":
+      case TournamentStatus.upcoming:
         return Colors.orange[300]!;
-      case "completed":
+      case TournamentStatus.completed:
         return Colors.grey[400]!;
-      default:
-        return Colors.blue[200]!;
     }
   }
 

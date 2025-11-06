@@ -38,7 +38,7 @@ class TournamentDetailsViewerScreen extends StatelessWidget {
         matches.map((m) {
           final matchNo =
               int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-          final result = m.status == "completed"
+          final result = MatchStatus.fromString(m.status) == MatchStatus.completed
               ? "Winner: ${m.winner ?? 'TBD'}"
               : null;
           final scheduled = m.scheduledAt?.toLocal().toString().substring(
@@ -47,7 +47,7 @@ class TournamentDetailsViewerScreen extends StatelessWidget {
           );
 
           return MatchCardViewer(
-            matchNo: matchNo,
+            matchNo: int.tryParse(m.displayId) ?? matchNo,
             teamA: m.teamA,
             teamB: m.teamB,
             result: result,
@@ -145,22 +145,42 @@ class MatchCardViewer extends StatelessWidget {
   }
 
   void _navigateToMatchDetails(BuildContext context, MatchModel match) {
-    if (match.status == "live") {
-      // Navigate to live match view for ongoing matches
+    final matchStatus = MatchStatus.fromString(match.status);
+    if (matchStatus == MatchStatus.live) {
+      // Navigate to live match view for ongoing matches using parent_match_id
+      final matchId = match.parentMatchId ?? match.id;
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => LiveMatchViewScreen(matchId: match.id),
+          builder: (_) => LiveMatchViewScreen(matchId: matchId),
         ),
       );
-    } else if (match.status == "completed" || match.status == "finished") {
-      // Navigate to scorecard for completed matches
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => ScorecardScreen(matchId: match.id)),
-      );
+    } else if (matchStatus == MatchStatus.completed) {
+      // Navigate to scorecard for completed matches using parent_match_id
+      final matchId = match.parentMatchId ?? match.id;
+      if (match.parentMatchId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ScorecardScreen(matchId: matchId)),
+        );
+      } else {
+        // Fallback message if parent_match_id not available
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Scorecard Not Available"),
+            content: const Text("The scorecard for this completed match is not yet available."),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Close"),
+              ),
+            ],
+          ),
+        );
+      }
     } else {
-      // For planned/upcoming matches, show a dialog with match info
+      // For upcoming matches (including any other status), show a dialog with match info
       showDialog(
         context: context,
         builder: (context) => AlertDialog(

@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import '../../../core/api_client.dart';
 import '../../../core/retry_policy.dart';
-import '../../../core/websocket_manager.dart';
+import '../../../core/websocket_service.dart';
 
 /// State for a live match
 class LiveMatch {
@@ -88,7 +88,7 @@ class LiveMatchProvider extends ChangeNotifier {
   String? _selectedMatchId;
   bool _isLoading = false;
   String? _error;
-  final WebSocketManager _webSocketManager = WebSocketManager.instance;
+  final WebSocketService _webSocketService = WebSocketService.instance;
 
   // Getters
   List<LiveMatch> get matches => List.unmodifiable(_matches.values);
@@ -97,47 +97,46 @@ class LiveMatchProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  // Constructor sets up WebSocket listeners
+  // Constructor sets up WebSocket callbacks
   LiveMatchProvider() {
-    _webSocketManager.messageStream.listen(_handleWebSocketMessage);
-    _webSocketManager.connectionStatusStream.listen(_handleConnectionStatus);
+    _setupWebSocketCallbacks();
   }
 
-  // Handle WebSocket messages
-  void _handleWebSocketMessage(dynamic message) {
-    if (message is! Map) return;
-
-    try {
-      final type = message['type'] as String?;
-      final matchId = message['match_id']?.toString();
-
-      if (type == null || matchId == null) return;
-
-      switch (type) {
-        case 'score_update':
-          _updateMatchScore(matchId, message['data'] as Map<String, dynamic>);
-          break;
-        case 'status_update':
-          _updateMatchStatus(matchId, message['data'] as Map<String, dynamic>);
-          break;
-        case 'match_complete':
-          _handleMatchComplete(
-            matchId,
-            message['data'] as Map<String, dynamic>,
-          );
-          break;
-      }
-    } catch (e) {
-      debugPrint('Error processing WebSocket message: $e');
-    }
+  void _setupWebSocketCallbacks() {
+    _webSocketService.onScoreUpdate = _handleScoreUpdate;
+    _webSocketService.onInningsEnded = _handleInningsEnded;
+    _webSocketService.onError = _handleWebSocketError;
+    _webSocketService.onConnected = _handleWebSocketConnected;
+    _webSocketService.onDisconnected = _handleWebSocketDisconnected;
   }
 
-  // Handle WebSocket connection status changes
-  void _handleConnectionStatus(bool connected) {
-    if (!connected && _selectedMatchId != null) {
-      // Try to reconnect if we're watching a match
-      _webSocketManager.connect(_selectedMatchId!);
-    }
+  // WebSocket callback handlers
+  void _handleScoreUpdate(Map<String, dynamic> data) {
+    final matchId = data['matchId']?.toString();
+    if (matchId == null) return;
+
+    _updateMatchScore(matchId, data);
+  }
+
+  void _handleInningsEnded(Map<String, dynamic> data) {
+    final matchId = data['matchId']?.toString();
+    if (matchId == null) return;
+
+    _updateMatchStatus(matchId, {'status': 'Innings Ended'});
+  }
+
+  void _handleWebSocketError(String error) {
+    _error = error;
+    notifyListeners();
+  }
+
+  void _handleWebSocketConnected() {
+    _error = null;
+    notifyListeners();
+  }
+
+  void _handleWebSocketDisconnected() {
+    // Handle disconnection - could implement polling fallback here
   }
 
   // Update match score from WebSocket message
@@ -227,28 +226,28 @@ class LiveMatchProvider extends ChangeNotifier {
 
     // Disconnect from previous match if any
     if (_selectedMatchId != null) {
-      await _webSocketManager.disconnect();
+      await _webSocketService.disconnect();
     }
 
     _selectedMatchId = matchId;
     notifyListeners();
 
     // Connect to new match WebSocket
-    await _webSocketManager.connect(matchId);
+    await _webSocketService.connect(matchId);
   }
 
   // Clear selected match
   Future<void> clearSelectedMatch() async {
     if (_selectedMatchId == null) return;
 
-    await _webSocketManager.disconnect();
+    await _webSocketService.disconnect();
     _selectedMatchId = null;
     notifyListeners();
   }
 
   @override
   void dispose() {
-    _webSocketManager.disconnect();
+    _webSocketService.disconnect();
     super.dispose();
   }
 

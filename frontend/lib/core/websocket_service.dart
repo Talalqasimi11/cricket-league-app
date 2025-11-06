@@ -101,23 +101,25 @@ class WebSocketService {
         }
       }
 
-      if (token == null) {
-        throw Exception('No authentication token found');
+      // Create Socket.IO connection options
+      final options = IO.OptionBuilder()
+          .setTransports(['websocket', 'polling'])
+          .enableAutoConnect()
+          .enableReconnection()
+          .setReconnectionDelay(_initialReconnectDelay)
+          .setReconnectionDelayMax(_maxReconnectDelay)
+          .setTimeout(20000);
+
+      // Only set auth if token is available (for authenticated users)
+      if (token != null && token.isNotEmpty) {
+        options.setAuth({'token': token});
+      } else {
+        // For viewer contexts that are public, connect without auth
+        // Remove fallback that sets empty token to avoid 401 loops
       }
 
       // Create Socket.IO connection to live-score namespace
-      _socket = IO.io(
-        '$wsUrl/live-score',
-        IO.OptionBuilder()
-            .setTransports(['websocket', 'polling'])
-            .setAuth({'token': token})
-            .enableAutoConnect()
-            .enableReconnection()
-            .setReconnectionDelay(_initialReconnectDelay)
-            .setReconnectionDelayMax(_maxReconnectDelay)
-            .setTimeout(20000)
-            .build(),
-      );
+      _socket = IO.io('$wsUrl/live-score', options.build());
 
       // Connection event handlers
       _socket!
@@ -126,8 +128,8 @@ class WebSocketService {
           _reconnectAttempts = 0;
           _cancelReconnectTimer();
           onConnected?.call();
-          // Subscribe to match updates
-          _socket!.emit('subscribe', matchId);
+          // Subscribe to match updates with proper payload format
+          _socket!.emit('subscribe', { 'matchId': matchId });
         })
         ..onDisconnect((_) {
           _isConnected = false;
@@ -190,7 +192,7 @@ class WebSocketService {
   // Subscribe to a different match without full disconnect
   Future<void> subscribeToMatch(String matchId) async {
     if (_isConnected && _socket != null) {
-      _socket!.emit('subscribe', matchId);
+      _socket!.emit('subscribe', { 'matchId': matchId });
       _currentMatchId = matchId;
     }
   }
@@ -198,7 +200,7 @@ class WebSocketService {
   // Unsubscribe from current match
   Future<void> unsubscribeFromMatch() async {
     if (_isConnected && _socket != null && _currentMatchId != null) {
-      _socket!.emit('unsubscribe', _currentMatchId);
+      _socket!.emit('unsubscribe', { 'matchId': _currentMatchId });
       _currentMatchId = null;
     }
   }

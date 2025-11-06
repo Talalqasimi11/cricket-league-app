@@ -23,6 +23,7 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
 
   bool _isLoading = true;
   String _error = '';
+  bool _isAuthenticated = false;
 
   // Simplified state variables
   Map<String, dynamic>? _teamData;
@@ -115,9 +116,18 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
 
     final token = await storage.read(key: 'jwt_token');
     if (token == null) {
-      _logout();
+      // User is not authenticated
+      if (mounted) {
+        setState(() {
+          _isAuthenticated = false;
+          _isLoading = false;
+        });
+      }
       return;
     }
+
+    // User is authenticated
+    _isAuthenticated = true;
 
     try {
       // Fetch team data which includes players
@@ -196,6 +206,8 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
                 style: TextStyle(color: theme.colorScheme.error),
               ),
             )
+          : _teamData == null && !_isAuthenticated
+          ? _buildLoginPrompt()
           : RefreshIndicator(
               onRefresh: _fetchTeamData,
               child: ListView(
@@ -363,6 +375,105 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
       child: const Text(
         "Logout",
         style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  void _showLoginDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // User must tap button to close
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Login Required'),
+          content: const Text(
+            'You need to be logged in to view your team information. Would you like to login now?',
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                // Set loading to false since we're not fetching data
+                if (mounted) {
+                  setState(() {
+                    _isLoading = false;
+                  });
+                }
+              },
+            ),
+            ElevatedButton(
+              child: const Text('Login'),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                // Navigate to login screen
+                Navigator.pushNamed(context, '/login').then((_) {
+                  // After login screen is dismissed, try fetching data again
+                  if (mounted) {
+                    _fetchTeamData();
+                  }
+                });
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLoginPrompt() {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline,
+              size: 80,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Login Required',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'You need to be logged in to view and manage your team information.',
+              style: theme.textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, '/login').then((_) {
+                  // After login screen is dismissed, try fetching data again
+                  if (mounted) {
+                    _fetchTeamData();
+                  }
+                });
+              },
+              icon: const Icon(Icons.login),
+              label: const Text('Login'),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(200, 48),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Go Back'),
+            ),
+          ],
+        ),
       ),
     );
   }

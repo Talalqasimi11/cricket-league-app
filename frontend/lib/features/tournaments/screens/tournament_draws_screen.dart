@@ -84,16 +84,8 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
       );
     }
 
-    if (teams.length.isOdd) {
-      pairs.add(
-        MatchModel(
-          id: 'm${pairs.length + 1}',
-          teamA: teams.last,
-          teamB: 'BYE',
-          status: 'planned',
-        ),
-      );
-    }
+    // For odd teams, don't create a match against 'BYE'
+    // The backend will handle bye logic in auto mode
 
     setState(() => _matches = pairs);
   }
@@ -259,7 +251,7 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Save & Publish'),
+                  : Text(_autoDraw ? 'Generate & Publish Auto Draws' : 'Save & Publish Manual Draws'),
             ),
           ),
         ],
@@ -275,83 +267,92 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
     });
 
     try {
-      // Ensure team mapping is complete before persisting
-      if (_nameToIds.isEmpty) {
-        await _fetchTournamentTeams();
-      }
+      if (_autoDraw) {
+        // Call backend for auto draw generation
+        final resp = await ApiClient.instance.post(
+          '/api/tournament-matches/create',
+          body: {
+            'tournament_id': widget.tournamentId,
+            'mode': 'auto',
+          },
+        );
 
-      // Build payload for manual creation
-      final List<Map<String, dynamic>> matches = _matches.map((m) {
-        final map1 = _nameToIds[m.teamA];
-        final map2 = _nameToIds[m.teamB];
-
-        // Validate that team mappings exist
-        if (map1 == null || map2 == null) {
-          throw Exception(
-            'Team mapping not found for ${m.teamA} or ${m.teamB}',
+        if (!mounted) return;
+        if (resp.statusCode == 200 || resp.statusCode == 201) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Auto draws generated and published')),
           );
+
+          // Fetch the generated matches from backend
+          await _fetchGeneratedMatches();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to generate auto draws (${resp.statusCode})')),
+          );
+          return;
+        }
+      } else {
+        // Manual mode - build payload for manual creation
+        // Ensure team mapping is complete before persisting
+        if (_nameToIds.isEmpty) {
+          await _fetchTournamentTeams();
         }
 
-        final t1 = map1['teamId'];
-        final t2 = map2['teamId'];
-        final tt1 = map1['ttId'];
-        final tt2 = map2['ttId'];
+        final List<Map<String, dynamic>> matches = _matches.map((m) {
+          final map1 = _nameToIds[m.teamA];
+          final map2 = _nameToIds[m.teamB];
 
-        return {
-          'team1_id': t1, // may be null for temp teams
-          'team2_id': t2, // may be null for temp teams
-          'team1_tt_id': tt1,
-          'team2_tt_id': tt2,
-          'round': 'round_1',
-          'match_date': m.scheduledAt?.toIso8601String(),
-          'location': null,
-        };
-      }).toList();
+          // Validate that team mappings exist
+          if (map1 == null || map2 == null) {
+            throw Exception(
+              'Team mapping not found for ${m.teamA} or ${m.teamB}',
+            );
+          }
 
-      final resp = await ApiClient.instance.post(
-        '/api/tournament-matches/create',
-        body: {
-          'tournament_id': widget.tournamentId,
-          'mode': 'manual',
-          'matches': matches,
-        },
-      );
+          final t1 = map1['teamId'];
+          final t2 = map2['teamId'];
+          final tt1 = map1['ttId'];
+          final tt2 = map2['ttId'];
 
-      if (!mounted) return;
-      if (resp.statusCode == 200 || resp.statusCode == 201) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Matches published')));
-        // Navigate to details view
-        final updatedTournament = TournamentModel(
-          id: widget.tournamentId,
-          name: widget.tournamentName,
-          status: 'upcoming',
-          type: 'Knockout',
-          dateRange: 'TBD',
-          location: 'Unknown',
-          overs: widget.overs ?? 20, // Use actual overs or default to 20
-          teams: widget.teams,
-          matches: _matches,
+          return {
+            'team1_id': t1, // may be null for temp teams
+            'team2_id': t2, // may be null for temp teams
+            'team1_tt_id': tt1,
+            'team2_tt_id': tt2,
+            'round': 'round_1',
+            'match_date': m.scheduledAt?.toIso8601String(),
+            'location': null,
+          };
+        }).toList();
+
+        final resp = await ApiClient.instance.post(
+          '/api/tournament-matches/create',
+          body: {
+            'tournament_id': widget.tournamentId,
+            'mode': 'manual',
+            'matches': matches,
+          },
         );
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => widget.isCreator
-                ? TournamentDetailsCaptainScreen(tournament: updatedTournament)
-                : TournamentDetailsViewerScreen(tournament: updatedTournament),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to publish (${resp.statusCode})')),
-        );
+
+        if (!mounted) return;
+        if (resp.statusCode == 200 || resp.statusCode == 201) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Manual matches published')),
+          );
+
+          // For manual mode, use the local matches
+          _navigateToDetails(_matches);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to publish matches (${resp.statusCode})')),
+          );
+        }
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -359,6 +360,72 @@ class _TournamentDrawsScreenState extends State<TournamentDrawsScreen> {
         });
       }
     }
+  }
+
+  Future<void> _fetchGeneratedMatches() async {
+    try {
+      final resp = await ApiClient.instance.get(
+        '/api/tournament-matches/${widget.tournamentId}',
+      );
+
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        List<dynamic> rows = [];
+        if (decoded is Map<String, dynamic> && decoded.containsKey('data')) {
+          rows = decoded['data'] as List<dynamic>;
+        } else if (decoded is List<dynamic>) {
+          rows = decoded;
+        }
+
+        final List<MatchModel> generatedMatches = rows.map((r) {
+          final m = r as Map<String, dynamic>;
+          final dt = m['match_date'] != null ? DateTime.parse(m['match_date']) : null;
+          final backendStatus = m['status']?.toString() ?? 'upcoming';
+
+          return MatchModel(
+            id: m['id']?.toString() ?? '',
+            teamA: m['team1_name']?.toString() ?? 'TBD',
+            teamB: m['team2_name']?.toString() ?? 'TBD',
+            scheduledAt: dt,
+            status: MatchStatus.fromString(backendStatus).toString(),
+            parentMatchId: m['parent_match_id']?.toString(),
+          );
+        }).toList();
+
+        _navigateToDetails(generatedMatches);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to fetch generated matches')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error fetching matches: $e')),
+      );
+    }
+  }
+
+  void _navigateToDetails(List<MatchModel> matches) {
+    final updatedTournament = TournamentModel(
+      id: widget.tournamentId,
+      name: widget.tournamentName,
+      status: 'upcoming',
+      type: 'Knockout',
+      dateRange: 'TBD',
+      location: 'Unknown',
+      overs: widget.overs ?? 20,
+      teams: widget.teams,
+      matches: matches,
+    );
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => widget.isCreator
+            ? TournamentDetailsCaptainScreen(tournament: updatedTournament)
+            : TournamentDetailsViewerScreen(tournament: updatedTournament),
+      ),
+    );
   }
 
   @override

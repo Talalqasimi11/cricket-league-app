@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../features/matches/providers/live_match_provider.dart';
 import '../features/tournaments/providers/tournament_provider.dart';
 import 'auth_provider.dart';
-import 'theme_notifier.dart';
 
 /// A widget that provides all the app's providers to its descendants
 class AppProviders extends StatelessWidget {
@@ -15,7 +14,6 @@ class AppProviders extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeNotifier()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => TournamentProvider()),
         ChangeNotifierProvider(create: (_) => LiveMatchProvider()),
@@ -27,10 +25,6 @@ class AppProviders extends StatelessWidget {
 
 /// Extension methods for easy provider access
 extension ProviderExtension on BuildContext {
-  // Theme provider
-  ThemeNotifier get themeProvider => read<ThemeNotifier>();
-  ThemeNotifier get watchThemeProvider => watch<ThemeNotifier>();
-
   // Auth provider
   AuthProvider get authProvider => read<AuthProvider>();
   AuthProvider get watchAuthProvider => watch<AuthProvider>();

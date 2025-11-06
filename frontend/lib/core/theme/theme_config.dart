@@ -19,11 +19,11 @@ class AppColors {
   static const Color primaryBlue = Color(0xFF2196F3);
   static const Color textSecondary = Color(0xFF757575);
 
-  // Dark theme colors
-  static const Color darkBackground = Color(0xFF121212);
-  static const Color darkSurface = Color(0xFF1E1E1E);
-  static const Color onDarkBackground = Color(0xFFFFFFFF);
-  static const Color onDarkSurface = Color(0xFFFFFFFF);
+  // Material 3 surface container colors
+  static const Color surfaceContainerHighest = Color(0xFFE7E0EC);
+
+  // Outline colors
+  static const Color outline = Color(0xFFCAC4D0);
 }
 
 /// Typography styles used throughout the app
@@ -58,6 +58,8 @@ class AppTypography {
   static const TextStyle caption = TextStyle(fontSize: 12, letterSpacing: 0.4);
 }
 
+// Deprecated: Use AppTypographyExtended instead
+
 /// Spacing constants used throughout the app
 class AppSpacing {
   static const double xs = 4.0;
@@ -83,4 +85,148 @@ class AppAnimationDuration {
   static const Duration short = Duration(milliseconds: 250);
   static const Duration medium = Duration(milliseconds: 350);
   static const Duration long = Duration(milliseconds: 500);
+}
+
+/// Elevation levels for consistent shadow system
+class AppElevation {
+  static const double level0 = 0.0;
+  static const double level1 = 2.0;
+  static const double level2 = 4.0;
+  static const double level3 = 8.0;
+  static const double level4 = 16.0;
+  static const double level5 = 24.0;
+}
+
+/// Card-specific colors and gradients (theme-aware)
+class AppCardColors {
+  // Light theme colors
+  static const Color lightCardSurface = Color(0xFFFFFFFF);
+  static const Color lightCardSurfaceLight = Color(0xFFF5F5F5);
+  static const Color lightCardBorder = Color(0xFFE0E0E0);
+
+  // Dark theme colors
+  static const Color darkCardSurface = Color(0xFF2C4A44);
+  static const Color darkCardSurfaceLight = Color(0xFF3A5A52);
+  static const Color darkCardBorder = Color(0xFF4A6A62);
+
+  // Gradient colors (same for both themes)
+  static const Color gradientStart = Color(0xFF20DF6C);
+  static const Color gradientMiddle = Color(0xFF36e27b);
+  static const Color gradientEnd = Color(0xFF4CAF50);
+
+  // Status colors (same for both themes)
+  static const Color liveStatus = Color(0xFFFF4444);
+  static const Color finishedStatus = Color(0xFF4CAF50);
+  static const Color upcomingStatus = Color(0xFFFF9800);
+
+  // Helper methods to get theme-appropriate colors
+  static Color cardSurface() => lightCardSurface;
+  static Color cardSurfaceLight() => lightCardSurfaceLight;
+  static Color cardBorder() => lightCardBorder;
+}
+
+/// Enhanced typography with better hierarchy
+class AppTypographyExtended {
+  // Display styles
+  static const TextStyle displayLarge = TextStyle(
+    fontSize: 32,
+    fontWeight: FontWeight.bold,
+    letterSpacing: -1.0,
+    height: 1.2,
+  );
+
+  static const TextStyle displayMedium = TextStyle(
+    fontSize: 28,
+    fontWeight: FontWeight.bold,
+    letterSpacing: -0.8,
+    height: 1.25,
+  );
+
+  // Headline styles
+  static const TextStyle headlineLarge = TextStyle(
+    fontSize: 24,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.5,
+    height: 1.3,
+  );
+
+  static const TextStyle headlineMedium = TextStyle(
+    fontSize: 20,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.25,
+    height: 1.35,
+  );
+
+  static const TextStyle headlineSmall = TextStyle(
+    fontSize: 18,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.0,
+    height: 1.4,
+  );
+
+  // Title styles
+  static const TextStyle titleLarge = TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.15,
+    height: 1.5,
+  );
+
+  static const TextStyle titleMedium = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.1,
+    height: 1.43,
+  );
+
+  static const TextStyle titleSmall = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.5,
+    height: 1.5,
+  );
+
+  // Body styles with improved readability
+  static const TextStyle bodyLarge = TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.normal,
+    letterSpacing: 0.5,
+    height: 1.5,
+  );
+
+  static const TextStyle bodyMedium = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.normal,
+    letterSpacing: 0.25,
+    height: 1.43,
+  );
+
+  static const TextStyle bodySmall = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.normal,
+    letterSpacing: 0.4,
+    height: 1.33,
+  );
+
+  // Label styles
+  static const TextStyle labelLarge = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.1,
+    height: 1.43,
+  );
+
+  static const TextStyle labelMedium = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.5,
+    height: 1.33,
+  );
+
+  static const TextStyle labelSmall = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.5,
+    height: 1.45,
+  );
 }

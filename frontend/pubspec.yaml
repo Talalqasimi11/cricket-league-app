@@ -54,6 +54,8 @@ dependencies:
   fl_chart: 1.1.1  # Statistics charts (optional)
   shimmer: ^3.0.0  # Loading skeleton (optional)
   pull_to_refresh: ^2.0.0  # Refresh functionality (optional)
+  flutter_svg: ^2.0.9      # SVG icons support
+  custom_pop_up_menu: ^1.2.4  # Custom popup menu
 
 
 dev_dependencies:

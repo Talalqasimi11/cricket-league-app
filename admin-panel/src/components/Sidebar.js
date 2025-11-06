@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
+import Icon from './Icon';
 
 const Sidebar = ({ currentView, onViewChange, user, onLogout }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊', section: 'main' },
-    { id: 'users', label: 'Users', icon: '👥', section: 'main' },
-    { id: 'teams', label: 'Teams', icon: '🏏', section: 'main' },
-    { id: 'tournaments', label: 'Tournaments', icon: '🏆', section: 'management' },
-    { id: 'matches', label: 'Matches', icon: '⚡', section: 'management' },
-    { id: 'system-health', label: 'System Health', icon: '🩺', section: 'monitoring' },
-    { id: 'reports', label: 'Reports', icon: '📈', section: 'analytics' },
+    { id: 'dashboard', label: 'Dashboard', icon: 'barChart3', section: 'main' },
+    { id: 'users', label: 'Users', icon: 'users', section: 'main' },
+    { id: 'teams', label: 'Teams', icon: 'users', section: 'main' },
+    { id: 'tournaments', label: 'Tournaments', icon: 'trophy', section: 'management' },
+    { id: 'matches', label: 'Matches', icon: 'zap', section: 'management' },
+    { id: 'system-health', label: 'System Health', icon: 'activity', section: 'monitoring' },
+    { id: 'reports', label: 'Reports', icon: 'trendingUp', section: 'analytics' },
   ];
 
   const sections = {
@@ -67,7 +68,7 @@ const Sidebar = ({ currentView, onViewChange, user, onLogout }) => {
                   }`}
                   title={isExpanded ? '' : item.label}
                 >
-                  <span className="text-xl flex-shrink-0">{item.icon}</span>
+                  <Icon name={item.icon} size={20} className="flex-shrink-0" />
                   {isExpanded && <span className="text-sm font-medium">{item.label}</span>}
                 </button>
               ))}

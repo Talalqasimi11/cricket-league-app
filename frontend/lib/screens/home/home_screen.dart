@@ -2,15 +2,60 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'package:custom_pop_up_menu/custom_pop_up_menu.dart';
 import '../../widgets/bottom_nav.dart';
+import '../../widgets/custom_dropdown_menu.dart';
 import '../../features/tournaments/screens/tournaments_screen.dart';
 import '../../core/json_utils.dart';
+import '../../core/theme/theme_config.dart';
+import '../../core/error_dialog.dart';
 import '../../features/teams/screens/my_team_screen.dart'; // ✅ My Team screen
 import 'package:provider/provider.dart';
-import '../../core/theme_notifier.dart';
+import '../../core/auth_provider.dart';
 import '../../features/matches/screens/matches_screen.dart'; // ✅ Matches screen
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../core/api_client.dart';
+
+/// Menu item widget for the popup menu
+class MenuItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final VoidCallback? onTap;
+
+  const MenuItem({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: AppTypographyExtended.bodyLarge.copyWith(
+                  color: Colors.white,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -125,193 +170,268 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to load teams (${resp.statusCode})'),
-            ),
+          await ErrorDialog.showApiError(
+            context,
+            response: resp,
+            onRetry: () => _fetchTeams(page: page, search: search),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        await ErrorDialog.showGenericError(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error loading teams: $e')));
+          error: e,
+          onRetry: () => _fetchTeams(page: page, search: search),
+          showRetryButton: true,
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _onNavTapped(int index) async {
-    // If "My Team" tab is tapped, check auth and redirect to login if needed
-    if (index == 3) {
-      final token = await _storage.read(key: 'jwt_token');
-      if (!mounted) return;
-      if (token == null || token.isEmpty) {
-        Navigator.pushNamed(context, '/login');
-        return; // do not switch tab
-      }
-    }
-    if (!mounted) return;
+  void _onNavTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
   }
 
   Widget _homeTab() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            children: [
-              const Text(
-                'All Teams',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search teams by name',
-                  prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                    borderSide: BorderSide.none,
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, _) {
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                children: [
+                  Text(
+                    'All Teams',
+                    style: AppTypographyExtended.headlineSmall.copyWith(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _searching
-              ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text(
-                        'Searching...',
-                        style: TextStyle(color: Colors.grey),
+                  if (!authProvider.isAuthenticated) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
                       ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  itemCount: _filteredTeams.length,
-                  itemBuilder: (context, index) {
-                    final t = _filteredTeams[index];
-                    final String name = asType<String>(
-                      t['team_name'],
-                      'Unknown Team',
-                    );
-                    final int trophies = asType<int>(t['trophies'], 0);
-                    final int teamId = asType<int>(t['id'], 0);
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.pushNamed(
-                          context,
-                          '/team/view',
-                          arguments: {'teamId': teamId, 'teamName': name},
-                        );
-                      },
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade100),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x11000000),
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.all(12),
-                          leading: Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.shield,
-                              color: Color(0xFF15803D),
-                            ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 20,
                           ),
-                          title: Text(
-                            name,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Row(
-                            children: [
-                              const Icon(
-                                Icons.emoji_events,
-                                size: 16,
-                                color: Color(0xFF20DF6C),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Login to manage your team and participate in tournaments',
+                              style: AppTypographyExtended.bodyMedium.copyWith(
+                                color: Theme.of(context).colorScheme.onSurface,
+                                fontSize: 13,
                               ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '$trophies Trophies',
-                                style: const TextStyle(
-                                  color: Color(0xFF20DF6C),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search teams by name',
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _searching
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Searching...',
+                            style: AppTypographyExtended.bodyLarge.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _filteredTeams.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.shield,
+                            size: 64,
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _searchController.text.isNotEmpty
+                                ? 'No teams found'
+                                : 'No teams available',
+                            style: AppTypographyExtended.bodyLarge.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      itemCount: _filteredTeams.length,
+                      itemBuilder: (context, index) {
+                        final t = _filteredTeams[index];
+                        final String name = asType<String>(
+                          t['team_name'],
+                          'Unknown Team',
+                        );
+                        final int trophies = asType<int>(t['trophies'], 0);
+                        final int teamId = asType<int>(t['id'], 0);
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              '/team/view',
+                              arguments: {'teamId': teamId, 'teamName': name},
+                            );
+                          },
+                          child: Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.all(12),
+                              leading: Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primaryContainer,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.shield,
+                                  color: Theme.of(context).colorScheme.primary,
                                 ),
                               ),
-                            ],
+                              title: Text(
+                                name,
+                                style: AppTypographyExtended.titleMedium.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Row(
+                                children: [
+                                  Icon(
+                                    Icons.emoji_events,
+                                    size: 16,
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '$trophies Trophies',
+                                    style: AppTypographyExtended.bodySmall.copyWith(
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-
-        // Pagination controls
-        if (_totalPages > 1) ...[
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                onPressed: _currentPage > 1
-                    ? () => _fetchTeams(page: _currentPage - 1)
-                    : null,
-                icon: const Icon(Icons.chevron_left),
+                        );
+                      },
+                    ),
+            ),
+            // Pagination controls
+            if (_totalPages > 1) ...[
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    onPressed: _currentPage > 1
+                        ? () => _fetchTeams(page: _currentPage - 1)
+                        : null,
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Text(
+                    'Page $_currentPage of $_totalPages',
+                    style: AppTypographyExtended.bodyMedium.copyWith(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _currentPage < _totalPages
+                        ? () => _fetchTeams(page: _currentPage + 1)
+                        : null,
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
               ),
+              const SizedBox(height: 8),
               Text(
-                'Page $_currentPage of $_totalPages',
-                style: const TextStyle(fontWeight: FontWeight.w500),
-              ),
-              IconButton(
-                onPressed: _currentPage < _totalPages
-                    ? () => _fetchTeams(page: _currentPage + 1)
-                    : null,
-                icon: const Icon(Icons.chevron_right),
+                'Showing ${_teams.length} of $_totalTeams teams',
+                style: AppTypographyExtended.bodySmall.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 12,
+                ),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Showing ${_teams.length} of $_totalTeams teams',
-            style: const TextStyle(color: Colors.grey, fontSize: 12),
-          ),
-        ],
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -324,50 +444,84 @@ class _HomeScreenState extends State<HomeScreen> {
       const MyTeamScreen(), // ✅ My Team page
     ];
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('CricLeague'),
-        leading: PopupMenuButton<String>(
-          icon: const Icon(Icons.menu),
-          onSelected: (value) async {
-            switch (value) {
-              case 'account':
-                if (!mounted) return;
-                Navigator.pushNamed(context, '/account');
-                break;
-              case 'contact':
-                if (!mounted) return;
-                Navigator.pushNamed(context, '/contact');
-                break;
-              case 'feedback':
-                if (!mounted) return;
-                Navigator.pushNamed(context, '/feedback');
-                break;
-              case 'theme':
-                try {
-                  // Toggle theme via provider
-                  // ignore: use_build_context_synchronously
-                  await context.read<ThemeNotifier>().toggle();
-                } catch (_) {}
-                break;
-            }
-          },
-          itemBuilder: (context) => [
-            const PopupMenuItem(value: 'account', child: Text('Account')),
-            const PopupMenuItem(value: 'contact', child: Text('Contact Us')),
-            const PopupMenuItem(value: 'feedback', child: Text('Feedback')),
-            const PopupMenuItem(
-              value: 'theme',
-              child: Text('Theme: Light/Dark'),
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              'CricLeague',
+              style: AppTypographyExtended.headlineSmall.copyWith(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ],
-        ),
-      ),
-      body: SafeArea(child: pages[_selectedIndex]),
-      bottomNavigationBar: BottomNavBar(
-        currentIndex: _selectedIndex,
-        onTap: _onNavTapped,
-      ),
+            leading: CustomPopupMenu(
+              menuBuilder: () => ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  color: AppColors.primary, // Using app's primary color
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!authProvider.isAuthenticated) ...[
+                        MenuItem(
+                          icon: Icons.login,
+                          title: 'Login',
+                          onTap: () {
+                            Navigator.pushNamed(context, '/login');
+                          },
+                        ),
+                      ] else ...[
+                        MenuItem(
+                          icon: Icons.account_circle,
+                          title: 'Account',
+                          onTap: () {
+                            Navigator.pushNamed(context, '/account');
+                          },
+                        ),
+                        MenuItem(
+                          icon: Icons.logout,
+                          title: 'Logout',
+                          onTap: () async {
+                            await authProvider.logout();
+                          },
+                        ),
+                      ],
+                      MenuItem(
+                        icon: Icons.contact_support,
+                        title: 'Contact Us',
+                        onTap: () {
+                          Navigator.pushNamed(context, '/contact');
+                        },
+                      ),
+                      MenuItem(
+                        icon: Icons.feedback,
+                        title: 'Feedback',
+                        onTap: () {
+                          Navigator.pushNamed(context, '/feedback');
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              pressType: PressType.singleClick,
+              child: Icon(
+                Icons.menu,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              arrowColor: AppColors.primary,
+              arrowSize: 10,
+              barrierColor: Colors.black.withOpacity(0.2),
+            ),
+          ),
+          body: SafeArea(child: pages[_selectedIndex]),
+          bottomNavigationBar: BottomNavBar(
+            currentIndex: _selectedIndex,
+            onTap: _onNavTapped,
+          ),
+        );
+      },
     );
   }
 }

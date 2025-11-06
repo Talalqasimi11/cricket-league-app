@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { adminAPI } from '../services/api';
+import Pagination from './Pagination';
+import Icon from './Icon';
 
 const TeamManagement = ({ onToast }) => {
   const [teams, setTeams] = useState([]);
@@ -18,6 +20,14 @@ const TeamManagement = ({ onToast }) => {
     team_location: '',
     team_logo_url: ''
   });
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  // Bulk actions state
+  const [selectedTeams, setSelectedTeams] = useState([]);
+  const [selectAll, setSelectAll] = useState(false);
 
   useEffect(() => {
     fetchTeams();
@@ -140,6 +150,62 @@ const TeamManagement = ({ onToast }) => {
     }
   };
 
+  // Bulk actions handlers
+  const handleSelectTeam = (teamId) => {
+    setSelectedTeams(prev =>
+      prev.includes(teamId)
+        ? prev.filter(id => id !== teamId)
+        : [...prev, teamId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedTeams([]);
+    } else {
+      setSelectedTeams(paginatedTeams.map(team => team.id));
+    }
+    setSelectAll(!selectAll);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTeams.length === 0) return;
+
+    try {
+      setActionLoading(true);
+      await Promise.all(selectedTeams.map(teamId => adminAPI.deleteTeam(teamId)));
+      setTeams(teams.filter(team => !selectedTeams.includes(team.id)));
+      setSelectedTeams([]);
+      setSelectAll(false);
+      onToast?.(`${selectedTeams.length} teams deleted successfully`, 'success');
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to delete teams';
+      onToast?.(errorMsg, 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Pagination logic
+  const totalItems = filteredTeams.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedTeams = filteredTeams.slice(startIndex, endIndex);
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    setSelectedTeams([]); // Clear selections when changing pages
+    setSelectAll(false);
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1); // Reset to first page
+    setSelectedTeams([]);
+    setSelectAll(false);
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -205,6 +271,35 @@ const TeamManagement = ({ onToast }) => {
         </div>
       </div>
 
+      {/* Bulk Actions Bar */}
+      {selectedTeams.length > 0 && (
+        <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <span className="text-sm font-medium text-indigo-800">
+                {selectedTeams.length} team{selectedTeams.length !== 1 ? 's' : ''} selected
+              </span>
+              <button
+                onClick={() => setSelectedTeams([])}
+                className="text-sm text-indigo-600 hover:text-indigo-800 underline"
+              >
+                Clear selection
+              </button>
+            </div>
+            <div className="flex space-x-2">
+              <button
+                onClick={handleBulkDelete}
+                disabled={actionLoading}
+                className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50 flex items-center space-x-2"
+              >
+                <Icon name="trash2" size={16} />
+                <span>{actionLoading ? 'Deleting...' : 'Delete Selected'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Teams List */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {filteredTeams.length === 0 ? (
@@ -212,75 +307,117 @@ const TeamManagement = ({ onToast }) => {
             <p className="text-gray-500">No teams found matching your criteria</p>
           </div>
         ) : (
-          <ul className="divide-y divide-gray-200">
-            {filteredTeams.map((team) => (
-              <li key={team.id}>
-                <div className="px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center flex-1 min-w-0">
-                    <div className="flex-shrink-0">
-                      {team.team_logo_url ? (
-                        <img
-                          className="h-12 w-12 rounded-full object-cover"
-                          src={team.team_logo_url}
-                          alt={team.team_name}
-                          onError={(e) => e.target.style.display = 'none'}
+          <>
+            {/* Table Header with Select All */}
+            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={selectAll}
+                  onChange={handleSelectAll}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <span className="ml-3 text-sm font-medium text-gray-900">
+                  Select All ({paginatedTeams.length} teams on this page)
+                </span>
+              </div>
+            </div>
+
+            <ul className="divide-y divide-gray-200">
+              {paginatedTeams.map((team) => (
+                <li key={team.id}>
+                  <div className="px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center flex-1 min-w-0">
+                      {/* Checkbox */}
+                      <div className="flex-shrink-0 mr-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedTeams.includes(team.id)}
+                          onChange={() => handleSelectTeam(team.id)}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                         />
-                      ) : (
-                        <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center text-white font-bold">
-                          {team.team_name.charAt(0)}
+                      </div>
+
+                      {/* Team Logo */}
+                      <div className="flex-shrink-0 mr-4">
+                        {team.team_logo_url ? (
+                          <img
+                            className="h-12 w-12 rounded-full object-cover"
+                            src={team.team_logo_url}
+                            alt={team.team_name}
+                            onError={(e) => e.target.style.display = 'none'}
+                          />
+                        ) : (
+                          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center text-white font-bold">
+                            {team.team_name.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Team Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold text-gray-900 truncate">
+                          {team.team_name}
                         </div>
-                      )}
-                    </div>
-                    <div className="ml-4 flex-1 min-w-0">
-                      <div className="text-sm font-bold text-gray-900 truncate">
-                        {team.team_name}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {team.team_location} • {team.player_count} players
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        Owner: {team.owner_phone} {team.owner_is_admin && '(Admin)'}
+                        <div className="text-sm text-gray-500">
+                          {team.team_location} • {team.player_count} players
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          Owner: {team.owner_phone} {team.owner_is_admin && '(Admin)'}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center space-x-2 ml-4 flex-shrink-0">
-                    <div className="text-right hidden sm:block">
-                      <div className="text-sm font-semibold text-gray-900">
-                        {team.matches_played} matches
+
+                    {/* Stats and Actions */}
+                    <div className="flex items-center space-x-2 ml-4 flex-shrink-0">
+                      <div className="text-right hidden sm:block">
+                        <div className="text-sm font-semibold text-gray-900">
+                          {team.matches_played} matches
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {team.matches_won}W • {team.trophies} trophies
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500">
-                        {team.matches_won}W • {team.trophies} trophies
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => handleViewDetails(team)}
+                          disabled={actionLoading}
+                          className="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() => handleEditTeam(team)}
+                          className="bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-md text-sm font-medium transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedTeam(team);
+                            setShowDeleteModal(true);
+                          }}
+                          className="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1 rounded-md text-sm font-medium transition-colors"
+                        >
+                          Delete
+                        </button>
                       </div>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleViewDetails(team)}
-                        disabled={actionLoading}
-                        className="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
-                      >
-                        View
-                      </button>
-                      <button
-                        onClick={() => handleEditTeam(team)}
-                        className="bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-md text-sm font-medium transition-colors"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedTeam(team);
-                          setShowDeleteModal(true);
-                        }}
-                        className="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1 rounded-md text-sm font-medium transition-colors"
-                      >
-                        Delete
-                      </button>
                     </div>
                   </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+
+            {/* Pagination */}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              itemsPerPage={itemsPerPage}
+              onPageChange={handlePageChange}
+              onItemsPerPageChange={handleItemsPerPageChange}
+            />
+          </>
         )}
       </div>
 

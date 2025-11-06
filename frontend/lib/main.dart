@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'core/theme/theme_data.dart';
+import 'core/theme/theme_extensions.dart';
 import 'screens/splash/splash_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/forgot_password_screen.dart';
 import 'features/auth/screens/register_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'package:provider/provider.dart';
-import 'core/theme_notifier.dart';
 import 'core/api_client.dart';
 import 'core/auth_provider.dart';
 import 'features/matches/screens/matches_screen.dart';
@@ -91,6 +91,9 @@ class _AppBootstrapState extends State<AppBootstrap> {
     debugPrint('[AppBootstrap] Starting non-blocking app initialization');
 
     try {
+      // Set hardcoded ngrok URL for physical device communication
+      await ApiClient.instance.setCustomBaseUrl('https://foveolar-louetta-unradiant.ngrok-free.dev');
+
       // Fire-and-forget ApiClient init (now non-blocking)
       ApiClient.instance.init();
 
@@ -153,16 +156,6 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
     return MultiProvider(
       providers: [
-        // IMPORTANT: Create ThemeNotifier without invoking load() synchronously
-        // during widget tree construction. ThemeNotifier should either:
-        //  - perform its own safe initialization (in its constructor with
-        //    post-frame/microtask-safe notifyListeners), OR
-        //  - expose a load() that you call after the first frame.
-        //
-        // Creating it like this avoids calling notifyListeners() while the
-        // framework is still mounting widgets which triggers the `_dirty` assertion.
-        ChangeNotifierProvider(create: (_) => ThemeNotifier()),
-
         // AuthProvider created normally. Its initialization which needs context
         // will be done inside AuthInitializer (after the first frame).
         ChangeNotifierProvider(create: (_) => AuthProvider()),
@@ -233,14 +226,18 @@ class _AuthInitializerState extends State<AuthInitializer> {
       );
     }
 
-    return Consumer2<ThemeNotifier, AuthProvider>(
-      builder: (context, theme, auth, _) {
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        // Validate theme in debug mode
+        if (kDebugMode) {
+          ThemeValidator.validateTheme(AppThemeData.light());
+          ThemeValidator.logThemeInfo(AppThemeData.light());
+        }
+
         return MaterialApp(
           title: 'CricLeague',
           debugShowCheckedModeBanner: false,
-          themeMode: theme.mode,
           theme: AppThemeData.light(),
-          darkTheme: AppThemeData.dark(),
           home: const SplashScreen(),
           routes: {
             '/login': (context) => const LoginScreen(),

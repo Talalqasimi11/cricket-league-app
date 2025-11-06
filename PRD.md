@@ -18,9 +18,10 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 
 ### 1.4 Platform
 - **Frontend:** Flutter mobile application (iOS & Android)
-- **Backend:** Node.js REST API with Express.js
+- **Admin Panel:** React.js web application for system administration
+- **Backend:** Node.js REST API with Express.js and WebSocket support
 - **Database:** MySQL (PlanetScale-compatible)
-- **Architecture:** Client-server with JWT-based authentication
+- **Architecture:** Client-server with JWT-based authentication and real-time WebSocket updates
 
 ---
 
@@ -1150,253 +1151,293 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - API client with interceptors for auth
 
 ### 7.4 Offline Capability
-- Cache team and player data
-- Queue scoring actions when offline
-- Sync when connection restored
+- Cache team and player data locally using Hive database
+- Queue operations when offline with conflict resolution
+- Automatic sync when connection restored
+- Periodic background sync every 5 minutes
+- Manual sync option for immediate updates
+- Conflict resolution strategies (server wins, client wins, manual merge)
 
 ---
 
-## 8. Testing Requirements
+## 8. Admin Panel Requirements (React.js)
 
-### 8.1 Backend Testing
+### 8.1 Platform Support
+- **Web Browsers:** Chrome 90+, Firefox 88+, Safari 14+, Edge 90+
+- **Responsive Design:** Desktop and tablet optimized
 
-#### 8.1.1 Unit Tests
+### 8.2 Key Features
+
+#### 8.2.1 Authentication & User Management
+- Admin login with phone number and password
+- User management dashboard
+- Promote/demote users to admin status
+- Delete users (with cascade deletion of teams and data)
+- Search and filter users by phone number or team name
+
+#### 8.2.2 Dashboard & Analytics
+- System overview with key metrics
+- Total users, admins, teams, tournaments, matches
+- Real-time statistics display
+- Quick access to management sections
+
+#### 8.2.3 Team Management
+- View all registered teams
+- Edit team details (name, location, logo)
+- Delete teams (admin only)
+- Team statistics and performance overview
+
+#### 8.2.4 Tournament Management
+- View all tournaments
+- Edit tournament details
+- Change tournament status
+- Delete tournaments (with cascade deletion)
+
+#### 8.2.5 Match Management
+- View all matches across tournaments
+- Update match status
+- Monitor live matches
+- Match statistics and details
+
+#### 8.2.6 System Health Monitoring
+- API health checks
+- Database connection status
+- System performance metrics
+- Error logging and monitoring
+
+#### 8.2.7 Reporting Dashboard
+- Tournament participation reports
+- Match completion statistics
+- User engagement metrics
+- System usage analytics
+
+### 8.3 Technical Implementation
+- **Framework:** React.js with hooks
+- **State Management:** React Context API
+- **Styling:** Tailwind CSS
+- **HTTP Client:** Axios with interceptors
+- **Charts:** Chart.js or Recharts for analytics
+- **Notifications:** Toast notifications for user feedback
+
+### 8.4 Security Features
+- JWT-based authentication for admin users
+- Role-based access control (admin vs regular users)
+- Secure API endpoints with admin middleware
+- Audit logging for admin actions
+- Session management with automatic logout
+
+---
+
+## 9. Real-time Features (WebSocket)
+
+### 9.1 Live Score Updates
+- **WebSocket Namespace:** `/live-score`
+- **Authentication:** JWT token in connection handshake
+- **Events:**
+  - `subscribe`: Subscribe to match updates
+  - `scoreUpdate`: Real-time score changes
+  - `inningsEnded`: Innings completion notifications
+  - `error`: Connection and subscription errors
+
+### 9.2 Connection Management
+- Automatic reconnection with exponential backoff
+- Connection pooling for multiple matches
+- Graceful degradation when offline
+- Connection status indicators in UI
+
+### 9.3 Performance Optimization
+- Efficient payload structure for score updates
+- Minimal data transfer for real-time updates
+- Connection multiplexing for multiple matches
+- Automatic cleanup of inactive connections
+
+---
+
+## 10. File Upload System
+
+### 10.1 Supported File Types
+- **Images:** Player photos, team logos (JPEG, PNG, WebP)
+- **Maximum Size:** 5MB per file
+- **Storage:** Local file system with organized directories
+
+### 10.2 Upload Features
+- **Multer Integration:** Server-side file handling
+- **Sharp Processing:** Image resizing and optimization
+- **Validation:** File type and size verification
+- **Directory Structure:** Organized by entity type (players/, teams/)
+
+### 10.3 API Endpoints
+- `POST /api/upload/player/:playerId`: Upload player image
+- `POST /api/upload/team/:teamId`: Upload team logo
+- `DELETE /api/upload/:fileId`: Delete uploaded file
+
+### 10.4 Security Considerations
+- File type validation (MIME type checking)
+- Path traversal protection
+- Upload rate limiting
+- Automatic cleanup of orphaned files
+
+---
+
+## 11. Offline Capabilities (Advanced)
+
+### 11.1 Local Data Storage
+- **Database:** Hive (NoSQL key-value store for Flutter)
+- **Entities:** Teams, players, tournaments, matches, pending operations
+- **Synchronization:** Bidirectional sync with conflict resolution
+
+### 11.2 Operation Queuing
+- **Queue Management:** FIFO queue for offline operations
+- **Operation Types:** Create, update, delete for all entities
+- **Retry Logic:** Exponential backoff for failed operations
+- **Priority System:** Critical operations prioritized
+
+### 11.3 Conflict Resolution
+- **Strategies:**
+  - Server Wins: Server data takes precedence
+  - Client Wins: Local changes override server
+  - Manual Resolution: User chooses which version to keep
+  - Merge: Attempt automatic data merging
+- **Detection:** Timestamp and version-based conflict detection
+
+### 11.4 Sync Management
+- **Triggers:** Network restoration, manual sync, periodic sync
+- **Progress Tracking:** Visual progress indicators
+- **Error Handling:** Detailed error reporting and recovery options
+- **Background Sync:** Automatic sync when app is in background
+
+---
+
+## 12. Technical Requirements Update
+
+### 12.1 Backend Architecture Update
+
+#### 12.1.1 Technology Stack Update
+- **Runtime:** Node.js >= 18.18.0
+- **Framework:** Express.js 5.1.0
+- **Database:** MySQL 2 with connection pooling
+- **Real-time:** Socket.IO 4.8.1 with Redis adapter
+- **Caching:** Redis 5.9.0 for session management
+- **File Upload:** Multer 1.4.5-lts.1 with Sharp 0.33.0
+- **Authentication:** JWT (jsonwebtoken 9.0.2)
+- **Password Hashing:** bcryptjs 2.4.3
+- **Rate Limiting:** express-rate-limit 7.4.0
+- **Logging:** pino-http 10.3.0
+- **CORS:** cors 2.8.5
+- **Security:** Helmet 8.0.0
+
+#### 12.1.2 Environment Variables Update
+
+**Required:**
+- `DB_HOST`: Database host
+- `DB_USER`: Database username
+- `DB_PASS`: Database password
+- `DB_NAME`: Database name
+- `JWT_SECRET`: Access token secret (min 32 chars)
+- `JWT_REFRESH_SECRET`: Refresh token secret (min 32 chars)
+- `JWT_AUD`: JWT audience identifier
+- `JWT_ISS`: JWT issuer identifier
+- `REDIS_URL`: Redis connection URL for WebSocket adapter
+
+**Optional:**
+- `PORT`: Server port (default: 5000)
+- `NODE_ENV`: Environment (development/production/test)
+- `CORS_ORIGINS`: Comma-separated allowed origins
+- `COOKIE_SECURE`: Force secure cookies (true/false)
+- `ROTATE_REFRESH_ON_USE`: Rotate refresh tokens (true/false)
+- `PROFANITY_FILTER`: Comma-separated banned words
+- `UPLOAD_PATH`: File upload directory (default: ./uploads)
+- `MAX_FILE_SIZE`: Maximum upload size in bytes (default: 5242880)
+
+---
+
+## 13. Testing Requirements Update
+
+### 13.1 Backend Testing Update
+
+#### 13.1.1 Unit Tests
 - Controller logic testing
 - Input validation testing
 - Business rule verification
+- WebSocket event handling
+- File upload validation
 
-#### 8.1.2 Integration Tests
+#### 13.1.2 Integration Tests
 - API endpoint testing with supertest
 - Database operations
 - Auth flow end-to-end
+- WebSocket connection and messaging
+- File upload and processing
 - Test structure in `backend/__tests__/`:
   - auth.test.js
   - teams.test.js
   - tournaments.test.js
   - feedback.test.js
+  - websocket.test.js
+  - upload.test.js
 
-#### 8.1.3 Test Configuration
+#### 13.1.3 Test Configuration
 - Jest test framework
 - Test database isolation
 - Mock data seeding
 - Test credentials: phone 12345678, password 12345678
+- Mock file uploads for testing
 
-### 8.2 Frontend Testing
+### 13.2 Frontend Testing Update
 - Widget tests for UI components
 - Integration tests for user flows
+- Offline functionality testing
+- WebSocket connection testing
+- File upload testing
 - Golden tests for UI consistency
 
-### 8.3 Test Coverage Targets
-- Backend: 70% code coverage minimum
-- Frontend: 60% code coverage minimum
+### 13.3 Admin Panel Testing
+- Component testing with React Testing Library
+- E2E testing with Cypress or Playwright
+- API integration testing
+- Authentication flow testing
+
+### 13.4 Test Coverage Targets Update
+- Backend: 75% code coverage minimum
+- Frontend: 65% code coverage minimum
+- Admin Panel: 70% code coverage minimum
 - Critical paths: 90%+ coverage
 
 ---
 
-## 9. Deployment & DevOps
+## 14. API Specification Summary Update
 
-### 9.1 Environment Setup
+### 14.1 Admin Routes (`/api/admin`)
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /dashboard | Admin | Get dashboard statistics |
+| GET | /users | Admin | Get all users |
+| PUT | /users/:userId/admin | Admin | Toggle admin status |
+| DELETE | /users/:userId | Admin | Delete user |
+| GET | /teams | Admin | Get all teams |
+| GET | /teams/:teamId | Admin | Get team details |
+| PUT | /teams/:teamId | Admin | Update team |
+| DELETE | /teams/:teamId | Admin | Delete team |
 
-#### 9.1.1 Development
-- Local MySQL instance or Docker
-- Node.js 18+
-- Environment file with test credentials
-- Auto-seed test data on startup
+### 14.2 Upload Routes (`/api/upload`)
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | /player/:playerId | Yes | Upload player image |
+| POST | /team/:teamId | Yes | Upload team logo |
+| DELETE | /:fileId | Yes | Delete uploaded file |
 
-#### 9.1.2 Staging
-- Cloud database (PlanetScale or similar)
-- NODE_ENV=production for validation
-- SSL/TLS required
-- CORS configured for staging domains
-
-#### 9.1.3 Production
-- Database replication for high availability
-- Connection pooling tuned for load
-- All env validation enforced
-- Secure cookies enabled
-- Rate limiting strictly enforced
-
-### 9.2 Monitoring & Logging
-- Request/response logging with pino
-- Error tracking and alerting
-- Performance metrics (response times)
-- Database query performance monitoring
-- Health check endpoint monitoring
-
-### 9.3 Backup & Recovery
-- Daily database backups
-- Point-in-time recovery capability
-- Migration rollback procedures
-- Disaster recovery plan
+### 14.3 WebSocket Events
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| subscribe | Client→Server | Subscribe to match updates |
+| subscribed | Server→Client | Subscription confirmation |
+| scoreUpdate | Server→Client | Real-time score update |
+| inningsEnded | Server→Client | Innings completion |
+| error | Server→Client | Error notification |
 
 ---
 
-## 10. Future Enhancements
-
-### 10.1 Phase 2 Features (3-6 months)
-
-#### 10.1.1 Advanced Statistics
-- Career statistics across all tournaments
-- Head-to-head team comparisons
-- Player rankings (batsmen, bowlers)
-- Team performance analytics
-- Match predictions based on historical data
-
-#### 10.1.2 Media & Social
-- Match photos and videos
-- Team galleries
-- Social sharing of scores
-- Match highlights
-
-#### 10.1.3 Scheduling & Notifications
-- Automated fixture generation
-- Push notifications for match reminders
-- Score update notifications
-- Tournament announcements
-
-#### 10.1.4 Advanced Tournament Formats
-- Knockout stages
-- League+playoffs format
-- Points table calculation
-- Net run rate calculations
-
-### 10.2 Phase 3 Features (6-12 months)
-
-#### 10.2.1 Live Streaming
-- Match live streaming integration
-- Commentary system
-- Real-time viewer count
-
-#### 10.2.2 Sponsorship & Monetization
-- Team sponsorship management
-- Tournament sponsorships
-- Digital scoreboard with ads
-
-#### 10.2.3 Umpire & Scorer Tools
-- Dedicated umpire app
-- Third umpire decision review
-- Automated scoring via ML (ball tracking)
-
-#### 10.2.4 Fan Engagement
-- Fan voting (man of the match)
-- Fantasy cricket within tournaments
-- Prediction games
-
-### 10.3 Technical Improvements
-
-#### 10.3.1 Performance
-- Redis caching layer
-- CDN for static assets
-- Database query optimization
-- Pagination for large result sets
-- Response compression
-
-#### 10.3.2 Scalability
-- Microservices architecture
-- Horizontal scaling with load balancers
-- Database sharding for large datasets
-- Event-driven architecture for real-time updates
-
-#### 10.3.3 Security
-- Two-factor authentication
-- OAuth integration (Google, Facebook)
-- Advanced fraud detection
-- DDoS protection
-
----
-
-## 11. Success Metrics & KPIs
-
-### 11.1 User Metrics
-- **Monthly Active Users (MAU):** Target 500+ after 6 months
-- **Daily Active Users (DAU):** Target 200+ after 6 months
-- **User Retention Rate:** 60%+ after 30 days
-- **Average Session Duration:** 15+ minutes
-
-### 11.2 Engagement Metrics
-- **Matches Created per Month:** 100+ matches
-- **Live Scoring Adoption:** 80% of matches use live scoring
-- **Player Profiles Created:** 2000+ players
-- **Tournaments Created:** 20+ per month
-
-### 11.3 Technical Metrics
-- **API Uptime:** 99.5%+
-- **Average Response Time:** < 500ms (p95)
-- **Error Rate:** < 1% of requests
-- **Database Query Performance:** < 100ms (p90)
-
-### 11.4 Business Metrics
-- **User Acquisition Cost:** Track marketing spend vs signups
-- **Feature Adoption Rate:** Track usage of new features
-- **Customer Satisfaction Score (CSAT):** Target 4.0+/5.0
-- **Net Promoter Score (NPS):** Target 40+
-
----
-
-## 12. Compliance & Legal
-
-### 12.1 Data Protection
-- GDPR compliance for EU users
-- Data retention policies
-- Right to deletion
-- Data export capability
-
-### 12.2 Privacy
-- Privacy policy documentation
-- Terms of service
-- Cookie policy
-- User consent management
-
-### 12.3 Content Moderation
-- Profanity filtering in feedback
-- Abuse reporting system
-- Content moderation guidelines
-
----
-
-## 13. Support & Documentation
-
-### 13.1 User Documentation
-- Getting started guide
-- Captain's handbook
-- Tournament organizer guide
-- FAQs
-
-### 13.2 Technical Documentation
-- API documentation (OpenAPI/Swagger)
-- Database schema documentation
-- Architecture diagrams
-- Deployment guides
-
-### 13.3 Support Channels
-- In-app feedback system
-- Email support
-- FAQ/Help center
-- Community forums
-
----
-
-## 14. Risk Assessment
-
-### 14.1 Technical Risks
-| Risk | Impact | Probability | Mitigation |
-|------|--------|-------------|------------|
-| Database downtime | High | Medium | Replication, backups, monitoring |
-| API performance issues | High | Medium | Caching, optimization, load testing |
-| Security breach | Critical | Low | Security audits, penetration testing |
-| Data loss | Critical | Low | Regular backups, point-in-time recovery |
-
-### 14.2 Business Risks
-| Risk | Impact | Probability | Mitigation |
-|------|--------|-------------|------------|
-| Low user adoption | High | Medium | Marketing, user testing, referrals |
-| Competing products | Medium | High | Unique features, community building |
-| Scalability issues | High | Medium | Cloud infrastructure, monitoring |
-| Funding constraints | Medium | Low | MVP-first approach, phased rollout |
-
----
-
-## 15. Timeline & Milestones
+## 15. Timeline & Milestones Update
 
 ### 15.1 Phase 1: MVP (Current - Complete)
 - ✅ User authentication system
@@ -1410,9 +1451,17 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - ✅ Database schema and migrations
 - ✅ Security hardening
 - ✅ Test infrastructure
+- ✅ Admin panel (dashboard, user/team management)
+- ✅ Real-time WebSocket updates
+- ✅ File upload system
+- ✅ Offline capabilities with conflict resolution
 
 ### 15.2 Phase 1.5: Testing & Polish (Next 1 month)
 - Frontend implementation completion
+- Admin panel feature completion
+- WebSocket integration testing
+- Offline functionality testing
+- File upload testing
 - End-to-end testing
 - Performance optimization
 - Beta user testing
@@ -1422,34 +1471,44 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Advanced statistics dashboard
 - Push notifications
 - Tournament bracket/knockout system
-- Media uploads
-- Social features
+- Media uploads and galleries
+- Social sharing features
+- Advanced reporting and analytics
+- Mobile app store deployment
 
 ### 15.4 Phase 3: Scale & Monetize (Months 5-8)
 - Sponsorship system
 - Premium features
 - Live streaming integration
-- Analytics and insights
-- Mobile app optimization
+- Advanced analytics and insights
+- Multi-language support
+- Mobile app optimization and marketing
 
 ---
 
-## 16. Conclusion
+## 16. Conclusion Update
 
-The Cricket League Management Application provides a comprehensive digital solution for organizing and managing cricket tournaments at the amateur and semi-professional level. The MVP delivers core functionality for team registration, tournament management, live scoring, and statistics tracking.
+The Cricket League Management Application provides a comprehensive digital solution for organizing and managing cricket tournaments at the amateur and semi-professional level. The MVP delivers core functionality for team registration, tournament management, live scoring, statistics tracking, and system administration.
 
-With a robust backend architecture, comprehensive security measures, and a mobile-first approach, the platform is positioned to scale and evolve based on user feedback and market demands.
+**Key Differentiators:**
+- Real-time score updates via WebSocket
+- Comprehensive offline capabilities
+- Full-featured admin panel for system management
+- File upload support for player photos and team logos
+- Advanced conflict resolution for offline operations
+
+With a robust backend architecture, comprehensive security measures, real-time capabilities, and offline support, the platform is positioned to scale and evolve based on user feedback and market demands.
 
 **Next Steps:**
-1. Complete frontend Flutter implementation
-2. Conduct beta testing with select user groups
-3. Gather feedback and iterate
-4. Launch publicly with marketing campaign
-5. Monitor metrics and optimize based on user behavior
+1. Complete frontend Flutter implementation with offline and WebSocket integration
+2. Finalize admin panel features and testing
+3. Conduct comprehensive beta testing with real users
+4. Deploy mobile apps to app stores
+5. Launch marketing campaign targeting cricket communities
+6. Monitor metrics and iterate based on user behavior
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** October 17, 2025  
+**Document Version:** 1.1
+**Last Updated:** November 3, 2025
 **Status:** Living Document - Updated as requirements evolve
-

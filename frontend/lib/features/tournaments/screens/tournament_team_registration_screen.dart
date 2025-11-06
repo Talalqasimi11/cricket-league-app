@@ -32,9 +32,8 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
   Future<void> _fetchTeams() async {
     setState(() => _loading = true);
     try {
-      final resp = await ApiClient.instance.get(
-        '/api/tournament-teams/${widget.tournamentId}',
-      );
+      // Fetch all available teams
+      final resp = await ApiClient.instance.get('/api/teams');
       if (resp.statusCode == 200) {
         final decoded = jsonDecode(resp.body);
         List<dynamic> list;
@@ -358,19 +357,78 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
               ),
               minimumSize: const Size.fromHeight(56),
             ),
-            onPressed: selectedCount > 0
-                ? () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => TournamentDrawsScreen(
-                          tournamentName: widget.tournamentName,
-                          tournamentId: widget.tournamentId!,
-                          teams: selectedTeams,
-                          isCreator: true,
-                        ),
-                      ),
-                    );
+            onPressed: selectedCount >= 2 && !_loading
+                ? () async {
+                    // Persist selected teams to backend
+                    final selectedTeamObjects = teams.where((t) => t["selected"] == true).toList();
+                    bool allAdded = true;
+
+                    for (final team in selectedTeamObjects) {
+                      try {
+                        final resp = await ApiClient.instance.post(
+                          '/api/tournament-teams',
+                          body: {
+                            'tournament_id': widget.tournamentId,
+                            'team_id': team['id'], // Use team_id for registered teams
+                          },
+                        );
+                        if (resp.statusCode != 200 && resp.statusCode != 201) {
+                          allAdded = false;
+                          break;
+                        }
+                      } catch (e) {
+                        allAdded = false;
+                        break;
+                      }
+                    }
+
+                    if (!allAdded) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Failed to add some teams. Please try again.')),
+                      );
+                      return;
+                    }
+
+                    // After successful persistence, fetch updated tournament teams and navigate
+                    try {
+                      final resp = await ApiClient.instance.get(
+                        '/api/tournament-teams/${widget.tournamentId}',
+                      );
+                      if (resp.statusCode == 200) {
+                        final decoded = jsonDecode(resp.body);
+                        List<dynamic> tournamentTeams = [];
+                        if (decoded is Map && decoded.containsKey('data')) {
+                          tournamentTeams = decoded['data'] as List<dynamic>;
+                        } else if (decoded is List) {
+                          tournamentTeams = decoded;
+                        }
+
+                        // Extract team names from tournament teams
+                        final registeredTeamNames = tournamentTeams.map((t) {
+                          return (t["team_name"] ?? t["temp_team_name"] ?? "").toString();
+                        }).where((name) => name.isNotEmpty).toList();
+
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => TournamentDrawsScreen(
+                              tournamentName: widget.tournamentName,
+                              tournamentId: widget.tournamentId!,
+                              teams: registeredTeamNames,
+                              isCreator: true,
+                            ),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Failed to fetch updated teams. Please try again.')),
+                        );
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e')),
+                      );
+                    }
                   }
                 : null,
             child: Text("Add Selected Teams ($selectedCount)"),

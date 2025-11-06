@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../../core/api_client.dart';
 import '../../../core/retry_policy.dart';
+import '../models/tournament_model.dart';
 
 /// State for a tournament
 class Tournament {
@@ -12,6 +14,7 @@ class Tournament {
   final String status;
   final int teamCount;
   final int matchCount;
+  final String? createdBy; // User ID of the tournament creator
 
   Tournament({
     required this.id,
@@ -22,18 +25,23 @@ class Tournament {
     required this.status,
     required this.teamCount,
     required this.matchCount,
+    this.createdBy,
   });
 
   factory Tournament.fromJson(Map<String, dynamic> json) {
+    final rawStatus = json['status'] ?? 'upcoming';
+    final normalizedStatus = TournamentStatus.fromString(rawStatus).toString();
+
     return Tournament(
       id: json['id'].toString(),
-      name: json['name'],
+      name: json['tournament_name'] ?? json['name'] ?? '',
       description: json['description'] ?? '',
       startDate: DateTime.parse(json['start_date']),
-      endDate: DateTime.parse(json['end_date']),
-      status: json['status'],
+      endDate: DateTime.parse(json['end_date'] ?? json['start_date']),
+      status: normalizedStatus,
       teamCount: json['team_count'] ?? 0,
       matchCount: json['match_count'] ?? 0,
+      createdBy: json['created_by']?.toString(),
     );
   }
 }
@@ -43,7 +51,8 @@ class TournamentProvider extends ChangeNotifier {
   final List<Tournament> _tournaments = [];
   bool _isLoading = false;
   String? _error;
-  String _filter = 'all'; // all, active, upcoming, completed
+  String _filter = 'all'; // all, active, upcoming, completed, mine
+  int? _currentUserId;
 
   // Getters
   List<Tournament> get tournaments => List.unmodifiable(_tournaments);
@@ -66,6 +75,15 @@ class TournamentProvider extends ChangeNotifier {
         return _tournaments
             .where((t) => t.status.toLowerCase() == 'completed')
             .toList();
+      case 'mine':
+        // Filter tournaments created by the current user
+        if (_currentUserId != null) {
+          return _tournaments
+              .where((t) => t.createdBy == _currentUserId.toString())
+              .toList();
+        }
+        // If no user ID, return empty list
+        return [];
       default:
         return _tournaments;
     }
@@ -75,6 +93,14 @@ class TournamentProvider extends ChangeNotifier {
   void setFilter(String filter) {
     if (_filter != filter) {
       _filter = filter;
+      notifyListeners();
+    }
+  }
+
+  // Set current user ID for filtering
+  void setCurrentUserId(int? userId) {
+    if (_currentUserId != userId) {
+      _currentUserId = userId;
       notifyListeners();
     }
   }
@@ -91,7 +117,14 @@ class TournamentProvider extends ChangeNotifier {
         apiCall: () => ApiClient.instance.get('/api/tournaments'),
       );
 
-      final List<dynamic> data = response.body as List<dynamic>;
+      final decoded = jsonDecode(response.body);
+      List<dynamic> data = [];
+      if (decoded is Map<String, dynamic> && decoded.containsKey('data')) {
+        data = decoded['data'] as List<dynamic>;
+      } else if (decoded is List<dynamic>) {
+        data = decoded;
+      }
+
       _tournaments.clear();
       _tournaments.addAll(
         data.map((json) => Tournament.fromJson(json)).toList(),

@@ -26,8 +26,10 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 3000),
     );
-    _progressAnimation =
-        Tween<double>(begin: 0.0, end: 1.0).animate(_progressController);
+    _progressAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(_progressController);
     _progressController.forward();
 
     _initialize();
@@ -45,10 +47,9 @@ class _SplashScreenState extends State<SplashScreen>
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.initializeAuth();
 
-      // Step 4: Navigate based on auth state
-      final route = authProvider.isAuthenticated ? '/home' : '/login';
+      // Step 4: Always navigate to home screen (will handle auth state there)
       if (mounted) {
-        Navigator.of(context).pushReplacementNamed(route);
+        Navigator.of(context).pushReplacementNamed('/home');
       }
     });
   }
@@ -169,8 +170,11 @@ class _SplashScreenState extends State<SplashScreen>
                   const Positioned(
                     top: -10,
                     right: -20,
-                    child: Icon(Icons.emoji_events,
-                        color: Colors.white, size: 80),
+                    child: Icon(
+                      Icons.emoji_events,
+                      color: Colors.white,
+                      size: 80,
+                    ),
                   ),
                 ],
               ),
@@ -188,8 +192,9 @@ class _SplashScreenState extends State<SplashScreen>
                 stream: Connectivity().onConnectivityChanged,
                 initialData: _initialConnectivity,
                 builder: (context, snapshot) {
-                  final connectivityResult =
-                      snapshot.data?.isNotEmpty == true ? snapshot.data!.first : ConnectivityResult.none;
+                  final connectivityResult = snapshot.data?.isNotEmpty == true
+                      ? snapshot.data!.first
+                      : ConnectivityResult.none;
                   return _buildConnectivityStatus(connectivityResult);
                 },
               ),

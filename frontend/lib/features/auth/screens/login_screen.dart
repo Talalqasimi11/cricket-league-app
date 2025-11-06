@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/api_client.dart';
-import '../../../core/error_handler.dart';
+import '../../../core/error_dialog.dart';
 import '../../../core/auth_provider.dart';
 import '../../../core/secure_storage.dart';
+import '../../../core/icons.dart';
+import '../../../widgets/custom_button.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -135,13 +137,13 @@ class _LoginScreenState extends State<LoginScreen> {
       final authProvider = context.read<AuthProvider>();
       await authProvider.initializeAuth();
 
-      ErrorHandler.showSuccessSnackBar(context, 'Login successful');
+      ErrorDialog.showSuccessSnackBar(context, message: 'Login successful');
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
       if (!mounted) return;
       setState(() => _errorMessage = e.toString());
-      ErrorHandler.showErrorSnackBar(context, e);
+      ErrorDialog.showErrorSnackBar(context, message: e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -164,8 +166,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FBFA),
+      backgroundColor: theme.colorScheme.surface,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_back,
+            color: theme.colorScheme.onSurface,
+          ),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -178,10 +194,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.sports_cricket,
-                      size: 48,
-                      color: Color(0xFF36E27B),
+                    AppIcons.cricketIcon(
+                      size: AppIcons.xxl,
+                      color: const Color(0xFF36E27B),
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -189,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
-                        color: Colors.green.shade900,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                   ],
@@ -202,14 +217,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     margin: const EdgeInsets.only(bottom: 16),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.red.shade100,
+                      color: theme.colorScheme.errorContainer,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.shade300),
+                      border: Border.all(color: theme.colorScheme.error),
                     ),
                     child: Text(
                       _errorMessage!,
                       style: TextStyle(
-                        color: Colors.red.shade900,
+                        color: theme.colorScheme.onErrorContainer,
                         fontSize: 14,
                       ),
                     ),
@@ -248,7 +263,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         setState(() => _rememberMe = value ?? false);
                       },
                     ),
-                    const Text('Remember my phone number'),
+                    Text(
+                      'Remember my phone number',
+                      style: TextStyle(color: theme.colorScheme.onSurface),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -258,49 +276,30 @@ class _LoginScreenState extends State<LoginScreen> {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: _handleForgotPassword,
-                    child: const Text(
+                    child: Text(
                       "Forgot Password?",
-                      style: TextStyle(color: Color(0xFF50956C)),
+                      style: TextStyle(color: theme.colorScheme.primary),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
 
                 // Login Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _login,
-                    style: ElevatedButton.styleFrom(),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text(
-                            "Login",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
+                PrimaryButton(
+                  text: "Login",
+                  onPressed: _login,
+                  isLoading: _isLoading,
+                  fullWidth: true,
+                  size: ButtonSize.large,
                 ),
                 const SizedBox(height: 12),
 
                 // Register Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: OutlinedButton(
-                    onPressed: _navigateToRegister,
-                    style: OutlinedButton.styleFrom(),
-                    child: const Text(
-                      "Register",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                SecondaryButton(
+                  text: "Register",
+                  onPressed: _navigateToRegister,
+                  fullWidth: true,
+                  size: ButtonSize.large,
                 ),
               ],
             ),
@@ -312,14 +311,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Reusable input decoration
   InputDecoration _inputDecoration(String hint, IconData icon) {
+    final theme = Theme.of(context);
     return InputDecoration(
       hintText: hint,
-      prefixIcon: Icon(icon, color: Colors.grey),
+      hintStyle: TextStyle(
+        color: theme.colorScheme.onSurface.withOpacity(0.6),
+      ),
+      prefixIcon: Icon(
+        icon,
+        color: theme.colorScheme.onSurface.withOpacity(0.6),
+      ),
       filled: true,
-      fillColor: const Color(0xFFE8F3EC),
+      fillColor: theme.colorScheme.surfaceContainerHighest,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(color: theme.colorScheme.outline),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: theme.colorScheme.outline),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
       ),
     );
   }

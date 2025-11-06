@@ -177,8 +177,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       backgroundColor: const Color(0xFFF8FBFA),
       appBar: AppBar(
         title: const Text('Reset Password'),
-        backgroundColor: const Color(0xFF36E27B),
-        foregroundColor: Colors.black,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 1,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -345,12 +346,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   InputDecoration _inputDecoration(String hint, IconData icon) {
     return InputDecoration(
       hintText: hint,
-      prefixIcon: Icon(icon, color: Colors.grey),
+      hintStyle: const TextStyle(color: Colors.grey),
+      prefixIcon: Icon(icon, color: Colors.grey.shade600),
       filled: true,
-      fillColor: const Color(0xFFE8F3EC),
+      fillColor: Colors.white,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.green.shade600, width: 2),
       ),
     );
   }

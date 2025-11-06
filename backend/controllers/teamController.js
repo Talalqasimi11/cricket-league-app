@@ -1,4 +1,4 @@
-const db = require("../config/db");
+const { db } = require("../config/db");
 const { validateSingleNumericParam } = require("../utils/inputValidation");
 const { validateTeamLogoUrl } = require("../utils/urlValidation");
 const { logDatabaseError, logRequestError } = require("../utils/safeLogger");

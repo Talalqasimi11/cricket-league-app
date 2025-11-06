@@ -1,4 +1,5 @@
 // lib/features/tournaments/screens/tournament_details_creator_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/tournament_model.dart';
 import '../../matches/screens/create_match_screen.dart'; // ✅ scoring screen (replace with your matches page)
@@ -19,6 +20,7 @@ class TournamentDetailsCaptainScreen extends StatefulWidget {
 class _TournamentDetailsCaptainScreenState
     extends State<TournamentDetailsCaptainScreen> {
   late List<MatchModel> _matches;
+  String? _reschedulingMatchId;
 
   @override
   void initState() {
@@ -63,16 +65,17 @@ class _TournamentDetailsCaptainScreenState
           );
 
           return MatchCard(
-            matchNo: matchNo,
+            matchNo: int.tryParse(m.displayId) ?? matchNo,
             teamA: m.teamA,
             teamB: m.teamB,
-            result: m.status == "completed"
+            result: MatchStatus.fromString(m.status) == MatchStatus.completed
                 ? "Winner: ${m.winner ?? 'TBD'}"
                 : null,
             scheduled: scheduled,
-            editable: m.status == "planned",
+            editable: MatchStatus.fromString(m.status) == MatchStatus.upcoming,
+            isRescheduling: _reschedulingMatchId == m.id,
             match: m,
-            onEdit: () async {
+            onEdit: _reschedulingMatchId == null ? () async {
               final newDate = await _pickDate(context, m.scheduledAt);
               if (!mounted) return;
               if (newDate != null) {
@@ -83,18 +86,50 @@ class _TournamentDetailsCaptainScreenState
                 // Save updated match date to backend
                 await _rescheduleMatch(m.id, newDate);
               }
-            },
-            onStart: () {
-              // ✅ Update status to "live"
-              setState(() {
-                _matches[idx] = m.copyWith(status: "live");
-              });
+            } : null,
+            onStart: () async {
+              // Call backend API to start the match
+              try {
+                final response = await ApiClient.instance.put(
+                  '/api/tournament-matches/start/${m.id}',
+                );
 
-              // ✅ Navigate to scoring page (replace with MatchesScreen if you like)
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => CreateMatchScreen()),
-              );
+                if (response.statusCode == 200) {
+                  final data = jsonDecode(response.body) as Map<String, dynamic>;
+                  final matchId = data['match_id']?.toString();
+
+                  if (matchId != null) {
+                    // Update local state with new status and parent_match_id
+                    setState(() {
+                      _matches[idx] = m.copyWith(
+                        status: "live",
+                        parentMatchId: matchId,
+                      );
+                    });
+
+                    // Navigate to live scoring route with the actual match ID
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LiveMatchViewScreen(matchId: matchId),
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Failed to get match ID from response')),
+                    );
+                  }
+                } else {
+                  final data = jsonDecode(response.body) as Map<String, dynamic>;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(data['error']?.toString() ?? 'Failed to start match')),
+                  );
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error starting match: $e')),
+                );
+              }
             },
             onViewDetails: () => _navigateToMatchDetails(m),
           );
@@ -121,6 +156,22 @@ class _TournamentDetailsCaptainScreenState
   }
 
   Future<void> _rescheduleMatch(String matchId, DateTime newDate) async {
+    // Find the match and store the old date
+    final matchIndex = _matches.indexWhere((m) => m.id == matchId);
+    if (matchIndex == -1) return;
+
+    final oldDate = _matches[matchIndex].scheduledAt;
+
+    // Set rescheduling state
+    setState(() {
+      _reschedulingMatchId = matchId;
+    });
+
+    // Update state optimistically
+    setState(() {
+      _matches[matchIndex] = _matches[matchIndex].copyWith(scheduledAt: newDate);
+    });
+
     try {
       final response = await ApiClient.instance.put(
         '/api/tournament-matches/update/$matchId',
@@ -138,7 +189,11 @@ class _TournamentDetailsCaptainScreenState
           );
         }
       } else {
+        // Revert on non-200 response
         if (mounted) {
+          setState(() {
+            _matches[matchIndex] = _matches[matchIndex].copyWith(scheduledAt: oldDate);
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -149,10 +204,21 @@ class _TournamentDetailsCaptainScreenState
         }
       }
     } catch (e) {
+      // Revert on exception
       if (mounted) {
+        setState(() {
+          _matches[matchIndex] = _matches[matchIndex].copyWith(scheduledAt: oldDate);
+        });
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Error rescheduling match: $e")));
+      }
+    } finally {
+      // Clear rescheduling state
+      if (mounted) {
+        setState(() {
+          _reschedulingMatchId = null;
+        });
       }
     }
   }
@@ -176,22 +242,42 @@ class _TournamentDetailsCaptainScreenState
   }
 
   void _navigateToMatchDetails(MatchModel match) {
-    if (match.status == "live") {
-      // Navigate to live match view for ongoing matches
+    final matchStatus = MatchStatus.fromString(match.status);
+    if (matchStatus == MatchStatus.live) {
+      // Navigate to live match view for ongoing matches using parent_match_id
+      final matchId = match.parentMatchId ?? match.id;
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => LiveMatchViewScreen(matchId: match.id),
+          builder: (_) => LiveMatchViewScreen(matchId: matchId),
         ),
       );
-    } else if (match.status == "completed" || match.status == "finished") {
-      // Navigate to scorecard for completed matches
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => ScorecardScreen(matchId: match.id)),
-      );
+    } else if (matchStatus == MatchStatus.completed) {
+      // Navigate to scorecard for completed matches using parent_match_id
+      final matchId = match.parentMatchId ?? match.id;
+      if (match.parentMatchId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ScorecardScreen(matchId: matchId)),
+        );
+      } else {
+        // Fallback message if parent_match_id not available
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Scorecard Not Available"),
+            content: const Text("The scorecard for this completed match is not yet available."),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Close"),
+              ),
+            ],
+          ),
+        );
+      }
     } else {
-      // For planned/upcoming matches, show a dialog with match info
+      // For upcoming matches (including any other status), show a dialog with match info
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
@@ -228,6 +314,7 @@ class MatchCard extends StatelessWidget {
   final String? result;
   final String? scheduled;
   final bool editable;
+  final bool isRescheduling;
   final MatchModel match;
   final VoidCallback? onEdit;
   final VoidCallback? onStart;
@@ -241,6 +328,7 @@ class MatchCard extends StatelessWidget {
     this.result,
     this.scheduled,
     this.editable = false,
+    this.isRescheduling = false,
     required this.match,
     this.onEdit,
     this.onStart,

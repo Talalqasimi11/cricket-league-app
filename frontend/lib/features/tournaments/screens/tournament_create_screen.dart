@@ -47,13 +47,19 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
         return;
       }
 
+      // Validate end date is not before start date
+      if (_endDate != null && _endDate!.isBefore(_startDate!)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('End date cannot be before start date')),
+        );
+        return;
+      }
+
       try {
         final resp = await ApiClient.instance.post(
           '/api/tournaments',
           body: {
-            // Prefer snake_case for backend, but include fallbacks if server expects different keys.
             'tournament_name': _tournamentNameController.text,
-            'name': _tournamentNameController.text,
             'start_date': _startDate!.toIso8601String(),
             'end_date': _endDate?.toIso8601String(),
             'location': _locationController.text,
@@ -63,13 +69,16 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
 
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         if (resp.statusCode == 201 || resp.statusCode == 200) {
-          final tournamentId =
-              (data['tournamentId'] ??
-                      data['id'] ??
-                      data['_id'] ??
-                      data['tournament_id'])
-                  ?.toString() ??
-              '';
+          final tournamentId = data['tournament_id']?.toString() ?? '';
+          // Log response body for debugging in debug mode
+          debugPrint('Tournament creation response: $data');
+          if (tournamentId.isEmpty) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Failed to get tournament ID. Please try again.')),
+            );
+            return;
+          }
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -81,7 +90,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
             MaterialPageRoute(
               builder: (_) => RegisterTeamsScreen(
                 tournamentName: _tournamentNameController.text,
-                tournamentId: tournamentId.isNotEmpty ? tournamentId : null,
+                tournamentId: tournamentId,
               ),
             ),
           );
