@@ -145,16 +145,44 @@ const addBall = async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    if (ball_number < 1 || ball_number > 6) {
-      return res.status(400).json({ error: "Ball number must be between 1 and 6" });
+    // ✅ Strict ball number validation (cricket rules: 1-6)
+    if (!Number.isInteger(ball_number) || ball_number < 1 || ball_number > 6) {
+      return res.status(400).json({ error: "Ball number must be an integer between 1 and 6" });
     }
 
-    if (over_number < 0) {
-      return res.status(400).json({ error: "Over number must be non-negative" });
+    // ✅ Strict over number validation
+    if (!Number.isInteger(over_number) || over_number < 0) {
+      return res.status(400).json({ error: "Over number must be a non-negative integer" });
     }
 
-    if (runs < 0 || runs > 6) {
-      return res.status(400).json({ error: "Runs must be between 0 and 6" });
+    // ✅ Strict runs validation (cricket rules: 0-6 for runs off bat)
+    if (!Number.isInteger(runs) || runs < 0 || runs > 6) {
+      return res.status(400).json({ error: "Runs must be an integer between 0 and 6" });
+    }
+
+    // ✅ Validate extras if provided
+    if (extras !== undefined && extras !== null) {
+      const validExtras = ['wide', 'no-ball', 'bye', 'leg-bye'];
+      if (!validExtras.includes(extras)) {
+        return res.status(400).json({ 
+          error: `Invalid extras type. Allowed: ${validExtras.join(', ')}` 
+        });
+      }
+    }
+
+    // ✅ Validate wicket type if provided
+    if (wicket_type !== undefined && wicket_type !== null) {
+      const validWicketTypes = ['bowled', 'caught', 'lbw', 'run-out', 'stumped', 'hit-wicket'];
+      if (!validWicketTypes.includes(wicket_type)) {
+        return res.status(400).json({ 
+          error: `Invalid wicket type. Allowed: ${validWicketTypes.join(', ')}` 
+        });
+      }
+      
+      // If wicket, out_player_id is required
+      if (!out_player_id) {
+        return res.status(400).json({ error: "out_player_id is required when wicket_type is specified" });
+      }
     }
 
     // Check innings status
