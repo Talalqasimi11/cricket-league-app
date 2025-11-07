@@ -60,8 +60,8 @@ describe('Live Scoring API', () => {
 
     // Create test match
     const [matchResult] = await db.query(
-      'INSERT INTO matches (tournament_id, team1_id, team2_id, overs, match_date, venue, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [testTournament.id, testTeam1.id, testTeam2.id, 20, '2024-01-01 10:00:00', 'Test Venue', 'live']
+      'INSERT INTO matches (tournament_id, team1_id, team2_id, match_datetime, venue, status, overs) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [testTournament.id, testTeam1.id, testTeam2.id, '2024-01-01 10:00:00', 'Test Venue', 'live', 20]
     );
     testMatch = { id: matchResult.insertId };
 

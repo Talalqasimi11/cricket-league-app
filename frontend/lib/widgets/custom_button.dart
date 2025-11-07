@@ -220,7 +220,7 @@ class _CustomButtonState extends State<CustomButton>
       case ButtonVariant.secondary:
         return _ButtonStyle(
           decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : Colors.white,
+            color: isDark ? const Color(0xFF1A2C22) : Colors.white,
             border: Border.all(
               color: AppColors.primary.withOpacity(0.5),
             ),

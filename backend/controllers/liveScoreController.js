@@ -294,8 +294,8 @@ const addBall = async (req, res) => {
       await db.query(
         `UPDATE match_innings 
          SET legal_balls = legal_balls + 1,
-             overs_decimal = (legal_balls + 1) / 6,
-             overs = FLOOR((legal_balls + 1) / 6)
+             overs_decimal = legal_balls / 6,
+             overs = FLOOR(legal_balls / 6)
          WHERE id = ?`, 
         [inning_id]
       );

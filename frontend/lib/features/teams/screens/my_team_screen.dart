@@ -189,14 +189,7 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text("Profile"),
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      appBar: AppBar(title: const Text("Profile"), centerTitle: true),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error.isNotEmpty && _teamData == null

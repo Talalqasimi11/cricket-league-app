@@ -5,7 +5,7 @@ function validateEnv() {
   const isTest = process.env.NODE_ENV === 'test';
   
   const required = [
-    'DB_HOST', 'DB_USER', 'DB_PASS', 'DB_NAME',
+    'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME',
     'JWT_SECRET', 'JWT_REFRESH_SECRET', 'JWT_AUD', 'JWT_ISS'
   ];
   
@@ -21,7 +21,7 @@ function validateEnv() {
     } else {
       console.error(errorMsg);
       console.error('Required environment variables:');
-      console.error('  - DB_HOST, DB_USER, DB_PASS, DB_NAME: Database configuration');
+      console.error('  - DB_HOST, DB_USER, DB_PASSWORD, DB_NAME: Database configuration');
       console.error('  - JWT_SECRET, JWT_REFRESH_SECRET: Must be at least 32 characters');
       console.error('  - JWT_AUD, JWT_ISS: JWT audience and issuer');
       console.error('  - CORS_ORIGINS (optional): Comma-separated allowed origins');
