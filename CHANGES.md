@@ -217,3 +217,135 @@ For issues or questions:
 - Database indexes (already optimized)
 - WebSocket configuration (already working)
 - Authentication/authorization (no changes needed)
+
+# Frontend Bug Fixes - Change Log
+
+## Version 1.0.0 - 2025-11-06
+
+### Critical Fixes
+
+#### ApiClient Resource Management
+- **Fixed:** Memory leak from HTTP client and connectivity subscription never being disposed
+- **Changed:** Added `WidgetsBindingObserver` to monitor app lifecycle
+- **Changed:** Enhanced dispose() method with error handling
+- **Changed:** Made `_connectivitySubscription` nullable for safer disposal
+- **Impact:** Prevents memory leaks during app termination
+- **Files:** `lib/core/api_client.dart`, `lib/main.dart`
+
+#### WebSocket Service State Machine
+- **Added:** `WebSocketState` enum for proper state management
+- **Added:** Connection timeout (20 seconds)
+- **Fixed:** Reconnection timer not cancelled on manual disconnect
+- **Fixed:** Missing state validation preventing duplicate connections
+- **Changed:** Enhanced logging for debugging
+- **Impact:** Prevents duplicate WebSocket connections and improves reliability
+- **Files:** `lib/core/websocket_service.dart`
+
+### New Features
+
+#### SafeJsonParser Utility
+- **Added:** Comprehensive type-safe JSON parsing utility
+- **Features:** Safe extraction for String, int, double, bool, List, Map, DateTime
+- **Features:** Validation helpers and custom parser support
+- **Impact:** Prevents runtime crashes from unexpected API responses
+- **Files:** `lib/core/safe_json_parser.dart` (NEW)
+
+#### RouteErrorWidget
+- **Added:** Reusable error widget for navigation failures
+- **Features:** User-friendly error messages
+- **Features:** "Go Back" and "Go Home" recovery buttons
+- **Features:** Customizable title, icon, and colors
+- **Impact:** Better user experience when navigation fails
+- **Files:** `lib/widgets/route_error_widget.dart` (NEW)
+
+### Improvements
+
+#### Navigation Error Handling
+- **Changed:** Updated all route error handlers in `onGenerateRoute`
+- **Added:** Validation logging for debugging
+- **Improved:** Error messages with context
+- **Impact:** Users can recover from navigation errors
+- **Files:** `lib/main.dart`
+
+### Code Cleanup
+
+#### Removed Duplicate Files
+- **Deleted:** `lib/core/websocket_service.dart.new` (orphaned file)
+- **Impact:** Cleaner codebase, no confusion
+
+#### Fixed Empty setState
+- **Fixed:** Empty `setState(() {})` in tournament team registration
+- **Added:** Explanatory comment about filtering logic
+- **Impact:** Better code clarity
+- **Files:** `lib/features/tournaments/screens/tournament_team_registration_screen.dart`
+
+### Verified
+
+#### StreamSubscription Disposal
+- **Verified:** `connectivity_service.dart` properly cancels subscription in `stopMonitoring()`
+- **Verified:** `offline_manager.dart` properly cancels subscription in `dispose()`
+- **Impact:** No memory leaks from connectivity monitoring
+
+---
+
+## Statistics
+
+- **Files Modified:** 5
+- **Files Created:** 3
+- **Files Deleted:** 1
+- **Lines Added:** ~750
+- **Lines Removed:** ~100
+- **Issues Fixed:** 9 (3 Critical, 3 High, 2 Medium, 1 Low)
+
+---
+
+## Breaking Changes
+
+None. All changes are backward compatible.
+
+---
+
+## Migration Required
+
+**Optional:** Gradually migrate API response parsing to use `SafeJsonParser` for improved type safety.
+
+Example:
+```dart
+// Before
+final name = json['name'] as String;
+
+// After
+import 'package:frontend/core/safe_json_parser.dart';
+final name = SafeJsonParser.getString(json, 'name', 'Unknown');
+```
+
+---
+
+## Testing Notes
+
+- All modified files compile without errors
+- Manual testing completed for all features
+- No automated tests added (recommended for future)
+
+---
+
+## Known Issues
+
+None identified during implementation.
+
+---
+
+## Recommendations
+
+1. **High Priority:** Integrate SafeJsonParser into existing API response parsing
+2. **Medium Priority:** Add unit tests for new utilities
+3. **Medium Priority:** Perform memory profiling to verify no leaks
+4. **Low Priority:** Consider error tracking service (Sentry/Firebase)
+
+---
+
+## Documentation
+
+See `IMPLEMENTATION_SUMMARY.md` for detailed documentation of all changes.
+
+
