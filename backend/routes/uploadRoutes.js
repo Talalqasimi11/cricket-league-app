@@ -8,10 +8,11 @@ const { verifyToken } = require('../middleware/authMiddleware');
  * POST /api/uploads/player/:playerId
  */
 router.post('/player/:playerId', verifyToken, upload.single('photo'), async (req, res) => {
-  try {
-    const { playerId } = req.params;
-    const { db } = require('../config/db');
+  const { playerId } = req.params;
+  const { db } = require('../config/db');
+  let conn;
 
+  try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -20,12 +21,14 @@ router.post('/player/:playerId', verifyToken, upload.single('photo'), async (req
       return res.status(400).json({ error: 'Invalid player ID' });
     }
 
-    // Get current player data to delete old image if exists
-    const conn = await db.getConnection();
+    // Get connection before any operations
+    conn = await db.getConnection();
+
     try {
-      const rows = await conn.query('SELECT image_url FROM players WHERE id = ?', [playerId]);
-      if (rows.length > 0 && rows[0].image_url) {
-        deleteImage(rows[0].image_url);
+      // Get current player data to delete old image if exists
+      const [rows] = await conn.query('SELECT player_image_url FROM players WHERE id = ?', [playerId]);
+      if (rows.length > 0 && rows[0].player_image_url) {
+        deleteImage(rows[0].player_image_url);
       }
 
       // Process and save new image
@@ -36,7 +39,7 @@ router.post('/player/:playerId', verifyToken, upload.single('photo'), async (req
       );
 
       // Update player record with new image path
-      await conn.query('UPDATE players SET image_url = ? WHERE id = ?', [imagePath, playerId]);
+      await conn.query('UPDATE players SET player_image_url = ? WHERE id = ?', [imagePath, playerId]);
 
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const imageUrl = getImageUrl(imagePath, baseUrl);
@@ -46,12 +49,19 @@ router.post('/player/:playerId', verifyToken, upload.single('photo'), async (req
         imagePath,
         imageUrl,
       });
-    } finally {
-      conn.release();
+    } catch (innerError) {
+      // Handle file processing or query errors
+      console.error('Player photo processing error:', innerError.message);
+      throw innerError;
     }
   } catch (error) {
     console.error('Player photo upload error:', error.message);
     res.status(500).json({ error: error.message });
+  } finally {
+    // Ensure connection is always released
+    if (conn) {
+      conn.release();
+    }
   }
 });
 
@@ -60,10 +70,11 @@ router.post('/player/:playerId', verifyToken, upload.single('photo'), async (req
  * POST /api/uploads/team/:teamId
  */
 router.post('/team/:teamId', verifyToken, upload.single('logo'), async (req, res) => {
-  try {
-    const { teamId } = req.params;
-    const { db } = require('../config/db');
+  const { teamId } = req.params;
+  const { db } = require('../config/db');
+  let conn;
 
+  try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -72,12 +83,14 @@ router.post('/team/:teamId', verifyToken, upload.single('logo'), async (req, res
       return res.status(400).json({ error: 'Invalid team ID' });
     }
 
-    const conn = await db.getConnection();
+    // Get connection before any operations
+    conn = await db.getConnection();
+
     try {
       // Get current team data to delete old image if exists
-      const rows = await conn.query('SELECT logo_url FROM teams WHERE id = ?', [teamId]);
-      if (rows.length > 0 && rows[0].logo_url) {
-        deleteImage(rows[0].logo_url);
+      const [rows] = await conn.query('SELECT team_logo_url FROM teams WHERE id = ?', [teamId]);
+      if (rows.length > 0 && rows[0].team_logo_url) {
+        deleteImage(rows[0].team_logo_url);
       }
 
       // Process and save new image
@@ -88,7 +101,7 @@ router.post('/team/:teamId', verifyToken, upload.single('logo'), async (req, res
       );
 
       // Update team record with new image path
-      await conn.query('UPDATE teams SET logo_url = ? WHERE id = ?', [imagePath, teamId]);
+      await conn.query('UPDATE teams SET team_logo_url = ? WHERE id = ?', [imagePath, teamId]);
 
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const imageUrl = getImageUrl(imagePath, baseUrl);
@@ -98,12 +111,19 @@ router.post('/team/:teamId', verifyToken, upload.single('logo'), async (req, res
         imagePath,
         imageUrl,
       });
-    } finally {
-      conn.release();
+    } catch (innerError) {
+      // Handle file processing or query errors
+      console.error('Team logo processing error:', innerError.message);
+      throw innerError;
     }
   } catch (error) {
     console.error('Team logo upload error:', error.message);
     res.status(500).json({ error: error.message });
+  } finally {
+    // Ensure connection is always released
+    if (conn) {
+      conn.release();
+    }
   }
 });
 
@@ -155,21 +175,24 @@ router.post('/team/:teamId', verifyToken, upload.single('logo'), async (req, res
  * DELETE /api/uploads/:type/:id
  */
 router.delete('/:type/:id', verifyToken, async (req, res) => {
-  try {
-    const { type, id } = req.params;
-    const { db } = require('../config/db');
+  const { type, id } = req.params;
+  const { db } = require('../config/db');
+  let conn;
 
+  try {
     if (!['player', 'team'].includes(type) || !id || isNaN(id)) {
       return res.status(400).json({ error: 'Invalid type or ID' });
     }
 
-    const conn = await db.getConnection();
+    // Get connection before any operations
+    conn = await db.getConnection();
+
     try {
       const table = type === 'player' ? 'players' : 'teams';
-      const imageColumn = type === 'player' ? 'image_url' : 'logo_url';
+      const imageColumn = type === 'player' ? 'player_image_url' : 'team_logo_url';
 
       // Get current image path
-      const rows = await conn.query(
+      const [rows] = await conn.query(
         `SELECT ${imageColumn} as image_url FROM ${table} WHERE id = ?`,
         [id]
       );
@@ -189,12 +212,19 @@ router.delete('/:type/:id', verifyToken, async (req, res) => {
       );
 
       res.json({ message: `${type} image deleted successfully` });
-    } finally {
-      conn.release();
+    } catch (innerError) {
+      // Handle query or file deletion errors
+      console.error('Image deletion processing error:', innerError.message);
+      throw innerError;
     }
   } catch (error) {
     console.error('Image deletion error:', error.message);
     res.status(500).json({ error: error.message });
+  } finally {
+    // Ensure connection is always released
+    if (conn) {
+      conn.release();
+    }
   }
 });
 

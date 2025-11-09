@@ -177,7 +177,7 @@ describe('Live Scoring API', () => {
         });
 
       expect(response.status).toBe(400);
-      expect(response.body.error).toContain('Invalid ball sequence');
+      expect(response.body.error).toContain('Invalid legal ball sequence');
     });
 
     it('should reject duplicate ball', async () => {
@@ -195,7 +195,7 @@ describe('Live Scoring API', () => {
         });
 
       expect(response.status).toBe(409);
-      expect(response.body.error).toContain('Ball already exists');
+      expect(response.body.error).toContain('Duplicate ball event');
     });
 
     it('should handle wides correctly', async () => {
@@ -299,6 +299,106 @@ describe('Live Scoring API', () => {
       expect(response.body).toHaveProperty('currentBowler');
       expect(response.body).toHaveProperty('last12Balls');
       expect(response.body).toHaveProperty('partnership');
+    });
+  });
+
+  describe('Overs Calculation Logic', () => {
+    let inningId;
+    let localMatchId;
+
+    beforeAll(async () => {
+      // Create a new match for this specific test
+      const [tournamentResult] = await db.query(
+        'INSERT INTO tournaments (tournament_name, location, start_date, created_by) VALUES (?, ?, ?, ?)',
+        ['Test Overs Tournament', 'Test Location', '2024-01-01', testUser.id]
+      );
+      const tournamentId = tournamentResult.insertId;
+
+      const [matchResult] = await db.query(
+        'INSERT INTO matches (tournament_id, team1_id, team2_id, match_datetime, venue, status, overs) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [tournamentId, testTeam1.id, testTeam2.id, '2024-01-01 10:00:00', 'Test Overs Venue', 'live', 5]
+      );
+      localMatchId = matchResult.insertId;
+
+      // Start innings for this new match
+      const [inningsResult] = await db.query(
+        `INSERT INTO match_innings (match_id, team_id, batting_team_id, bowling_team_id, inning_number, runs, wickets, overs, status) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 'in_progress')`,
+        [localMatchId, testTeam1.id, testTeam1.id, testTeam2.id, 1]
+      );
+      inningId = inningsResult.insertId;
+    });
+
+    afterAll(async () => {
+      // Clean up data for this test
+      await db.query('DELETE FROM ball_by_ball WHERE match_id = ?', [localMatchId]);
+      await db.query('DELETE FROM match_innings WHERE match_id = ?', [localMatchId]);
+      await db.query('DELETE FROM matches WHERE id = ?', [localMatchId]);
+      await db.query('DELETE FROM tournaments WHERE tournament_name = "Test Overs Tournament"');
+    });
+
+    it('should correctly update overs_decimal and overs after each legal ball', async () => {
+      // Ball 1 (0.1)
+      await request(app)
+        .post('/api/live/ball')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ match_id: localMatchId, inning_id: inningId, over_number: 0, ball_number: 1, batsman_id: testPlayer1.id, bowler_id: testPlayer2.id, runs: 1 });
+      let [inning] = await db.query('SELECT overs, overs_decimal FROM match_innings WHERE id = ?', [inningId]);
+      expect(inning[0].overs_decimal).toBe(0.1);
+      expect(inning[0].overs).toBe(0);
+
+      // Ball 2 (0.2)
+      await request(app)
+        .post('/api/live/ball')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ match_id: localMatchId, inning_id: inningId, over_number: 0, ball_number: 2, batsman_id: testPlayer1.id, bowler_id: testPlayer2.id, runs: 1 });
+      [inning] = await db.query('SELECT overs, overs_decimal FROM match_innings WHERE id = ?', [inningId]);
+      expect(inning[0].overs_decimal).toBe(0.2);
+      expect(inning[0].overs).toBe(0);
+
+      // Ball 3 (0.3)
+      await request(app)
+        .post('/api/live/ball')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ match_id: localMatchId, inning_id: inningId, over_number: 0, ball_number: 3, batsman_id: testPlayer1.id, bowler_id: testPlayer2.id, runs: 1 });
+      [inning] = await db.query('SELECT overs, overs_decimal FROM match_innings WHERE id = ?', [inningId]);
+      expect(inning[0].overs_decimal).toBe(0.3);
+      expect(inning[0].overs).toBe(0);
+
+      // Ball 4 (0.4)
+      await request(app)
+        .post('/api/live/ball')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ match_id: localMatchId, inning_id: inningId, over_number: 0, ball_number: 4, batsman_id: testPlayer1.id, bowler_id: testPlayer2.id, runs: 1 });
+      [inning] = await db.query('SELECT overs, overs_decimal FROM match_innings WHERE id = ?', [inningId]);
+      expect(inning[0].overs_decimal).toBe(0.4);
+      expect(inning[0].overs).toBe(0);
+
+      // Ball 5 (0.5)
+      await request(app)
+        .post('/api/live/ball')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ match_id: localMatchId, inning_id: inningId, over_number: 0, ball_number: 5, batsman_id: testPlayer1.id, bowler_id: testPlayer2.id, runs: 1 });
+      [inning] = await db.query('SELECT overs, overs_decimal FROM match_innings WHERE id = ?', [inningId]);
+      expect(inning[0].overs_decimal).toBe(0.5);
+      expect(inning[0].overs).toBe(0);
+
+      // Ball 6 (1.0)
+      await request(app)
+        .post('/api/live/ball')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ match_id: localMatchId, inning_id: inningId, over_number: 0, ball_number: 6, batsman_id: testPlayer1.id, bowler_id: testPlayer2.id, runs: 1 });
+      [inning] = await db.query('SELECT overs, overs_decimal FROM match_innings WHERE id = ?', [inningId]);
+      expect(inning[0].overs_decimal).toBe(1.0);
+      expect(inning[0].overs).toBe(1);
+
+      // Ball 7 (1.1)
+      await request(app)
+        .post('/api/live/ball')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ match_id: localMatchId, inning_id: inningId, over_number: 1, ball_number: 1, batsman_id: testPlayer1.id, bowler_id: testPlayer2.id, runs: 1 });
+      [inning] = await db.query('SELECT overs, overs_decimal FROM match_innings WHERE id = ?', [inningId]);
+      expect(inning[0].overs_decimal).toBe(1.1);
+      expect(inning[0].overs).toBe(1);
     });
   });
 });

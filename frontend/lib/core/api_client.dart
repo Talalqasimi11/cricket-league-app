@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http/browser_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform, debugPrint, kIsWeb, kDebugMode;
@@ -78,13 +79,21 @@ class ApiClient {
 
   void _initializeConnectivityListener() {
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
-      List<ConnectivityResult> results,
+      dynamic result,
     ) {
       final wasOnline = _isOnline;
-      // ConnectivityResult emits a list; check if any result is not none
-      _isOnline = results.isNotEmpty && results.last != ConnectivityResult.none;
 
-      debugPrint('Connectivity changed: $_isOnline');
+      List<ConnectivityResult> results = [];
+      if (result is List<ConnectivityResult>) {
+        results = result;
+      } else if (result is ConnectivityResult) {
+        results = [result];
+      }
+
+      // Check if any result indicates a connection
+      _isOnline = results.any((res) => res != ConnectivityResult.none);
+
+      debugPrint('Connectivity changed: $_isOnline (results: $results)');
 
       // Process queued requests when connection is restored
       if (!wasOnline && _isOnline) {
@@ -220,7 +229,7 @@ class ApiClient {
     try {
       debugPrint('[ApiClient] Starting background health check');
       final response = await get(
-        '/api/health',
+        '/health',
         timeout: const Duration(seconds: 3),
       );
       if (response.statusCode == 200) {
@@ -262,7 +271,7 @@ class ApiClient {
   final List<_QueuedRequest> _requestQueue = [];
   final Map<String, _CacheEntry> _cache = {};
   bool _isOnline = true;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription? _connectivitySubscription;
   static const Duration _defaultCacheDuration = Duration(minutes: 5);
   static const Duration _defaultTimeout = Duration(seconds: 5);
   static const _maxRetries = 3;
@@ -827,25 +836,30 @@ class ApiClient {
     if (kIsWeb) {
       // Web platform: use cookie-based refresh with CSRF support
       final csrfToken = await _getCsrfToken();
-      final refreshResp = await _client.post(
-        Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
-        headers: {
-          'Content-Type': 'application/json',
-          if (csrfToken != null) 'X-CSRF-Token': csrfToken,
-        },
-        // Include credentials for cookie-based auth
-      );
+      final webClient = BrowserClient()..withCredentials = true;
 
-      if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
-        try {
-          final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
-          final newAccess = data['token']?.toString();
+      try {
+        final refreshResp = await webClient.post(
+          Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
+          headers: {
+            'Content-Type': 'application/json',
+            if (csrfToken != null) 'X-CSRF-Token': csrfToken,
+          },
+        );
 
-          if (newAccess != null && newAccess.isNotEmpty) {
-            await setToken(newAccess);
-            return await fn();
-          }
-        } catch (_) {}
+        if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
+          try {
+            final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
+            final newAccess = data['token']?.toString();
+
+            if (newAccess != null && newAccess.isNotEmpty) {
+              await setToken(newAccess);
+              return await fn();
+            }
+          } catch (_) {}
+        }
+      } finally {
+        webClient.close();
       }
     } else {
       // Mobile platform: use body-based refresh

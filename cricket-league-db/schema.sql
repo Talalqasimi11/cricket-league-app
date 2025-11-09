@@ -93,9 +93,6 @@ CREATE TABLE IF NOT EXISTS players (
 ALTER TABLE teams ADD CONSTRAINT fk_team_captain FOREIGN KEY (captain_player_id) REFERENCES players(id) ON DELETE SET NULL;
 ALTER TABLE teams ADD CONSTRAINT fk_team_vice_captain FOREIGN KEY (vice_captain_player_id) REFERENCES players(id) ON DELETE SET NULL;
 
--- Migrate existing 'not_started' tournament status to 'upcoming'
-UPDATE tournaments SET status = 'upcoming' WHERE status = 'not_started';
-
 -- 4. Tournaments
 -- Tournaments are created by a user.
 -- Status values: 'upcoming' (default), 'live', 'completed', 'abandoned'
@@ -216,24 +213,45 @@ CREATE TABLE IF NOT EXISTS player_match_stats (
 
 -- 9. Ball-by-Ball
 -- Stores the detailed record of every ball bowled in a match.
+-- 
+-- Scoring Data Model:
+-- The 'runs' field represents TOTAL runs for the delivery:
+--   - Legal balls (extras=NULL): runs off bat, 0-6
+--   - Wides/No-balls (extras='wide'|'no-ball'): penalty/extra runs, 0+
+--   - Byes/Leg-byes (extras='bye'|'leg-bye'): unearned runs, 1+
+--
+-- Extras types indicate the nature of the delivery and constraints on 'runs':
+--   - NULL: legal delivery, 0-6 runs
+--   - 'wide': wide ball, 0+ runs (typically 1+ for penalty runs)
+--   - 'no-ball': no-ball (illegal), 0+ runs (typically 1+ for penalty runs)
+--   - 'bye': runs without bat contact, 1+ runs (must have runs)
+--   - 'leg-bye': leg-bye, 1+ runs (must have runs)
+--
+-- Over/Ball Numbering:
+--   - over_number: 0-based (0 = first over)
+--   - ball_number: 1-based (1-6 per over)
+--   - sequence: 0-based (0 = first event, 1+ = additional events like wides/no-balls)
+-- Updated schema to support multiple entries per delivery (e.g., wide, no-ball)
+-- sequence column allows tracking multiple events for same over_number.ball_number
 CREATE TABLE IF NOT EXISTS ball_by_ball (
     id INT AUTO_INCREMENT PRIMARY KEY,
     match_id INT NOT NULL,
     inning_id INT NOT NULL,
     over_number INT NOT NULL,
     ball_number INT NOT NULL,
+    sequence INT DEFAULT 0 COMMENT 'Sequence for multiple events on same delivery (0=legal, 1+=extras)',
     batsman_id INT NOT NULL,
     bowler_id INT NOT NULL,
     runs INT DEFAULT 0,
-    extras VARCHAR(32) NULL,
+    extras VARCHAR(32) NULL COMMENT 'wide, no-ball, bye, leg-bye',
     wicket_type VARCHAR(32) NULL,
     out_player_id INT NULL,
     CONSTRAINT fk_ball_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
     CONSTRAINT fk_ball_innings FOREIGN KEY (inning_id) REFERENCES match_innings(id) ON DELETE CASCADE,
-    CONSTRAINT fk_ball_batsman FOREIGN KEY (batsman_id) REFERENCES players(id) ON DELETE SET NULL,
-    CONSTRAINT fk_ball_bowler FOREIGN KEY (bowler_id) REFERENCES players(id) ON DELETE SET NULL,
+    CONSTRAINT fk_ball_batsman FOREIGN KEY (batsman_id) REFERENCES players(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_ball_bowler FOREIGN KEY (bowler_id) REFERENCES players(id) ON DELETE RESTRICT,
     CONSTRAINT fk_ball_out_player FOREIGN KEY (out_player_id) REFERENCES players(id) ON DELETE SET NULL,
-    CONSTRAINT uq_ball_pos UNIQUE (inning_id, over_number, ball_number)
+    CONSTRAINT uq_ball_pos UNIQUE (inning_id, over_number, ball_number, sequence)
 ) ENGINE=InnoDB;
 -- 10. Team Tournament Summary table
 CREATE TABLE IF NOT EXISTS team_tournament_summary (
@@ -274,6 +292,5 @@ ALTER TABLE teams ADD INDEX idx_teams_owner (owner_id);
 ALTER TABLE players ADD INDEX idx_players_team (team_id);
 ALTER TABLE tournament_teams ADD INDEX idx_tournament_teams_tournament (tournament_id);
 ALTER TABLE ball_by_ball ADD INDEX idx_ball_by_ball_inning (inning_id);
-ALTER TABLE ball_by_ball ADD INDEX idx_ball_by_ball_position (inning_id, over_number, ball_number);
--- Note: Unique key for ball_by_ball is now defined in table creation
--- as the exact column names may vary between schema and actual usage
+ALTER TABLE ball_by_ball ADD INDEX idx_ball_by_ball_position (inning_id, over_number, ball_number, sequence);
+ALTER TABLE ball_by_ball ADD INDEX idx_ball_by_ball_bowler (bowler_id);

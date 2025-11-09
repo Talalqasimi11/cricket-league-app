@@ -103,20 +103,48 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
             if (m == null) return {};
             final overNo = (m['over_number'] ?? '').toString();
             final ballNo = (m['ball_number'] ?? '').toString();
+            final sequence = (m['sequence'] ?? 0).toString();
             final runs = (m['runs'] ?? '').toString();
             final wicketType = (m['wicket_type'] ?? '').toString();
+            final extras = (m['extras'] as String?) ?? '';
+
+            // Build display over with extras suffix
+            String overDisplay = '$overNo.$ballNo';
+            if (extras == 'wide')
+              overDisplay += 'wd';
+            else if (extras == 'no-ball')
+              overDisplay += 'nb';
+            else if (extras == 'bye')
+              overDisplay += 'b';
+            else if (extras == 'leg-bye')
+              overDisplay += 'lb';
+
             final result = wicketType.isNotEmpty ? 'W' : runs;
             final bowler = (m['bowler_name'] ?? '').toString();
             final batsman = (m['batsman_name'] ?? '').toString();
-            final commentary = wicketType.isNotEmpty
-                ? 'Wicket: $wicketType'
-                : 'Runs: $runs';
+
+            String commentary;
+            if (wicketType.isNotEmpty) {
+              commentary = 'Wicket: $wicketType';
+            } else if (extras == 'wide') {
+              commentary = 'Wide + $runs runs';
+            } else if (extras == 'no-ball') {
+              commentary = 'No ball + $runs runs';
+            } else if (extras == 'bye') {
+              commentary = 'Byes: $runs';
+            } else if (extras == 'leg-bye') {
+              commentary = 'Leg byes: $runs';
+            } else {
+              commentary = 'Runs: $runs';
+            }
+
             return {
-              'over': '$overNo.$ballNo',
+              'over': overDisplay,
               'bowler': bowler,
               'batsman': batsman,
               'commentary': commentary,
               'result': result,
+              'extras': extras,
             };
           }).toList();
 
@@ -181,20 +209,48 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
           final m = b as Map<String, dynamic>;
           final overNo = (m['over_number'] ?? '').toString();
           final ballNo = (m['ball_number'] ?? '').toString();
+          final sequence = (m['sequence'] ?? 0).toString();
           final runs = (m['runs'] ?? '').toString();
           final wicketType = (m['wicket_type'] ?? '').toString();
+          final extras = (m['extras'] as String?) ?? '';
+
+          // Build display over with extras suffix
+          String overDisplay = '$overNo.$ballNo';
+          if (extras == 'wide')
+            overDisplay += 'wd';
+          else if (extras == 'no-ball')
+            overDisplay += 'nb';
+          else if (extras == 'bye')
+            overDisplay += 'b';
+          else if (extras == 'leg-bye')
+            overDisplay += 'lb';
+
           final result = wicketType.isNotEmpty ? 'W' : runs;
           final bowler = (m['bowler_name'] ?? '').toString();
           final batsman = (m['batsman_name'] ?? '').toString();
-          final commentary = wicketType.isNotEmpty
-              ? 'Wicket: $wicketType'
-              : 'Runs: $runs';
+
+          String commentary;
+          if (wicketType.isNotEmpty) {
+            commentary = 'Wicket: $wicketType';
+          } else if (extras == 'wide') {
+            commentary = 'Wide + $runs runs';
+          } else if (extras == 'no-ball') {
+            commentary = 'No ball + $runs runs';
+          } else if (extras == 'bye') {
+            commentary = 'Byes: $runs';
+          } else if (extras == 'leg-bye') {
+            commentary = 'Leg byes: $runs';
+          } else {
+            commentary = 'Runs: $runs';
+          }
+
           return {
-            'over': '$overNo.$ballNo',
+            'over': overDisplay,
             'bowler': bowler,
             'batsman': batsman,
             'commentary': commentary,
             'result': result,
+            'extras': extras,
           };
         }).toList();
         setState(() {
@@ -493,6 +549,13 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
     required String commentary,
     required String result,
   }) {
+    // Extract extras from over string if present
+    final hasWide = over.contains('wd');
+    final hasNoBall = over.contains('nb');
+    final hasBye = over.contains('b') && !over.contains('nb');
+    final hasLegBye = over.contains('lb');
+    final hasExtras = hasWide || hasNoBall || hasBye || hasLegBye;
+
     // Result-based color
     Color resultColor;
     if (result == "W") {
@@ -511,6 +574,13 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF1a3d27).withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(12),
+        // Add border for extras
+        border: hasExtras
+            ? Border.all(
+                color: Colors.orange.withValues(alpha: 0.5),
+                width: 1.5,
+              )
+            : null,
       ),
       child: Row(
         children: [
@@ -519,29 +589,80 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
             radius: 16,
             backgroundColor: result == "W"
                 ? Colors.red.withValues(alpha: 0.2)
+                : hasExtras
+                ? Colors.orange.withValues(alpha: 0.2)
                 : const Color(0xFF1a3d27),
             child: Text(
               over,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 10,
                 fontWeight: FontWeight.bold,
-                color: result == "W" ? Colors.red : Colors.green,
+                color: result == "W"
+                    ? Colors.red
+                    : hasExtras
+                    ? Colors.orange
+                    : Colors.green,
               ),
             ),
           ),
           const SizedBox(width: 12),
 
-          // Commentary
+          // Commentary with extras indicator
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  "$bowler to $batsman",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "$bowler to $batsman",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    // Extras badge
+                    if (hasWide)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'WD',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    if (hasNoBall)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'NB',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 Text(
                   commentary,

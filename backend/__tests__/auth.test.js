@@ -39,7 +39,7 @@ describe('Auth API Integration Tests', () => {
     db = await setupTestDB();
 
     // Initialize schema
-    const schemaPath = path.join(__dirname, '../../cricket-league-db/schema.sql');
+    const schemaPath = path.join(__dirname, '../../cricket-league-db/complete_schema.sql');
     const schemaSQL = await fs.readFile(schemaPath, 'utf8');
     const statements = schemaSQL.split(';').filter(stmt => stmt.trim());
     for (const statement of statements) {

@@ -130,7 +130,9 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
           // Compute CRR from runs and overs
           final runsInt = int.tryParse(runs) ?? 0;
           final oversDecimal = double.tryParse(ov) ?? 0.0;
-          crr = oversDecimal > 0 ? (runsInt / oversDecimal).toStringAsFixed(2) : '0.00';
+          crr = oversDecimal > 0
+              ? (runsInt / oversDecimal).toStringAsFixed(2)
+              : '0.00';
         });
       }
 
@@ -143,20 +145,48 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
             if (m == null) return {};
             final overNo = (m['over_number'] ?? '').toString();
             final ballNo = (m['ball_number'] ?? '').toString();
+            final sequence = (m['sequence'] ?? 0).toString();
             final runs = (m['runs'] ?? '').toString();
             final wicketType = (m['wicket_type'] ?? '').toString();
+            final extras = (m['extras'] as String?) ?? '';
+
+            // Build display over with extras suffix
+            String overDisplay = '$overNo.$ballNo';
+            if (extras == 'wide')
+              overDisplay += 'wd';
+            else if (extras == 'no-ball')
+              overDisplay += 'nb';
+            else if (extras == 'bye')
+              overDisplay += 'b';
+            else if (extras == 'leg-bye')
+              overDisplay += 'lb';
+
             final result = wicketType.isNotEmpty ? 'W' : runs;
             final bowler = (m['bowler_name'] ?? '').toString();
             final batsman = (m['batsman_name'] ?? '').toString();
-            final commentary = wicketType.isNotEmpty
-                ? 'Wicket: $wicketType'
-                : 'Runs: $runs';
+
+            String commentary;
+            if (wicketType.isNotEmpty) {
+              commentary = 'Wicket: $wicketType';
+            } else if (extras == 'wide') {
+              commentary = 'Wide + $runs runs';
+            } else if (extras == 'no-ball') {
+              commentary = 'No ball + $runs runs';
+            } else if (extras == 'bye') {
+              commentary = 'Byes: $runs';
+            } else if (extras == 'leg-bye') {
+              commentary = 'Leg byes: $runs';
+            } else {
+              commentary = 'Runs: $runs';
+            }
+
             return {
-              'over': '$overNo.$ballNo',
+              'over': overDisplay,
               'bowler': bowler,
               'batsman': batsman,
               'commentary': commentary,
               'result': result,
+              'extras': extras,
             };
           }).toList();
 
@@ -191,7 +221,11 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
         final teamAData = jsonDecode(teamAResponse.body);
         // Assuming the response has a players array
         setState(() {
-          teamAPlayers = (teamAData['players'] as List?)?.map((p) => p as Map<String, dynamic>).toList() ?? [];
+          teamAPlayers =
+              (teamAData['players'] as List?)
+                  ?.map((p) => p as Map<String, dynamic>)
+                  .toList() ??
+              [];
         });
       }
 
@@ -200,7 +234,11 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
       if (teamBResponse.statusCode == 200) {
         final teamBData = jsonDecode(teamBResponse.body);
         setState(() {
-          teamBPlayers = (teamBData['players'] as List?)?.map((p) => p as Map<String, dynamic>).toList() ?? [];
+          teamBPlayers =
+              (teamBData['players'] as List?)
+                  ?.map((p) => p as Map<String, dynamic>)
+                  .toList() ??
+              [];
         });
       }
     } catch (e) {
@@ -255,7 +293,11 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
     // Validate team IDs are available
     if (teamAId == null || teamBId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Team information not available. Please refresh and try again.')),
+        const SnackBar(
+          content: Text(
+            'Team information not available. Please refresh and try again.',
+          ),
+        ),
       );
       return;
     }
@@ -307,7 +349,9 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
 
     if (currentBatsmanId == null || currentBowlerId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select batsman and bowler before scoring')),
+        const SnackBar(
+          content: Text('Please select batsman and bowler before scoring'),
+        ),
       );
       return;
     }
@@ -370,8 +414,6 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
       setState(() => isLoading = false);
     }
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -468,10 +510,15 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
 
   Widget _battersCard() {
     // Find current batsmen from player stats
-    final currentBatsmen = playerStats.where((p) =>
-      p['player_id'] == currentBatsmanId ||
-      (currentBatsmanId != null && p['player_id'] != currentBatsmanId) // Show top 2 batsmen
-    ).take(2).toList();
+    final currentBatsmen = playerStats
+        .where(
+          (p) =>
+              p['player_id'] == currentBatsmanId ||
+              (currentBatsmanId != null &&
+                  p['player_id'] != currentBatsmanId), // Show top 2 batsmen
+        )
+        .take(2)
+        .toList();
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -544,7 +591,8 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
       orElse: () => <String, dynamic>{},
     );
 
-    final bowlerName = (currentBowler['player_name'] as String?) ?? 'Unknown Bowler';
+    final bowlerName =
+        (currentBowler['player_name'] as String?) ?? 'Unknown Bowler';
     final overs = (currentBowler['balls_bowled'] ?? 0) / 6.0;
     final maidens = '0'; // Not tracked in current schema
     final runs = (currentBowler['runs_conceded'] ?? 0).toString();
@@ -561,7 +609,10 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
         children: [
           Text(
             bowlerName,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           Text(
             "O: ${overs.toStringAsFixed(1)}  M: $maidens  R: $runs  W: $wickets",
@@ -585,32 +636,106 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        ...ballByBall.map(
-          (ball) => Container(
+        ...ballByBall.map((ball) {
+          final overStr = ball["over"] ?? "";
+          final extras = ball["extras"] ?? "";
+          final hasWide = overStr.contains('wd');
+          final hasNoBall = overStr.contains('nb');
+          final hasBye = overStr.contains('b') && !overStr.contains('nb');
+          final hasLegBye = overStr.contains('lb');
+          final hasExtras = hasWide || hasNoBall || hasBye || hasLegBye;
+
+          return Container(
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: const Color(0xFF1A2C22),
               borderRadius: BorderRadius.circular(12),
+              // Add border for extras
+              border: hasExtras
+                  ? Border.all(
+                      color: Colors.orange.withValues(alpha: 0.5),
+                      width: 1.5,
+                    )
+                  : null,
             ),
             child: Row(
               children: [
                 CircleAvatar(
                   radius: 18,
-                  backgroundColor: const Color(0xFF264532),
+                  backgroundColor: ball["result"] == "W"
+                      ? Colors.red.withValues(alpha: 0.2)
+                      : hasExtras
+                      ? Colors.orange.withValues(alpha: 0.2)
+                      : const Color(0xFF264532),
                   child: Text(
                     ball["over"]!,
-                    style: const TextStyle(
-                      color: Colors.green,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: ball["result"] == "W"
+                          ? Colors.red
+                          : hasExtras
+                          ? Colors.orange
+                          : Colors.green,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    ball["commentary"] ?? "Ball",
-                    style: const TextStyle(color: Colors.white),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              ball["commentary"] ?? "Ball",
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          // Extras badge
+                          if (hasWide)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'WD',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          if (hasNoBall)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'NB',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
                 Container(
@@ -629,8 +754,8 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                 ),
               ],
             ),
-          ),
-        ),
+          );
+        }),
       ],
     );
   }
@@ -667,8 +792,12 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                             if (val == "W") {
                               _showWicketDialog(context);
                               // Use batting team players for wicket replacement
-                              final battingTeamId = currentInning?['batting_team_id'];
-                              final battingTeamPlayers = battingTeamId == teamAId ? teamAPlayers : teamBPlayers;
+                              final battingTeamId =
+                                  currentInning?['batting_team_id'];
+                              final battingTeamPlayers =
+                                  battingTeamId == teamAId
+                                  ? teamAPlayers
+                                  : teamBPlayers;
                               final batsman = await showNewBatsmanPopup(
                                 context,
                                 battingTeamPlayers,
@@ -772,9 +901,15 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                         ? null
                         : () async {
                             // Use current bowling team players for next bowler
-                            final bowlingTeamId = currentInning?['bowling_team_id'];
-                            final bowlingTeamPlayers = bowlingTeamId == teamAId ? teamAPlayers : teamBPlayers;
-                            final nextBowler = await showEndOverPopup(context, bowlingTeamPlayers);
+                            final bowlingTeamId =
+                                currentInning?['bowling_team_id'];
+                            final bowlingTeamPlayers = bowlingTeamId == teamAId
+                                ? teamAPlayers
+                                : teamBPlayers;
+                            final nextBowler = await showEndOverPopup(
+                              context,
+                              bowlingTeamPlayers,
+                            );
                             if (nextBowler != null) {
                               setState(() => currentBowlerId = nextBowler);
                               // Over transition is handled by backend when balls are added
@@ -916,6 +1051,158 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
       ),
     );
   }
+
+  /// Show extras selection bottom sheet
+  void _showExtrasBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A2C22),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) {
+        String? selectedExtra;
+        final TextEditingController runsController = TextEditingController(
+          text: '1',
+        );
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        "Extras",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  GridView.count(
+                    shrinkWrap: true,
+                    crossAxisCount: 2,
+                    childAspectRatio: 2.5,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    children: [
+                      _extraButton("wide", "Wide", selectedExtra == "wide", () {
+                        setState(() => selectedExtra = "wide");
+                      }),
+                      _extraButton(
+                        "no-ball",
+                        "No Ball",
+                        selectedExtra == "no-ball",
+                        () {
+                          setState(() => selectedExtra = "no-ball");
+                        },
+                      ),
+                      _extraButton("bye", "Bye", selectedExtra == "bye", () {
+                        setState(() => selectedExtra = "bye");
+                      }),
+                      _extraButton(
+                        "leg-bye",
+                        "Leg Bye",
+                        selectedExtra == "leg-bye",
+                        () {
+                          setState(() => selectedExtra = "leg-bye");
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF264532),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          "Extra Runs",
+                          style: TextStyle(color: Colors.white, fontSize: 16),
+                        ),
+                        SizedBox(
+                          width: 60,
+                          child: TextField(
+                            controller: runsController,
+                            style: const TextStyle(color: Colors.white),
+                            textAlign: TextAlign.center,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              hintText: "1",
+                              hintStyle: TextStyle(color: Colors.white54),
+                              border: InputBorder.none,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: selectedExtra != null
+                          ? Colors.green
+                          : Colors.grey,
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: selectedExtra != null
+                        ? () async {
+                            final runs = int.tryParse(runsController.text) ?? 1;
+                            Navigator.pop(context);
+                            await _addBall(runs: runs, extras: selectedExtra);
+                          }
+                        : null,
+                    child: const Text(
+                      "Add Extra",
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _extraButton(
+    String value,
+    String text,
+    bool isSelected,
+    VoidCallback onTap,
+  ) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isSelected ? Colors.orange : Colors.blue,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      onPressed: onTap,
+      child: Text(text, style: const TextStyle(color: Colors.white)),
+    );
+  }
 }
 
 // ✅ Updated to use real player data and return player ID
@@ -958,16 +1245,18 @@ Future<int?> showNewBatsmanPopup(
                   GridView.builder(
                     shrinkWrap: true,
                     itemCount: teamPlayers.length,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      childAspectRatio: 3,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 3,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
                     itemBuilder: (context, index) {
                       final player = teamPlayers[index];
                       final playerId = player['id'] as int;
-                      final playerName = player['player_name'] as String? ?? 'Unknown Player';
+                      final playerName =
+                          player['player_name'] as String? ?? 'Unknown Player';
 
                       return ElevatedButton(
                         style: ElevatedButton.styleFrom(
@@ -978,7 +1267,8 @@ Future<int?> showNewBatsmanPopup(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        onPressed: () => setState(() => selectedPlayerId = playerId),
+                        onPressed: () =>
+                            setState(() => selectedPlayerId = playerId),
                         child: Text(
                           playerName,
                           style: const TextStyle(color: Colors.white),
@@ -1098,7 +1388,8 @@ Future<int?> showEndOverPopup(
                     initialValue: selectedBowlerId,
                     items: bowlers.map((bowler) {
                       final bowlerId = bowler['id'] as int;
-                      final bowlerName = bowler['player_name'] as String? ?? 'Unknown Bowler';
+                      final bowlerName =
+                          bowler['player_name'] as String? ?? 'Unknown Bowler';
                       return DropdownMenuItem<int>(
                         value: bowlerId,
                         child: Text(
@@ -1244,117 +1535,6 @@ Widget _wicketOption(String text, {bool fullWidth = false}) {
       },
       child: Text(text, style: const TextStyle(color: Colors.white)),
     ),
-  );
-}
-
-// extras popup
-void _showExtrasBottomSheet(BuildContext context) {
-  showModalBottomSheet(
-    context: context,
-    backgroundColor: const Color(0xFF1A2C22),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (_) {
-      final TextEditingController overthrowController = TextEditingController();
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  "Extras",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            GridView.count(
-              shrinkWrap: true,
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              children: [
-                _extraButton("Wide"),
-                _extraButton("No Ball"),
-                _extraButton("Bye"),
-                _extraButton("Leg Bye"),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF264532),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    "Overthrow Runs",
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
-                  SizedBox(
-                    width: 60,
-                    child: TextField(
-                      controller: overthrowController,
-                      style: const TextStyle(color: Colors.white),
-                      textAlign: TextAlign.center,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        hintText: "0",
-                        hintStyle: TextStyle(color: Colors.white54),
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: () {
-                // ✅ Handle selected extras + overthrowController.text
-                Navigator.pop(context);
-              },
-              child: const Text("Done"),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
-
-Widget _extraButton(String text) {
-  return ElevatedButton(
-    style: ElevatedButton.styleFrom(
-      backgroundColor: Colors.blue,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
-    onPressed: () {
-      // ✅ handle extras selection
-    },
-    child: Text(text, style: const TextStyle(color: Colors.white)),
   );
 }
 
