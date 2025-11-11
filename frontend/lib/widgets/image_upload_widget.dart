@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../../core/api_client.dart';
-import '../../core/error_handler.dart';
+import 'package:image_picker/image_picker.dart';
+import '../core/api_client.dart';
+import '../core/error_handler.dart';
+import 'optimized_image.dart';
 
 typedef OnImageUploadSuccess = Function(String imageUrl);
 
@@ -32,12 +34,33 @@ class ImageUploadWidget extends StatefulWidget {
 class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   bool _isLoading = false;
   String? _currentImageUrl;
-  File? _selectedImage;
+
 
   @override
   void initState() {
     super.initState();
     _currentImageUrl = widget.initialImageUrl;
+  }
+
+  /// Pick image from gallery
+  Future<void> _pickImage() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+
+      if (image != null) {
+        final File imageFile = File(image.path);
+        await _uploadImage(imageFile);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ErrorHandler.showErrorSnackBar(context, 'Failed to pick image: $e');
+    }
   }
 
   /// Upload image to backend using multipart form data
@@ -131,7 +154,6 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       if (response.statusCode == 200 || response.statusCode == 204) {
         setState(() {
           _currentImageUrl = null;
-          _selectedImage = null;
         });
         if (!mounted) return;
         ErrorHandler.showSuccessSnackBar(context, 'Image deleted successfully');
@@ -173,21 +195,13 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ElevatedButton.icon(
-              onPressed: _isLoading
-                  ? null
-                  : () {
-                      // Note: Requires image_picker package
-                      // This is a placeholder for the actual implementation
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Image picker requires image_picker package',
-                          ),
-                        ),
-                      );
-                    },
+              onPressed: _isLoading ? null : _pickImage,
               icon: const Icon(Icons.image),
               label: const Text('Upload Image'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green[700],
+                foregroundColor: Colors.white,
+              ),
             ),
             const SizedBox(width: 12),
             if (_currentImageUrl != null)
@@ -195,7 +209,10 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                 onPressed: _isLoading ? null : _deleteImage,
                 icon: const Icon(Icons.delete),
                 label: const Text('Delete'),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
               ),
           ],
         ),
@@ -224,22 +241,18 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.network(
-              _currentImageUrl!,
+            child: OptimizedImage(
+              url: _currentImageUrl!,
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return const Center(child: Icon(Icons.error_outline));
+              width: 200,
+              height: 200,
+              cacheWidth: 400,
+              cacheHeight: 400,
+              errorBuilder: (context, url) {
+                return const Center(child: Icon(Icons.error_outline, size: 48));
               },
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Center(
-                  child: CircularProgressIndicator(
-                    value: loadingProgress.expectedTotalBytes != null
-                        ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
-                        : null,
-                  ),
-                );
+              loadingBuilder: (context, url) {
+                return const Center(child: CircularProgressIndicator());
               },
             ),
           ),

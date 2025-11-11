@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../core/api_client.dart';
+import '../../../core/error_dialog.dart';
+import '../../../core/theme/theme_config.dart';
 
 class ScorecardScreen extends StatefulWidget {
   final String matchId;
@@ -32,60 +34,84 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
         matchData = data['match'] as Map<String, dynamic>?;
         scorecardData = data['scorecard'] as List<dynamic>?;
       } else {
-        debugPrint('Failed to fetch scorecard: ${resp.statusCode}');
+        if (mounted) {
+          await ErrorDialog.showApiError(
+            context,
+            response: resp,
+            onRetry: _fetchScorecard,
+          );
+        }
       }
     } catch (e) {
-      debugPrint('Error fetching scorecard: $e');
+      if (mounted) {
+        await ErrorDialog.showGenericError(
+          context,
+          error: e,
+          onRetry: _fetchScorecard,
+          showRetryButton: true,
+        );
+      }
     }
     if (mounted) setState(() => _loading = false);
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF122118),
+      backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF122118),
-        title: const Text(
+        backgroundColor: theme.colorScheme.primary,
+        title: Text(
           'Match Scorecard',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: AppTypographyExtended.headlineSmall.copyWith(
+            color: theme.colorScheme.onPrimary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: theme.colorScheme.onPrimary),
       ),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFF36e27b)))
+          ? Center(
+              child: CircularProgressIndicator(color: theme.colorScheme.primary),
+            )
           : matchData == null
-              ? const Center(
-                  child: Text(
-                    'No scorecard data available',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _fetchScorecard,
-                  color: const Color(0xFF36e27b),
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      _buildMatchSummary(),
-                      const SizedBox(height: 20),
-                      if (scorecardData != null && scorecardData!.isNotEmpty)
-                        ...scorecardData!.map((innings) => _buildInningsCard(innings)),
-                      if (scorecardData == null || scorecardData!.isEmpty)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(32.0),
-                            child: Text(
-                              'No innings data available yet',
-                              style: TextStyle(color: Colors.white70),
-                            ),
+          ? Center(
+              child: Text(
+                'No scorecard data available',
+                style: AppTypographyExtended.bodyLarge.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _fetchScorecard,
+              color: theme.colorScheme.primary,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _buildMatchSummary(),
+                  const SizedBox(height: 20),
+                  if (scorecardData != null && scorecardData!.isNotEmpty)
+                    ...scorecardData!.map(
+                      (innings) => _buildInningsCard(innings),
+                    ),
+                  if (scorecardData == null || scorecardData!.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Text(
+                          'No innings data available yet',
+                          style: AppTypographyExtended.bodyLarge.copyWith(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
-                    ],
-                  ),
-                ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
     );
   }
 
@@ -105,7 +131,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF36e27b).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFF36e27b).withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,7 +150,10 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: _getStatusColor(status),
                   borderRadius: BorderRadius.circular(12),
@@ -150,7 +179,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF36e27b).withOpacity(0.1),
+                color: const Color(0xFF36e27b).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -180,17 +209,13 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
+                color: Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Row(
                 children: [
-                  Icon(
-                    Icons.handshake,
-                    color: Colors.orange,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
+                  Icon(Icons.handshake, color: Colors.orange, size: 24),
+                  SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       'Match Tied',
@@ -213,7 +238,6 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
   Widget _buildInningsCard(dynamic innings) {
     final inningNumber = innings['inning_number'] ?? 0;
     final battingTeam = innings['batting_team'] ?? 'Team';
-    final bowlingTeam = innings['bowling_team'] ?? 'Team';
     final runs = innings['runs'] ?? 0;
     final wickets = innings['wickets'] ?? 0;
     final overs = innings['overs'] ?? 0;
@@ -338,19 +362,16 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
-        headingRowColor: MaterialStateProperty.all(
-          const Color(0xFF264532).withOpacity(0.3),
+        headingRowColor: WidgetStateProperty.all(
+          const Color(0xFF264532).withValues(alpha: 0.3),
         ),
-        dataRowColor: MaterialStateProperty.all(Colors.transparent),
+        dataRowColor: WidgetStateProperty.all(Colors.transparent),
         headingTextStyle: const TextStyle(
           color: Colors.white70,
           fontSize: 12,
           fontWeight: FontWeight.bold,
         ),
-        dataTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 13,
-        ),
+        dataTextStyle: const TextStyle(color: Colors.white, fontSize: 13),
         columns: const [
           DataColumn(label: Text('Player')),
           DataColumn(label: Text('R'), numeric: true),
@@ -365,17 +386,16 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
           final balls = player['balls_faced'] ?? 0;
           final fours = player['fours'] ?? 0;
           final sixes = player['sixes'] ?? 0;
-          final strikeRate = balls > 0 ? (runs / balls * 100).toStringAsFixed(1) : '0.0';
+          final strikeRate = balls > 0
+              ? (runs / balls * 100).toStringAsFixed(1)
+              : '0.0';
 
           return DataRow(
             cells: [
               DataCell(
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 120),
-                  child: Text(
-                    name,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(name, overflow: TextOverflow.ellipsis),
                 ),
               ),
               DataCell(Text(runs.toString())),
@@ -394,19 +414,16 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
-        headingRowColor: MaterialStateProperty.all(
-          const Color(0xFF264532).withOpacity(0.3),
+        headingRowColor: WidgetStateProperty.all(
+          const Color(0xFF264532).withValues(alpha: 0.3),
         ),
-        dataRowColor: MaterialStateProperty.all(Colors.transparent),
+        dataRowColor: WidgetStateProperty.all(Colors.transparent),
         headingTextStyle: const TextStyle(
           color: Colors.white70,
           fontSize: 12,
           fontWeight: FontWeight.bold,
         ),
-        dataTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 13,
-        ),
+        dataTextStyle: const TextStyle(color: Colors.white, fontSize: 13),
         columns: const [
           DataColumn(label: Text('Bowler')),
           DataColumn(label: Text('O'), numeric: true),
@@ -433,10 +450,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
               DataCell(
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 120),
-                  child: Text(
-                    name,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(name, overflow: TextOverflow.ellipsis),
                 ),
               ),
               DataCell(Text(oversStr)),

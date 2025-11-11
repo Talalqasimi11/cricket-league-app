@@ -283,7 +283,7 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
                   width: 50,
                   height: 50,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (_, _, _) => Container(
                     width: 50,
                     height: 50,
                     color: cs.surfaceContainerHighest,
@@ -372,47 +372,7 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
     );
   }
 
-  void _showLoginDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // User must tap button to close
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Login Required'),
-          content: const Text(
-            'You need to be logged in to view your team information. Would you like to login now?',
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                // Set loading to false since we're not fetching data
-                if (mounted) {
-                  setState(() {
-                    _isLoading = false;
-                  });
-                }
-              },
-            ),
-            ElevatedButton(
-              child: const Text('Login'),
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                // Navigate to login screen
-                Navigator.pushNamed(context, '/login').then((_) {
-                  // After login screen is dismissed, try fetching data again
-                  if (mounted) {
-                    _fetchTeamData();
-                  }
-                });
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
+
 
   Widget _buildLoginPrompt() {
     final theme = Theme.of(context);
@@ -460,11 +420,7 @@ class _MyTeamScreenState extends State<MyTeamScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Go Back'),
-            ),
+            
           ],
         ),
       ),

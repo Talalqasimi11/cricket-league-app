@@ -103,21 +103,21 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
             if (m == null) return {};
             final overNo = (m['over_number'] ?? '').toString();
             final ballNo = (m['ball_number'] ?? '').toString();
-            final sequence = (m['sequence'] ?? 0).toString();
             final runs = (m['runs'] ?? '').toString();
             final wicketType = (m['wicket_type'] ?? '').toString();
             final extras = (m['extras'] as String?) ?? '';
 
             // Build display over with extras suffix
             String overDisplay = '$overNo.$ballNo';
-            if (extras == 'wide')
+            if (extras == 'wide') {
               overDisplay += 'wd';
-            else if (extras == 'no-ball')
+            } else if (extras == 'no-ball') {
               overDisplay += 'nb';
-            else if (extras == 'bye')
+            } else if (extras == 'bye') {
               overDisplay += 'b';
-            else if (extras == 'leg-bye')
+            } else if (extras == 'leg-bye') {
               overDisplay += 'lb';
+            }
 
             final result = wicketType.isNotEmpty ? 'W' : runs;
             final bowler = (m['bowler_name'] ?? '').toString();
@@ -209,21 +209,21 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
           final m = b as Map<String, dynamic>;
           final overNo = (m['over_number'] ?? '').toString();
           final ballNo = (m['ball_number'] ?? '').toString();
-          final sequence = (m['sequence'] ?? 0).toString();
           final runs = (m['runs'] ?? '').toString();
           final wicketType = (m['wicket_type'] ?? '').toString();
           final extras = (m['extras'] as String?) ?? '';
 
           // Build display over with extras suffix
           String overDisplay = '$overNo.$ballNo';
-          if (extras == 'wide')
+          if (extras == 'wide') {
             overDisplay += 'wd';
-          else if (extras == 'no-ball')
+          } else if (extras == 'no-ball') {
             overDisplay += 'nb';
-          else if (extras == 'bye')
+          } else if (extras == 'bye') {
             overDisplay += 'b';
-          else if (extras == 'leg-bye')
+          } else if (extras == 'leg-bye') {
             overDisplay += 'lb';
+          }
 
           final result = wicketType.isNotEmpty ? 'W' : runs;
           final bowler = (m['bowler_name'] ?? '').toString();
@@ -288,23 +288,24 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: const Color(0xFFF8FBFA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF121212),
-        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 1,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.grey),
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           "Live Match",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
           IconButton(
             tooltip: 'View Scorecard',
-            icon: const Icon(Icons.scoreboard, color: Colors.white),
+            icon: const Icon(Icons.scoreboard, color: Colors.black87),
             onPressed: () {
               Navigator.pushNamed(
                 context,
@@ -332,10 +333,10 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1a3d27),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: Colors.green.withValues(alpha: 0.2),
+                        color: Colors.grey.shade300,
                       ),
                     ),
                     child: Row(
@@ -348,15 +349,15 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                             Text(
                               "$teamA vs $teamB",
                               style: const TextStyle(
-                                color: Color(0xFF36e27b),
+                                color: Colors.black87,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             Text(
                               "$overs Overs Match",
-                              style: const TextStyle(
-                                color: Colors.grey,
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
                                 fontSize: 12,
                               ),
                             ),
@@ -367,13 +368,13 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.green.withValues(alpha: 0.2),
+                                color: Colors.green.shade100,
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Text(
+                              child: Text(
                                 "LIVE",
                                 style: TextStyle(
-                                  color: Colors.green,
+                                  color: Colors.green.shade700,
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -384,26 +385,26 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
 
                         // Team Logos simplified (no network fetch for web safety)
                         Row(
-                          children: const [
+                          children: [
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: Colors.grey,
-                              child: Icon(Icons.shield, color: Colors.white),
+                              backgroundColor: Colors.grey.shade200,
+                              child: Icon(Icons.shield, color: Colors.grey.shade600),
                             ),
                             Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
                               child: Text(
                                 "vs",
                                 style: TextStyle(
-                                  color: Colors.grey,
+                                  color: Colors.grey.shade600,
                                   fontSize: 16,
                                 ),
                               ),
                             ),
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: Colors.grey,
-                              child: Icon(Icons.shield, color: Colors.white),
+                              backgroundColor: Colors.grey.shade200,
+                              child: Icon(Icons.shield, color: Colors.grey.shade600),
                             ),
                           ],
                         ),
@@ -417,18 +418,18 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1a3d27),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: Colors.green.withValues(alpha: 0.2),
+                        color: Colors.grey.shade300,
                       ),
                     ),
                     child: Column(
                       children: [
-                        const Text(
+                        Text(
                           "Batting Team",
                           style: TextStyle(
-                            color: Colors.grey,
+                            color: Colors.grey.shade600,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -443,15 +444,15 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                                 Text(
                                   score,
                                   style: const TextStyle(
-                                    color: Colors.white,
+                                    color: Colors.black87,
                                     fontSize: 36,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                const Text(
+                                Text(
                                   "Runs / Wickets",
                                   style: TextStyle(
-                                    color: Colors.grey,
+                                    color: Colors.grey.shade600,
                                     fontSize: 12,
                                   ),
                                 ),
@@ -463,22 +464,22 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                               margin: const EdgeInsets.symmetric(
                                 horizontal: 20,
                               ),
-                              color: Colors.grey.withValues(alpha: 0.3),
+                              color: Colors.grey.shade300,
                             ),
                             Column(
                               children: [
                                 Text(
                                   currentOvers,
                                   style: const TextStyle(
-                                    color: Colors.white,
+                                    color: Colors.black87,
                                     fontSize: 36,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                const Text(
+                                Text(
                                   "Overs",
                                   style: TextStyle(
-                                    color: Colors.grey,
+                                    color: Colors.grey.shade600,
                                     fontSize: 12,
                                   ),
                                 ),
@@ -496,7 +497,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                   const Text(
                     "Ball-by-Ball Log",
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Colors.black87,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -518,9 +519,9 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
 
       // 🔽 Bottom Navigation
       bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: const Color(0xFF1a3d27),
-        selectedItemColor: const Color(0xFF36e27b),
-        unselectedItemColor: Colors.grey,
+        backgroundColor: Colors.white,
+        selectedItemColor: Colors.green.shade700,
+        unselectedItemColor: Colors.grey.shade600,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
           BottomNavigationBarItem(
@@ -541,7 +542,6 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
     );
   }
 
-  /// 🔹 Single ball log card widget
   Widget _buildBallLog({
     required String over,
     required String bowler,
@@ -565,22 +565,22 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
     } else if (result == "4") {
       resultColor = Colors.greenAccent;
     } else {
-      resultColor = Colors.white;
+      resultColor = Colors.black87;
     }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1a3d27).withValues(alpha: 0.7),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         // Add border for extras
         border: hasExtras
             ? Border.all(
-                color: Colors.orange.withValues(alpha: 0.5),
+                color: Colors.orange.shade300,
                 width: 1.5,
               )
-            : null,
+            : Border.all(color: Colors.grey.shade300),
       ),
       child: Row(
         children: [
@@ -588,20 +588,20 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
           CircleAvatar(
             radius: 16,
             backgroundColor: result == "W"
-                ? Colors.red.withValues(alpha: 0.2)
+                ? Colors.red.shade100
                 : hasExtras
-                ? Colors.orange.withValues(alpha: 0.2)
-                : const Color(0xFF1a3d27),
+                ? Colors.orange.shade100
+                : Colors.grey.shade200,
             child: Text(
               over,
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
                 color: result == "W"
-                    ? Colors.red
+                    ? Colors.red.shade700
                     : hasExtras
-                    ? Colors.orange
-                    : Colors.green,
+                    ? Colors.orange.shade700
+                    : Colors.green.shade700,
               ),
             ),
           ),
@@ -618,7 +618,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                       child: Text(
                         "$bowler to $batsman",
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: Colors.black87,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -666,7 +666,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                 ),
                 Text(
                   commentary,
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                 ),
               ],
             ),

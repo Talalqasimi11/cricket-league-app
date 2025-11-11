@@ -167,7 +167,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
@@ -315,11 +314,11 @@ class _LoginScreenState extends State<LoginScreen> {
     return InputDecoration(
       hintText: hint,
       hintStyle: TextStyle(
-        color: theme.colorScheme.onSurface.withOpacity(0.6),
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
       ),
       prefixIcon: Icon(
         icon,
-        color: theme.colorScheme.onSurface.withOpacity(0.6),
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
       ),
       filled: true,
       fillColor: theme.colorScheme.surfaceContainerHighest,

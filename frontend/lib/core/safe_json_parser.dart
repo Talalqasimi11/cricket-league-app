@@ -281,9 +281,9 @@ class SafeJsonParser {
   }
 
   /// Safely parse an entire JSON response with validation
-  /// 
-  /// Returns null if the data is not a valid Map<String, dynamic>
-  /// 
+  ///
+  /// Returns null if the data is not a valid `Map<String, dynamic>`
+  ///
   /// Example:
   /// ```dart
   /// final json = SafeJsonParser.parseResponse(jsonDecode(response.body));

@@ -53,14 +53,15 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
     ];
 
     // Clamp index to valid range just in case.
-    final int effectiveIndex = (_selectedIndex >= 0 && _selectedIndex < screens.length)
+    final int effectiveIndex =
+        (_selectedIndex >= 0 && _selectedIndex < screens.length)
         ? _selectedIndex
         : 0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF122118),
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        backgroundColor: const Color(0xFF122118),
+        backgroundColor: Colors.green[700],
         title: const Text(
           "Post-Match Summary",
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -79,11 +80,14 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: effectiveIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
-        backgroundColor: const Color(0xFF1A2C22),
+        backgroundColor: Colors.white,
         selectedItemColor: const Color(0xFF38e07b),
         unselectedItemColor: Colors.grey,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.scoreboard), label: "Scorecard"),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.scoreboard),
+            label: "Scorecard",
+          ),
           BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: "Stats"),
         ],
       ),
@@ -110,7 +114,11 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
           Expanded(
             child: Text(
               message,
-              style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: color,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -135,7 +143,11 @@ class _ScorecardTab extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             'Scorecard',
-            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -164,7 +176,11 @@ class _StatsTab extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             'Match Stats',
-            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
           Text(

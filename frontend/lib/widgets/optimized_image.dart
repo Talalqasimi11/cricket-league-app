@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart'
-    show CachedNetworkImage;
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// A widget that optimizes image loading and caching
 class OptimizedImage extends StatelessWidget {

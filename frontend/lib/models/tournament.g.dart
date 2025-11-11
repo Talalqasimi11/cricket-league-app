@@ -1,6 +1,10 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
 part of 'tournament.dart';
 
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// **************************************************************************
+// TypeAdapterGenerator
+// **************************************************************************
 
 class TournamentAdapter extends TypeAdapter<Tournament> {
   @override

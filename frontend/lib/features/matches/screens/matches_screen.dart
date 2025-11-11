@@ -179,7 +179,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
                               return TextButton.icon(
                                 onPressed: null,
                                 style: TextButton.styleFrom(
-                                  foregroundColor: theme.colorScheme.onSurface.withOpacity(0.5),
+                                  foregroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                                 ),
                                 icon: const Icon(Icons.remove_red_eye_outlined, size: 16),
                                 label: const Text('Not available'),

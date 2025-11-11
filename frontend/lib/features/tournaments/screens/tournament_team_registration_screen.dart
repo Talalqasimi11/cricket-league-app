@@ -59,10 +59,7 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
   }
 
   String _getTeamName(Map<String, dynamic> team) {
-    return (team["team_name"] ??
-            team["temp_team_name"] ??
-            team["name"] ??
-            "")
+    return (team["team_name"] ?? team["temp_team_name"] ?? team["name"] ?? "")
         .toString();
   }
 
@@ -82,7 +79,9 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
           teamList = [];
         }
 
-        final teamMaps = teamList.map((e) => e as Map<String, dynamic>).toList();
+        final teamMaps = teamList
+            .map((e) => e as Map<String, dynamic>)
+            .toList();
 
         // Initialize selected state for each team
         for (final team in teamMaps) {
@@ -106,9 +105,9 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
 
   void _showErrorSnackBar(String message) {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -119,40 +118,40 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
     final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2C22),
+        backgroundColor: Colors.white,
         title: const Text(
           'Add New Team',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: Colors.black87),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _teamNameController,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: Colors.black87),
               decoration: const InputDecoration(
                 labelText: 'Team Name',
-                labelStyle: TextStyle(color: Color(0xFF95C6A9)),
+                labelStyle: TextStyle(color: Colors.grey),
                 enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFF366348)),
+                  borderSide: BorderSide(color: Colors.grey),
                 ),
                 focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFF20DF6C)),
+                  borderSide: BorderSide(color: Colors.green),
                 ),
               ),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _teamLocationController,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: Colors.black87),
               decoration: const InputDecoration(
                 labelText: 'Location (Optional)',
-                labelStyle: TextStyle(color: Color(0xFF95C6A9)),
+                labelStyle: TextStyle(color: Colors.grey),
                 enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFF366348)),
+                  borderSide: BorderSide(color: Colors.grey),
                 ),
                 focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFF20DF6C)),
+                  borderSide: BorderSide(color: Colors.green),
                 ),
               ),
             ),
@@ -242,10 +241,7 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
         try {
           final resp = await ApiClient.instance.post(
             '/api/tournament-teams',
-            body: {
-              'tournament_id': widget.tournamentId,
-              'team_id': team['id'],
-            },
+            body: {'tournament_id': widget.tournamentId, 'team_id': team['id']},
           );
 
           if (resp.statusCode != 200 && resp.statusCode != 201) {
@@ -288,7 +284,9 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
         }
 
         final registeredTeamNames = tournamentTeams
-            .map((t) => (t["team_name"] ?? t["temp_team_name"] ?? "").toString())
+            .map(
+              (t) => (t["team_name"] ?? t["temp_team_name"] ?? "").toString(),
+            )
             .where((name) => name.isNotEmpty)
             .toList();
 
@@ -319,9 +317,9 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
     final selectedCount = teams.where((t) => t["selected"] == true).length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF122118),
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        backgroundColor: const Color(0xFF122118),
+        backgroundColor: Colors.green[700],
         elevation: 0,
         title: Text(
           "Add Teams to ${widget.tournamentName}",
@@ -381,7 +379,7 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFF366348)),
                   color: _isAddingTeam
-                      ? const Color(0xFF1A2C22).withOpacity(0.5)
+                      ? Color(0xFF1A2C22).withValues(alpha: 0.5)
                       : const Color(0xFF1A2C22),
                 ),
                 child: Row(
@@ -391,7 +389,7 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
                       width: 56,
                       decoration: BoxDecoration(
                         color: _isAddingTeam
-                            ? const Color(0xFF366348).withOpacity(0.5)
+                            ? Color(0xFF366348).withValues(alpha: 0.5)
                             : const Color(0xFF1A2C22),
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -443,112 +441,112 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
             child: _loading && teams.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : filteredTeams.isEmpty && !_loading
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.search_off,
-                              size: 64,
-                              color: const Color(0xFF95C6A9).withOpacity(0.5),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              _searchController.text.isEmpty
-                                  ? 'No teams available'
-                                  : 'No teams match your search',
-                              style: const TextStyle(
-                                color: Color(0xFF95C6A9),
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search_off,
+                          size: 64,
+                          color: Color(0xFF95C6A9).withValues(alpha: 0.5),
                         ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: filteredTeams.length,
-                        itemBuilder: (context, index) {
-                          final team = filteredTeams[index];
-                          final teamName = _getTeamName(team);
-                          final isSelected = team["selected"] as bool? ?? false;
+                        const SizedBox(height: 16),
+                        Text(
+                          _searchController.text.isEmpty
+                              ? 'No teams available'
+                              : 'No teams match your search',
+                          style: const TextStyle(
+                            color: Color(0xFF95C6A9),
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: filteredTeams.length,
+                    itemBuilder: (context, index) {
+                      final team = filteredTeams[index];
+                      final teamName = _getTeamName(team);
+                      final isSelected = team["selected"] as bool? ?? false;
 
-                          return GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                team["selected"] = !isSelected;
-                              });
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? const Color(0xFF1A3826)
-                                    : const Color(0xFF1A2C22),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isSelected
-                                      ? const Color(0xFF20DF6C)
-                                      : Colors.transparent,
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            team["selected"] = !isSelected;
+                          });
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFF1A3826)
+                                : const Color(0xFF1A2C22),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF20DF6C)
+                                  : Colors.transparent,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                height: 56,
+                                width: 56,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1A2C22),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.shield,
+                                  color: Color(0xFF20DF6C),
                                 ),
                               ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    height: 56,
-                                    width: 56,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF1A2C22),
-                                      borderRadius: BorderRadius.circular(8),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      teamName,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                    child: const Icon(
-                                      Icons.shield,
-                                      color: Color(0xFF20DF6C),
+                                    Text(
+                                      team.containsKey('temp_team_name')
+                                          ? "Unregistered"
+                                          : "Registered",
+                                      style: const TextStyle(
+                                        color: Color(0xFF95C6A9),
+                                        fontSize: 13,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          teamName,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        Text(
-                                          team.containsKey('temp_team_name')
-                                              ? "Unregistered"
-                                              : "Registered",
-                                          style: const TextStyle(
-                                            color: Color(0xFF95C6A9),
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Checkbox(
-                                    value: isSelected,
-                                    onChanged: (val) {
-                                      setState(() {
-                                        team["selected"] = val ?? false;
-                                      });
-                                    },
-                                    activeColor: const Color(0xFF20DF6C),
-                                    side: const BorderSide(
-                                      color: Color(0xFF366348),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
+                              Checkbox(
+                                value: isSelected,
+                                onChanged: (val) {
+                                  setState(() {
+                                    team["selected"] = val ?? false;
+                                  });
+                                },
+                                activeColor: const Color(0xFF20DF6C),
+                                side: const BorderSide(
+                                  color: Color(0xFF366348),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -569,7 +567,9 @@ class _RegisterTeamsScreenState extends State<RegisterTeamsScreen> {
               ),
               minimumSize: const Size.fromHeight(56),
             ),
-            onPressed: selectedCount >= 2 && !_loading ? _addSelectedTeams : null,
+            onPressed: selectedCount >= 2 && !_loading
+                ? _addSelectedTeams
+                : null,
             child: _loading
                 ? const SizedBox(
                     height: 24,

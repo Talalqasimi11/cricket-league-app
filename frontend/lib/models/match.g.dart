@@ -1,6 +1,10 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
 part of 'match.dart';
 
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// **************************************************************************
+// TypeAdapterGenerator
+// **************************************************************************
 
 class MatchAdapter extends TypeAdapter<Match> {
   @override

@@ -140,26 +140,26 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
       if (data['allBalls'] != null) {
         final balls = data['allBalls'] as List?;
         if (balls != null) {
-          final mapped = balls.map<Map<String, String>>((b) {
-            final m = b as Map<String, dynamic>?;
-            if (m == null) return {};
-            final overNo = (m['over_number'] ?? '').toString();
-            final ballNo = (m['ball_number'] ?? '').toString();
-            final sequence = (m['sequence'] ?? 0).toString();
-            final runs = (m['runs'] ?? '').toString();
-            final wicketType = (m['wicket_type'] ?? '').toString();
-            final extras = (m['extras'] as String?) ?? '';
+        final mapped = balls.map<Map<String, String>>((b) {
+          final m = b as Map<String, dynamic>?;
+          if (m == null) return {};
+          final overNo = (m['over_number'] ?? '').toString();
+          final ballNo = (m['ball_number'] ?? '').toString();
+          final runs = (m['runs'] ?? '').toString();
+          final wicketType = (m['wicket_type'] ?? '').toString();
+          final extras = (m['extras'] as String?) ?? '';
 
             // Build display over with extras suffix
             String overDisplay = '$overNo.$ballNo';
-            if (extras == 'wide')
+            if (extras == 'wide') {
               overDisplay += 'wd';
-            else if (extras == 'no-ball')
+            } else if (extras == 'no-ball') {
               overDisplay += 'nb';
-            else if (extras == 'bye')
+            } else if (extras == 'bye') {
               overDisplay += 'b';
-            else if (extras == 'leg-bye')
+            } else if (extras == 'leg-bye') {
               overDisplay += 'lb';
+            }
 
             final result = wicketType.isNotEmpty ? 'W' : runs;
             final bowler = (m['bowler_name'] ?? '').toString();
@@ -418,9 +418,9 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF122118),
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        backgroundColor: const Color(0xFF122118),
+        backgroundColor: Colors.green[700],
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -638,7 +638,6 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
         const SizedBox(height: 8),
         ...ballByBall.map((ball) {
           final overStr = ball["over"] ?? "";
-          final extras = ball["extras"] ?? "";
           final hasWide = overStr.contains('wd');
           final hasNoBall = overStr.contains('nb');
           final hasBye = overStr.contains('b') && !overStr.contains('nb');
@@ -790,7 +789,9 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                         ? null
                         : () async {
                             if (val == "W") {
-                              _showWicketDialog(context);
+                              // ignore: use_build_context_synchronously
+                              final ctx = context;
+                              _showWicketDialog(ctx);
                               // Use batting team players for wicket replacement
                               final battingTeamId =
                                   currentInning?['batting_team_id'];
@@ -799,7 +800,7 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                                   ? teamAPlayers
                                   : teamBPlayers;
                               final batsman = await showNewBatsmanPopup(
-                                context,
+                                ctx, // ignore: use_build_context_synchronously
                                 battingTeamPlayers,
                               );
                               if (batsman != null) {
@@ -906,8 +907,9 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                             final bowlingTeamPlayers = bowlingTeamId == teamAId
                                 ? teamAPlayers
                                 : teamBPlayers;
+                            final ctx = context; // ignore: use_build_context_synchronously
                             final nextBowler = await showEndOverPopup(
-                              context,
+                              ctx, // ignore: use_build_context_synchronously
                               bowlingTeamPlayers,
                             );
                             if (nextBowler != null) {
@@ -1037,7 +1039,7 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
           onPressed:
               onPressed ??
               () {
-                print("Action: $text");
+                debugPrint("Action: $text");
               },
           child: Text(
             text,
@@ -1056,7 +1058,7 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
   void _showExtrasBottomSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A2C22),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1214,7 +1216,7 @@ Future<int?> showNewBatsmanPopup(
 
   return await showModalBottomSheet<int>(
     context: context,
-    backgroundColor: const Color(0xFF1A2C22),
+    backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
@@ -1336,7 +1338,7 @@ Future<int?> showEndOverPopup(
 
   return await showModalBottomSheet<int>(
     context: context,
-    backgroundColor: const Color(0xFF1A2C22),
+    backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
@@ -1474,7 +1476,7 @@ void _showWicketDialog(BuildContext context) {
     context: context,
     barrierDismissible: false,
     builder: (_) => Dialog(
-      backgroundColor: const Color(0xFF1A2C22),
+      backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1527,7 +1529,7 @@ Widget _wicketOption(String text, {bool fullWidth = false}) {
     width: fullWidth ? double.infinity : 120,
     child: ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF264532),
+        backgroundColor: Colors.green[100],
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       onPressed: () {

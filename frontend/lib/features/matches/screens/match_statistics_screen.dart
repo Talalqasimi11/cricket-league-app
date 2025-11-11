@@ -19,7 +19,11 @@ class MatchStatisticsScreen extends StatelessWidget {
   });
 
   // ✅ Builds a styled data table
-  Widget _buildTable(String title, List<String> headers, List<List<String>> rows) {
+  Widget _buildTable(
+    String title,
+    List<String> headers,
+    List<List<String>> rows,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -42,7 +46,10 @@ class MatchStatisticsScreen extends StatelessWidget {
                 .map(
                   (row) => DataRow(
                     cells: row
-                        .map((cell) => DataCell(Center(child: Text(cell.toString()))))
+                        .map(
+                          (cell) =>
+                              DataCell(Center(child: Text(cell.toString()))),
+                        )
                         .toList(),
                   ),
                 )
@@ -57,9 +64,9 @@ class MatchStatisticsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF122118),
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        backgroundColor: const Color(0xFF122118),
+        backgroundColor: Colors.green[700],
         title: const Text(
           "Match Statistics",
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -137,7 +144,11 @@ class MatchStatisticsScreen extends StatelessWidget {
   }
 
   // ✅ Team stats card builder
-  Widget _teamStatsCard(String teamName, List<List<String>> batting, List<List<String>> bowling) {
+  Widget _teamStatsCard(
+    String teamName,
+    List<List<String>> batting,
+    List<List<String>> bowling,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -149,11 +160,29 @@ class MatchStatisticsScreen extends StatelessWidget {
         children: [
           Text(
             teamName,
-            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 12),
-          _buildTable("Batting", ["Player", "R", "B", "4s", "6s", "SR"], batting),
-          _buildTable("Bowling", ["Player", "O", "M", "R", "W", "Econ"], bowling),
+          _buildTable("Batting", [
+            "Player",
+            "R",
+            "B",
+            "4s",
+            "6s",
+            "SR",
+          ], batting),
+          _buildTable("Bowling", [
+            "Player",
+            "O",
+            "M",
+            "R",
+            "W",
+            "Econ",
+          ], bowling),
         ],
       ),
     );

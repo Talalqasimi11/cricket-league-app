@@ -9,6 +9,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/player.dart';
 import 'player_dashboard_screen.dart';
+import '../../../widgets/image_upload_widget.dart';
 
 class TeamDashboardScreen extends StatefulWidget {
   final int? teamId;
@@ -69,24 +70,25 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   }
 
   void _startConnectivityMonitoring() {
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
-      (List<ConnectivityResult> results) {
-        final isConnected = results.contains(ConnectivityResult.mobile) ||
-            results.contains(ConnectivityResult.wifi) ||
-            results.contains(ConnectivityResult.ethernet);
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      List<ConnectivityResult> results,
+    ) {
+      final isConnected =
+          results.contains(ConnectivityResult.mobile) ||
+          results.contains(ConnectivityResult.wifi) ||
+          results.contains(ConnectivityResult.ethernet);
 
-        if (mounted) {
-          setState(() {
-            _isOffline = !isConnected;
-          });
+      if (mounted) {
+        setState(() {
+          _isOffline = !isConnected;
+        });
 
-          if (isConnected && _isOffline) {
-            _retryCount = 0;
-            _fetchTeamDetails();
-          }
+        if (isConnected && _isOffline) {
+          _retryCount = 0;
+          _fetchTeamDetails();
         }
-      },
-    );
+      }
+    });
   }
 
   Future<void> _loadFromCacheAndFetch() async {
@@ -112,7 +114,8 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                 cachedTeamData['team_location']?.toString() ?? teamLocation;
             trophies =
                 (cachedTeamData['trophies'] as num?)?.toInt() ?? trophies;
-            captainPlayerId = (cachedTeamData['captain_player_id'] as num?)?.toInt();
+            captainPlayerId = (cachedTeamData['captain_player_id'] as num?)
+                ?.toInt();
             viceCaptainPlayerId =
                 (cachedTeamData['vice_captain_player_id'] as num?)?.toInt();
           });
@@ -167,9 +170,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         }
 
         final teamDataToCache = Map<String, dynamic>.from(data);
-        teamDataToCache.remove(
-          'players',
-        ); 
+        teamDataToCache.remove('players');
         await cacheService.cacheTeamData(teamDataToCache);
 
         _retryCount = 0;
@@ -420,29 +421,25 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF122118),
+      backgroundColor: Colors.grey[50],
       body: Column(
         children: [
           if (_isOffline)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              color: Colors.orange.shade800, 
+              color: Colors.orange.shade800,
               child: Row(
                 children: [
-                  Icon(
-                    Icons.wifi_off,
-                    color: Colors.white,
-                    size: 20,
-                  ), 
+                  Icon(Icons.wifi_off, color: Colors.white, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'You are offline. Showing cached data. Will sync when connection is restored.',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16, 
-                        fontWeight: FontWeight.w600, 
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -453,14 +450,14 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              color: Colors.blue.shade800, 
+              color: Colors.blue.shade800,
               child: const Row(
                 children: [
                   SizedBox(
-                    width: 18, 
+                    width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
-                      strokeWidth: 2.5, 
+                      strokeWidth: 2.5,
                       valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   ),
@@ -471,23 +468,23 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                       color: Colors.white,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                    ), 
+                    ),
                   ),
                 ],
               ),
             ),
           Expanded(
             child: Scaffold(
-              backgroundColor: const Color(0xFF122118),
+              backgroundColor: Colors.grey[50],
               appBar: AppBar(
-                backgroundColor: const Color(0xFF122118),
+                backgroundColor: Colors.grey[50],
                 elevation: 0,
                 title: Text(
                   teamName,
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
-                    fontSize: 20, 
+                    fontSize: 20,
                   ),
                 ),
                 centerTitle: true,
@@ -496,9 +493,9 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                     Icons.arrow_back,
                     color: Colors.white,
                     size: 24,
-                  ), 
+                  ),
                   onPressed: () => Navigator.pop(context),
-                  tooltip: 'Go back', 
+                  tooltip: 'Go back',
                 ),
               ),
               body: _isLoading && players.isEmpty
@@ -532,7 +529,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           color: Colors.grey.shade800,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -546,7 +543,8 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                 ? CachedNetworkImage(
                     imageUrl: teamLogoUrl,
                     fit: BoxFit.cover,
-                    placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                    placeholder: (context, url) =>
+                        const Center(child: CircularProgressIndicator()),
                     errorWidget: (context, url, error) => const Center(
                       child: Icon(
                         Icons.shield,
@@ -556,11 +554,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                     ),
                   )
                 : const Center(
-                    child: Icon(
-                      Icons.shield,
-                      color: Colors.white54,
-                      size: 60,
-                    ),
+                    child: Icon(Icons.shield, color: Colors.white54, size: 60),
                   ),
           ),
         ),
@@ -578,11 +572,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.emoji_events,
-            color: Colors.amber.shade400,
-            size: 20,
-          ),
+          Icon(Icons.emoji_events, color: Colors.amber.shade400, size: 20),
           const SizedBox(width: 8),
           Text(
             "$trophies ${trophies == 1 ? 'Trophy' : 'Trophies'}",
@@ -599,11 +589,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.location_on,
-              color: Colors.grey.shade400,
-              size: 18,
-            ),
+            Icon(Icons.location_on, color: Colors.grey.shade400, size: 18),
             const SizedBox(width: 4),
             Text(
               teamLocation,
@@ -624,16 +610,12 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.people_outline,
-                size: 64,
-                color: Colors.grey.shade400, 
-              ),
+              Icon(Icons.people_outline, size: 64, color: Colors.grey.shade400),
               const SizedBox(height: 16),
               Text(
                 "No players in this team yet.",
                 style: TextStyle(
-                  color: Colors.grey.shade300, 
+                  color: Colors.grey.shade300,
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
                 ),
@@ -650,32 +632,26 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
             return Card(
               color: const Color(0xFF1A2C22),
               margin: const EdgeInsets.only(bottom: 10),
-              elevation: 2, 
+              elevation: 2,
               child: ListTile(
                 leading: CircleAvatar(
-                  radius: 26, 
-                  backgroundColor: const Color(
-                    0xFF2D4A3A,
-                  ), 
-                  child: Icon(
-                    Icons.person,
-                    color: Colors.white,
-                    size: 24, 
-                  ),
+                  radius: 26,
+                  backgroundColor: const Color(0xFF2D4A3A),
+                  child: Icon(Icons.person, color: Colors.white, size: 24),
                 ),
                 title: Text(
                   player.playerName,
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
-                    fontSize: 16, 
+                    fontSize: 16,
                   ),
                 ),
                 subtitle: Text(
                   "${player.playerRole}\nRuns: ${player.runs} | Avg: ${player.battingAverage.toStringAsFixed(1)}",
                   style: const TextStyle(
-                    color: Color(0xFFB8E6C1), 
-                    fontSize: 14, 
+                    color: Color(0xFFB8E6C1),
+                    fontSize: 14,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
@@ -689,8 +665,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                             fontSize: 12,
                           ),
                         ),
-                        backgroundColor:
-                            Colors.amber.shade700, 
+                        backgroundColor: Colors.amber.shade700,
                       )
                     : isViceCaptain
                     ? Chip(
@@ -702,8 +677,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                             fontSize: 12,
                           ),
                         ),
-                        backgroundColor:
-                            Colors.blue.shade700, 
+                        backgroundColor: Colors.blue.shade700,
                       )
                     : null,
                 onTap: () async {
@@ -737,19 +711,19 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                   padding: const EdgeInsets.symmetric(
                     vertical: 14,
                     horizontal: 16,
-                  ), 
-                  elevation: 2, 
+                  ),
+                  elevation: 2,
                 ),
                 icon: const Icon(
                   Icons.person_add,
                   color: Colors.white,
                   size: 20,
-                ), 
+                ),
                 label: const Text(
                   "Add Player",
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 16, 
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -764,19 +738,15 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                   padding: const EdgeInsets.symmetric(
                     vertical: 14,
                     horizontal: 16,
-                  ), 
-                  elevation: 2, 
+                  ),
+                  elevation: 2,
                 ),
-                icon: const Icon(
-                  Icons.edit,
-                  color: Colors.white,
-                  size: 20,
-                ), 
+                icon: const Icon(Icons.edit, color: Colors.white, size: 20),
                 label: const Text(
                   "Edit Team",
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 16, 
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -788,16 +758,13 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
         const SizedBox(height: 10),
         TextButton.icon(
           style: TextButton.styleFrom(
-            foregroundColor: Colors.red.shade600, 
+            foregroundColor: Colors.red.shade600,
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
           ),
-          icon: const Icon(Icons.delete, size: 20), 
+          icon: const Icon(Icons.delete, size: 20),
           label: const Text(
             "Delete Team",
-            style: TextStyle(
-              fontSize: 16, 
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           onPressed: _deleteTeam,
         ),
@@ -888,7 +855,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
     final nameController = TextEditingController(text: teamName);
     final locationController = TextEditingController(text: teamLocation);
     final logoController = TextEditingController(text: teamLogoUrl);
-    
+
     void disposeControllers() {
       nameController.dispose();
       locationController.dispose();
@@ -937,137 +904,138 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setState) {
-          return WillPopScope(
-            onWillPop: () async {
-              disposeControllers();
-              return true;
-            },
-            child: AlertDialog(
-              title: const Text(
-                "Edit Team",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              content: SingleChildScrollView(
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: "Team Name",
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Team name is required';
-                          }
-                          if (value.trim().length < 3) {
-                            return 'Team name must be at least 3 characters';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: locationController,
-                        decoration: const InputDecoration(
-                          labelText: "Team Location",
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Team location is required';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: logoController,
-                        decoration: const InputDecoration(
-                          labelText: "Team Logo URL",
-                          border: OutlineInputBorder(),
-                          helperText: 'Leave empty to remove logo',
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return null;
-                          }
-                          try {
-                            final uri = Uri.parse(value);
-                            if (!uri.hasScheme || !uri.hasAuthority) {
-                              return 'Please enter a valid URL';
-                            }
-                          } catch (_) {
-                            return 'Please enter a valid URL';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<int>(
-                        initialValue: tempCaptainId,
-                        decoration: const InputDecoration(
-                          labelText: "Captain",
-                          border: OutlineInputBorder(),
-                        ),
-                        items: players
-                            .map(
-                              (p) => DropdownMenuItem<int>(
-                                value: p.id,
-                                child: Text(p.playerName),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(() => tempCaptainId = v),
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<int>(
-                        initialValue: tempViceCaptainId,
-                        decoration: const InputDecoration(
-                          labelText: "Vice Captain",
-                          border: OutlineInputBorder(),
-                        ),
-                        items: players
-                            .map(
-                              (p) => DropdownMenuItem<int>(
-                                value: p.id,
-                                child: Text(p.playerName),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(() => tempViceCaptainId = v),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: onCancel,
-                  child: const Text(
-                    "Cancel",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
+      return PopScope(
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) {
+            disposeControllers();
+          }
+        },
+        child: AlertDialog(
+          title: const Text(
+            "Edit Team",
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: "Team Name",
+                      border: OutlineInputBorder(),
                     ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Team name is required';
+                      }
+                      if (value.trim().length < 3) {
+                        return 'Team name must be at least 3 characters';
+                      }
+                      return null;
+                    },
                   ),
-                  onPressed: onSubmit,
-                  child: const Text(
-                    "Save",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: locationController,
+                    decoration: const InputDecoration(
+                      labelText: "Team Location",
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Team location is required';
+                      }
+                      return null;
+                    },
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  // Team Logo Upload Widget
+                  if (widget.teamId != null)
+                    ImageUploadWidget(
+                      title: 'Team Logo',
+                      uploadType: 'team',
+                      entityId: widget.teamId!,
+                      initialImageUrl: teamLogoUrl.isNotEmpty
+                          ? teamLogoUrl
+                          : null,
+                      onSuccess: (imageUrl) {
+                        setState(() {
+                          teamLogoUrl = imageUrl;
+                          logoController.text = imageUrl;
+                        });
+                      },
+                      onDelete: () {
+                        setState(() {
+                          teamLogoUrl = '';
+                          logoController.text = '';
+                        });
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<int>(
+                    initialValue: tempCaptainId,
+                    decoration: const InputDecoration(
+                      labelText: "Captain",
+                      border: OutlineInputBorder(),
+                    ),
+                    items: players
+                        .map(
+                          (p) => DropdownMenuItem<int>(
+                            value: p.id,
+                            child: Text(p.playerName),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() => tempCaptainId = v),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<int>(
+                    initialValue: tempViceCaptainId,
+                    decoration: const InputDecoration(
+                      labelText: "Vice Captain",
+                      border: OutlineInputBorder(),
+                    ),
+                    items: players
+                        .map(
+                          (p) => DropdownMenuItem<int>(
+                            value: p.id,
+                            child: Text(p.playerName),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() => tempViceCaptainId = v),
+                  ),
+                ],
+              ),
             ),
-          );
+          ),
+          actions: [
+            TextButton(
+              onPressed: onCancel,
+              child: const Text(
+                "Cancel",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+              onPressed: onSubmit,
+              child: const Text(
+                "Save",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      );
         },
       ),
     );

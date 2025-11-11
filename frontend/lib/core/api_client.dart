@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:http/browser_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform, debugPrint, kIsWeb, kDebugMode;
+    show defaultTargetPlatform, TargetPlatform, debugPrint, kDebugMode;
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'error_handler.dart';
 
 class _QueuedRequest {
@@ -832,79 +830,33 @@ class ApiClient {
     // try refresh
     final baseUrl = await _getBaseUrl();
 
-    // Detect platform and use appropriate refresh method
-    if (kIsWeb) {
-      // Web platform: use cookie-based refresh with CSRF support
-      final csrfToken = await _getCsrfToken();
-      final webClient = BrowserClient()..withCredentials = true;
+    // Mobile platform: use body-based refresh
+    final rt = await refreshToken;
+    if (rt == null || rt.isEmpty) return first;
 
+    final refreshResp = await _client.post(
+      Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'refresh_token': rt}),
+    );
+
+    if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
       try {
-        final refreshResp = await webClient.post(
-          Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
-          headers: {
-            'Content-Type': 'application/json',
-            if (csrfToken != null) 'X-CSRF-Token': csrfToken,
-          },
-        );
+        final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
+        final newAccess = data['token']?.toString();
+        final newRefresh = data['refresh_token']?.toString();
 
-        if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
-          try {
-            final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
-            final newAccess = data['token']?.toString();
-
-            if (newAccess != null && newAccess.isNotEmpty) {
-              await setToken(newAccess);
-              return await fn();
-            }
-          } catch (_) {}
-        }
-      } finally {
-        webClient.close();
-      }
-    } else {
-      // Mobile platform: use body-based refresh
-      final rt = await refreshToken;
-      if (rt == null || rt.isEmpty) return first;
-
-      final refreshResp = await _client.post(
-        Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'refresh_token': rt}),
-      );
-
-      if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
-        try {
-          final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
-          final newAccess = data['token']?.toString();
-          final newRefresh = data['refresh_token']?.toString();
-
-          if (newAccess != null && newAccess.isNotEmpty) {
-            await setToken(newAccess);
-            if (newRefresh != null && newRefresh.isNotEmpty) {
-              await setRefreshToken(newRefresh);
-            }
-            return await fn();
+        if (newAccess != null && newAccess.isNotEmpty) {
+          await setToken(newAccess);
+          if (newRefresh != null && newRefresh.isNotEmpty) {
+            await setRefreshToken(newRefresh);
           }
-        } catch (_) {}
-      }
+          return await fn();
+        }
+      } catch (_) {}
     }
     return first;
   }
 
-  // Helper method to get CSRF token for web platform
-  Future<String?> _getCsrfToken() async {
-    try {
-      final baseUrl = await _getBaseUrl();
-      final response = await _client.get(
-        Uri.parse(_joinUrl(baseUrl, '/api/auth/csrf')),
-        headers: {'Content-Type': 'application/json'},
-      );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data['csrf_token']?.toString();
-      }
-    } catch (_) {}
-    return null;
-  }
 }

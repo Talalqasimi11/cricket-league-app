@@ -187,7 +187,7 @@ class CacheEntry<T> {
 
   factory CacheEntry.fromJson(Map<String, dynamic> json) {
     final value = json['value'];
-    final type = json['type'] as String;
+    // Removed unused variable 'type'
 
     // Handle basic types
     T typedValue;

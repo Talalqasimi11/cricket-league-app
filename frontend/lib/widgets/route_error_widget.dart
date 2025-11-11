@@ -86,7 +86,7 @@ class RouteErrorWidget extends StatelessWidget {
               Text(
                 error,
                 style: theme.textTheme.bodyLarge?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -100,14 +100,14 @@ class RouteErrorWidget extends StatelessWidget {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     'Route: $routeName',
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontFamily: 'monospace',
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ),
@@ -166,7 +166,7 @@ class RouteErrorWidget extends StatelessWidget {
               Text(
                 'If this problem persists, please contact support',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.5),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                   fontStyle: FontStyle.italic,
                 ),
                 textAlign: TextAlign.center,

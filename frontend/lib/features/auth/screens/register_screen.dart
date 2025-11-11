@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../core/api_client.dart';
-import '../../../core/error_handler.dart';
+import '../../../core/error_dialog.dart';
+import '../../../core/theme/theme_config.dart';
+
+import '../../../widgets/custom_button.dart';
 import 'dart:convert';
 
 class RegisterScreen extends StatefulWidget {
@@ -17,9 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       TextEditingController();
   final TextEditingController _teamNameController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
-  final TextEditingController _otpController = TextEditingController();
 
-  bool _isOtpSent = false;
   bool _isLoading = false;
   String? _errorMessage;
   final _formKey = GlobalKey<FormState>();
@@ -63,12 +64,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (value.length < 8) {
       return 'Password must be at least 8 characters';
     }
-    if (!RegExp(r'[A-Z]').hasMatch(value)) {
-      return 'Password must contain uppercase letter';
-    }
-    if (!RegExp(r'[0-9]').hasMatch(value)) {
-      return 'Password must contain a number';
-    }
+  
     return null;
   }
 
@@ -91,47 +87,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return null;
   }
 
-  /// Send OTP to phone number
-  Future<void> _sendOtp() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final phone = _formatPhoneNumber(_phoneController.text.trim());
-      final response = await ApiClient.instance.post(
-        '/api/auth/send-otp',
-        body: {'phone_number': phone},
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        setState(() => _isOtpSent = true);
-        ErrorHandler.showSuccessSnackBar(context, 'OTP sent to your phone');
-      } else {
-        throw Exception('Failed to send OTP');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _errorMessage = e.toString());
-      ErrorHandler.showErrorSnackBar(context, e);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
   /// Register user after verifying OTP
   void _register() async {
     if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    if (_otpController.text.isEmpty) {
-      setState(() => _errorMessage = 'Please enter OTP');
       return;
     }
 
@@ -147,7 +105,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         body: {
           'phone_number': phone,
           'password': _passwordController.text,
-          'otp': _otpController.text,
           'team_name': _teamNameController.text,
           'location': _locationController.text,
         },
@@ -158,9 +115,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        ErrorHandler.showSuccessSnackBar(
+        ErrorDialog.showSuccessSnackBar(
           context,
-          data['message'] ?? 'Registration successful',
+          message: data['message'] ?? 'Registration successful',
         );
         // Navigate to login and update auth provider
         if (!mounted) return;
@@ -171,7 +128,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _errorMessage = e.toString());
-      ErrorHandler.showErrorSnackBar(context, e);
+      ErrorDialog.showErrorSnackBar(context, message: e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -184,19 +141,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _confirmPasswordController.dispose();
     _teamNameController.dispose();
     _locationController.dispose();
-    _otpController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FBFA),
+      backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
-        title: const Text('Register'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 1,
+        title: Text(
+          'Register',
+          style: AppTypographyExtended.headlineSmall.copyWith(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -210,13 +173,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade100,
+                    color: theme.colorScheme.errorContainer,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade300),
+                    border: Border.all(color: theme.colorScheme.error),
                   ),
                   child: Text(
                     _errorMessage!,
-                    style: TextStyle(color: Colors.red.shade900, fontSize: 14),
+                    style: AppTypographyExtended.bodyMedium.copyWith(
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
                   ),
                 ),
 
@@ -225,7 +190,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
                 validator: _validatePhoneNumber,
-                enabled: !_isOtpSent,
                 decoration: _inputDecoration(
                   'Phone Number (03XX-XXXXXXX)',
                   Icons.phone,
@@ -238,7 +202,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 controller: _passwordController,
                 obscureText: true,
                 validator: _validatePassword,
-                enabled: !_isOtpSent,
                 decoration: _inputDecoration(
                   'Password (min 8 chars, 1 uppercase, 1 number)',
                   Icons.lock,
@@ -246,8 +209,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Password must contain: at least 8 characters, one uppercase letter, and one number',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                'Password must contain: at least 8 characters',
+                style: AppTypographyExtended.bodySmall.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
               ),
               const SizedBox(height: 16),
 
@@ -256,7 +221,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 controller: _confirmPasswordController,
                 obscureText: true,
                 validator: _validatePasswordMatch,
-                enabled: !_isOtpSent,
                 decoration: _inputDecoration(
                   'Confirm Password',
                   Icons.lock_outline,
@@ -279,71 +243,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Send OTP or OTP verification
-              if (!_isOtpSent)
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _sendOtp,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF15803D),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text(
-                            'Send OTP',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
-                )
-              else ...[
-                // OTP verification
-                TextFormField(
-                  controller: _otpController,
-                  keyboardType: TextInputType.number,
-                  decoration: _inputDecoration(
-                    'Enter OTP sent to your phone',
-                    Icons.verified,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _register,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF15803D),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text(
-                            'Complete Registration',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton(
-                  onPressed: () => setState(() => _isOtpSent = false),
-                  child: const Text('Change Phone Number'),
-                ),
-              ],
+              PrimaryButton(
+                text: "Register",
+                onPressed: _register,
+                isLoading: _isLoading,
+                fullWidth: true,
+                size: ButtonSize.large,
+              )
             ],
           ),
         ),
@@ -353,23 +259,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   /// Reusable input decoration
   InputDecoration _inputDecoration(String hint, IconData icon) {
+    final theme = Theme.of(context);
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Colors.grey),
-      prefixIcon: Icon(icon, color: Colors.grey.shade600),
+      hintStyle: TextStyle(
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+      ),
+      prefixIcon: Icon(
+        icon,
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+      ),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: theme.colorScheme.surfaceContainerHighest,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+        borderSide: BorderSide(color: theme.colorScheme.outline),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+        borderSide: BorderSide(color: theme.colorScheme.outline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.green.shade600, width: 2),
+        borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
       ),
     );
   }

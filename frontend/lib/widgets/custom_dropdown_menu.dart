@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/theme/theme_config.dart';
-import '../core/theme/theme_extensions.dart';
+
 
 /// A custom dropdown menu with modern UI/UX characteristics
 class CustomDropdownMenu extends StatelessWidget {
@@ -32,16 +32,17 @@ class CustomDropdownMenu extends StatelessWidget {
         color: theme.colorScheme.surface,
         borderRadius: borderRadius ?? BorderRadius.circular(AppBorderRadius.lg),
         border: Border.all(
-          color: theme.colorScheme.outline.withOpacity(0.2),
+          color: theme.colorScheme.outline.withValues(alpha: 51),
           width: 1,
         ),
         boxShadow: [
-          shadow ?? const BoxShadow(
-            color: Color(0x11000000),
-            blurRadius: 8,
-            offset: Offset(0, 4),
-            spreadRadius: 0,
-          ),
+          shadow ??
+              const BoxShadow(
+                color: Color(0x11000000),
+                blurRadius: 8,
+                offset: Offset(0, 4),
+                spreadRadius: 0,
+              ),
         ],
       ),
       child: ClipRRect(
@@ -50,10 +51,7 @@ class CustomDropdownMenu extends StatelessWidget {
           color: Colors.transparent,
           child: Padding(
             padding: padding ?? const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: items,
-            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: items),
           ),
         ),
       ),
@@ -91,7 +89,6 @@ class CustomDropdownMenuItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -100,7 +97,7 @@ class CustomDropdownMenuItem extends StatelessWidget {
           Container(
             height: 1,
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            color: theme.colorScheme.outline.withOpacity(0.2),
+            color: theme.colorScheme.outline.withValues(alpha: 51),
           ),
         Material(
           color: Colors.transparent,
@@ -108,19 +105,14 @@ class CustomDropdownMenuItem extends StatelessWidget {
             onTap: enabled ? onTap : null,
             borderRadius: BorderRadius.circular(AppBorderRadius.md),
             child: Container(
-              padding: padding ?? const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
+              padding:
+                  padding ??
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   // Icon with proper sizing and color
                   if (customIcon != null) ...[
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: customIcon,
-                    ),
+                    SizedBox(width: 20, height: 20, child: customIcon),
                   ] else if (icon != null) ...[
                     Icon(
                       icon,
@@ -137,12 +129,14 @@ class CustomDropdownMenuItem extends StatelessWidget {
                   Expanded(
                     child: Text(
                       label,
-                      style: textStyle ?? AppTypographyExtended.bodyLarge.copyWith(
-                        color: enabled
-                            ? (textColor ?? theme.colorScheme.onSurface)
-                            : theme.colorScheme.onSurface.withOpacity(0.5),
-                        fontWeight: FontWeight.w500,
-                      ),
+                      style:
+                          textStyle ??
+                          AppTypographyExtended.bodyLarge.copyWith(
+                            color: enabled
+                                ? (textColor ?? theme.colorScheme.onSurface)
+                                : theme.colorScheme.onSurface.withValues(alpha: 128),
+                            fontWeight: FontWeight.w500,
+                          ),
                     ),
                   ),
 
@@ -151,7 +145,7 @@ class CustomDropdownMenuItem extends StatelessWidget {
                     Icon(
                       Icons.chevron_right,
                       size: 16,
-                      color: theme.colorScheme.onSurface.withOpacity(0.4),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 102),
                     ),
                 ],
               ),
@@ -186,11 +180,15 @@ class CustomDropdownOverlay extends StatelessWidget {
     VoidCallback? onDismiss,
   }) {
     final RenderBox button = context.findRenderObject() as RenderBox;
-    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
     final RelativeRect position = RelativeRect.fromRect(
       Rect.fromPoints(
         button.localToGlobal(offset, ancestor: overlay),
-        button.localToGlobal(button.size.bottomRight(Offset.zero) + offset, ancestor: overlay),
+        button.localToGlobal(
+          button.size.bottomRight(Offset.zero) + offset,
+          ancestor: overlay,
+        ),
       ),
       Offset.zero & overlay.size,
     );
@@ -203,12 +201,7 @@ class CustomDropdownOverlay extends StatelessWidget {
       ),
       elevation: 0,
       color: Colors.transparent,
-      items: [
-        PopupMenuItem(
-          enabled: false,
-          child: Builder(builder: builder),
-        ),
-      ],
+      items: [PopupMenuItem(enabled: false, child: Builder(builder: builder))],
     ).then((value) {
       onDismiss?.call();
       return value;
@@ -245,7 +238,6 @@ class AppMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return CustomDropdownMenu(
       width: 320, // Wider for buttons
@@ -295,16 +287,10 @@ class AppMenu extends StatelessWidget {
           ),
         ],
 
-
-
         // Support section with divider
         Container(
           margin: const EdgeInsets.symmetric(vertical: 8),
-          child: const Divider(
-            height: 1,
-            indent: 16,
-            endIndent: 16,
-          ),
+          child: const Divider(height: 1, indent: 16, endIndent: 16),
         ),
 
         // Support menu items

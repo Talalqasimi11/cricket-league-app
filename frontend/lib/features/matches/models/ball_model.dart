@@ -43,6 +43,7 @@
 /// final json = ball.toJson();  // Validated and ready to send to backend
 /// ```
 /// The backend validates the contract and persists the data.
+library;
 
 class Ball {
   final int id;

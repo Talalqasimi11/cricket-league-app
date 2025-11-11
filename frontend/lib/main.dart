@@ -10,6 +10,12 @@ import 'screens/home/home_screen.dart';
 import 'package:provider/provider.dart';
 import 'core/api_client.dart';
 import 'core/auth_provider.dart';
+import 'features/tournaments/providers/tournament_provider.dart';
+import 'features/matches/providers/live_match_provider.dart';
+import 'core/database/hive_service.dart';
+import 'core/caching/cache_manager.dart';
+import 'core/offline/offline_manager.dart';
+import 'services/api_service.dart';
 import 'features/matches/screens/matches_screen.dart';
 import 'features/matches/screens/live_match_view_screen.dart';
 import 'features/matches/screens/scorecard_screen.dart';
@@ -90,21 +96,28 @@ class _AppBootstrapState extends State<AppBootstrap> {
   }
 
   Future<void> _initializeApp() async {
-    debugPrint('[AppBootstrap] Starting non-blocking app initialization');
+    debugPrint('[AppBootstrap] Starting app initialization');
 
     try {
-      // Set hardcoded ngrok URL for physical device communication
-      await ApiClient.instance.setCustomBaseUrl(
-        'https://foveolar-louetta-unradiant.ngrok-free.dev',
-      );
+      // Initialize core services
+      debugPrint('[AppBootstrap] Initializing HiveService...');
+      await HiveService().init();
+      debugPrint('[AppBootstrap] HiveService initialized');
+
+      debugPrint('[AppBootstrap] Initializing CacheManager...');
+      await CacheManager.instance.init();
+      debugPrint('[AppBootstrap] CacheManager initialized');
+
+      // Set custom base URL from environment variable or use platform default
+      const customUrl = String.fromEnvironment('API_BASE_URL');
+      if (customUrl.isNotEmpty) {
+        await ApiClient.instance.setCustomBaseUrl(customUrl);
+      }
 
       // Fire-and-forget ApiClient init (now non-blocking)
       ApiClient.instance.init();
 
       debugPrint('[AppBootstrap] ApiClient.init() called (not awaited)');
-
-      // No other initialization needed - everything runs in background
-      // Add other async initialization here if needed (all fire-and-forget)
 
       await Future.delayed(
         const Duration(milliseconds: 100),
@@ -115,17 +128,14 @@ class _AppBootstrapState extends State<AppBootstrap> {
         _isInitialized = true;
       });
       debugPrint(
-        '[AppBootstrap] _isInitialized set to true - splash screen will appear immediately',
+        '[AppBootstrap] All services initialized - splash screen will appear',
       );
     } catch (e) {
-      debugPrint(
-        '[AppBootstrap] App initialization error (should not block): $e',
-      );
-      // Even on error, proceed with _isInitialized = true to show splash
+      debugPrint('[AppBootstrap] App initialization error: $e');
       if (!mounted) return;
       setState(() {
+        _initError = e.toString();
         _isInitialized = true;
-        // Don't set _initError - we want splash to show regardless
       });
     }
   }
@@ -169,6 +179,8 @@ class _AppBootstrapState extends State<AppBootstrap> {
         // AuthProvider created normally. Its initialization which needs context
         // will be done inside AuthInitializer (after the first frame).
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => TournamentProvider()),
+        ChangeNotifierProvider(create: (_) => LiveMatchProvider()),
       ],
       child: const AuthInitializer(),
     );
@@ -185,6 +197,7 @@ class AuthInitializer extends StatefulWidget {
 class _AuthInitializerState extends State<AuthInitializer>
     with WidgetsBindingObserver {
   bool _authInitialized = false;
+  OfflineManager? _offlineManager;
 
   @override
   void initState() {
@@ -206,12 +219,14 @@ class _AuthInitializerState extends State<AuthInitializer>
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
 
-    // Clean up ApiClient resources
+    // Clean up resources
     try {
+      _offlineManager?.dispose();
       ApiClient.instance.dispose();
-      debugPrint('[AuthInitializer] ApiClient disposed successfully');
+      HiveService().dispose();
+      debugPrint('[AuthInitializer] Resources disposed successfully');
     } catch (e) {
-      debugPrint('[AuthInitializer] Error disposing ApiClient: $e');
+      debugPrint('[AuthInitializer] Error disposing resources: $e');
     }
 
     super.dispose();
@@ -252,6 +267,32 @@ class _AuthInitializerState extends State<AuthInitializer>
       // this method to subscribe the initState to changes.
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.initializeAuth();
+
+      // Initialize offline manager after auth
+      try {
+        final apiService = ApiService();
+        _offlineManager = OfflineManager(
+          hiveService: HiveService(),
+          apiService: apiService,
+        );
+        await _offlineManager!.init();
+        debugPrint('[AuthInitializer] OfflineManager initialized');
+
+        // Listen to online status changes
+        _offlineManager!.onlineStatus.listen((isOnline) {
+          debugPrint('[OfflineManager] Online status: $isOnline');
+        });
+
+        // Listen to pending operations count
+        _offlineManager!.pendingOperationsCount.listen((count) {
+          debugPrint('[OfflineManager] Pending operations: $count');
+        });
+      } catch (e) {
+        debugPrint(
+          '[AuthInitializer] OfflineManager initialization failed: $e',
+        );
+      }
+
       setState(() {
         _authInitialized = true;
       });

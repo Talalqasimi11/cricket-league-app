@@ -32,9 +32,9 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        backgroundColor: const Color(0xFF121212),
+        backgroundColor: Colors.green[700],
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
@@ -259,7 +259,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   Widget _lineupButton(String text, String teamName) {
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF2C4A44),
+        backgroundColor: Colors.green[700],
         minimumSize: const Size(double.infinity, 56),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),

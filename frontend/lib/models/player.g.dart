@@ -1,6 +1,10 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
 part of 'player.dart';
 
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// **************************************************************************
+// TypeAdapterGenerator
+// **************************************************************************
 
 class PlayerAdapter extends TypeAdapter<Player> {
   @override

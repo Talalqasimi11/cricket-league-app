@@ -4,20 +4,9 @@ import '../core/icons.dart';
 
 /// Enhanced button system for the Cricket League app
 /// Provides consistent styling, animations, and loading states
-enum ButtonVariant {
-  primary,
-  secondary,
-  success,
-  danger,
-  outline,
-  ghost,
-}
+enum ButtonVariant { primary, secondary, success, danger, outline, ghost }
 
-enum ButtonSize {
-  small,
-  medium,
-  large,
-}
+enum ButtonSize { small, medium, large }
 
 class CustomButton extends StatefulWidget {
   final String text;
@@ -69,13 +58,9 @@ class _CustomButtonState extends State<CustomButton>
       duration: AppAnimationDuration.short,
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.95,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -104,11 +89,8 @@ class _CustomButtonState extends State<CustomButton>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     // Determine button properties based on variant
-    final buttonStyle = _getButtonStyle(context, isDark);
+    final buttonStyle = _getButtonStyle(context);
 
     // Determine size properties
     final sizeProps = _getSizeProperties();
@@ -126,18 +108,21 @@ class _CustomButtonState extends State<CustomButton>
             onTapUp: _onTapUp,
             onTapCancel: _onTapCancel,
             child: Container(
-              width: widget.customWidth ??
+              width:
+                  widget.customWidth ??
                   (widget.fullWidth ? double.infinity : null),
               height: widget.customHeight ?? sizeProps.height,
               decoration: buttonStyle.decoration?.copyWith(
-                borderRadius: widget.borderRadius ??
+                borderRadius:
+                    widget.borderRadius ??
                     BorderRadius.circular(sizeProps.borderRadius),
               ),
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: effectiveDisabled ? null : widget.onPressed,
-                  borderRadius: widget.borderRadius ??
+                  borderRadius:
+                      widget.borderRadius ??
                       BorderRadius.circular(sizeProps.borderRadius),
                   child: Container(
                     padding: widget.padding ?? sizeProps.padding,
@@ -173,7 +158,8 @@ class _CustomButtonState extends State<CustomButton>
                         Flexible(
                           child: Text(
                             widget.text,
-                            style: widget.textStyle ??
+                            style:
+                                widget.textStyle ??
                                 sizeProps.textStyle.copyWith(
                                   color: buttonStyle.textColor,
                                 ),
@@ -193,22 +179,19 @@ class _CustomButtonState extends State<CustomButton>
     );
   }
 
-  _ButtonStyle _getButtonStyle(BuildContext context, bool isDark) {
+  _ButtonStyle _getButtonStyle(BuildContext context) {
     switch (widget.variant) {
       case ButtonVariant.primary:
         return _ButtonStyle(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                AppColors.primary,
-                AppColors.secondaryGreen,
-              ],
+              colors: [AppColors.primary, AppColors.secondaryGreen],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary.withOpacity(0.3),
+                color: AppColors.primary.withValues(alpha: 0.3),
                 blurRadius: 8,
                 offset: const Offset(0, 4),
               ),
@@ -220,13 +203,11 @@ class _CustomButtonState extends State<CustomButton>
       case ButtonVariant.secondary:
         return _ButtonStyle(
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1A2C22) : Colors.white,
-            border: Border.all(
-              color: AppColors.primary.withOpacity(0.5),
-            ),
+            color: Colors.white,
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 4,
                 offset: const Offset(0, 2),
               ),
@@ -239,16 +220,13 @@ class _CustomButtonState extends State<CustomButton>
         return _ButtonStyle(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                Colors.green.shade600,
-                Colors.green.shade400,
-              ],
+              colors: [Colors.green.shade600, Colors.green.shade400],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.green.withOpacity(0.3),
+                color: Colors.green.withValues(alpha: 0.3),
                 blurRadius: 8,
                 offset: const Offset(0, 4),
               ),
@@ -261,16 +239,13 @@ class _CustomButtonState extends State<CustomButton>
         return _ButtonStyle(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                Colors.red.shade600,
-                Colors.red.shade400,
-              ],
+              colors: [Colors.red.shade600, Colors.red.shade400],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.red.withOpacity(0.3),
+                color: Colors.red.withValues(alpha: 0.3),
                 blurRadius: 8,
                 offset: const Offset(0, 4),
               ),
@@ -283,10 +258,7 @@ class _CustomButtonState extends State<CustomButton>
         return _ButtonStyle(
           decoration: BoxDecoration(
             color: Colors.transparent,
-            border: Border.all(
-              color: AppColors.primary,
-              width: 2,
-            ),
+            border: Border.all(color: AppColors.primary, width: 2),
             borderRadius: BorderRadius.circular(AppBorderRadius.md),
           ),
           textColor: AppColors.primary,
@@ -294,9 +266,7 @@ class _CustomButtonState extends State<CustomButton>
 
       case ButtonVariant.ghost:
         return _ButtonStyle(
-          decoration: const BoxDecoration(
-            color: Colors.transparent,
-          ),
+          decoration: const BoxDecoration(color: Colors.transparent),
           textColor: AppColors.primary,
         );
     }
@@ -347,10 +317,7 @@ class _ButtonStyle {
   final BoxDecoration? decoration;
   final Color? textColor;
 
-  const _ButtonStyle({
-    this.decoration,
-    this.textColor,
-  });
+  const _ButtonStyle({this.decoration, this.textColor});
 }
 
 class _ButtonSizeProperties {

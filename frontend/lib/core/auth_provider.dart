@@ -173,7 +173,7 @@ class AuthProvider extends ChangeNotifier {
   // Check if token is about to expire
   bool isTokenExpiringSoon({Duration threshold = const Duration(minutes: 5)}) {
     if (_tokenExpiry == null) return false;
-    return _tokenExpiry!.difference(DateTime.now()) < threshold;
+    return _tokenExpiry!.isBefore(DateTime.now().add(threshold));
   }
 
   // Logout user

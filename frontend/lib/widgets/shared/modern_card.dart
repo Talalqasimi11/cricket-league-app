@@ -34,14 +34,7 @@ class ModernCard extends StatefulWidget {
     this.animationDuration = AppAnimationDuration.short,
   });
 
-  // Helper method to get theme-appropriate card colors
-  static Color _getCardSurface(BuildContext context) {
-    return AppCardColors.cardSurface();
-  }
 
-  static Color _getCardBorder(BuildContext context) {
-    return AppCardColors.cardBorder();
-  }
 
   @override
   State<ModernCard> createState() => _ModernCardState();
@@ -54,7 +47,6 @@ class _ModernCardState extends State<ModernCard> {
   @override
   Widget build(BuildContext context) {
     final isInteractive = widget.onTap != null;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return AnimatedContainer(
       duration: widget.animationDuration,
@@ -64,26 +56,32 @@ class _ModernCardState extends State<ModernCard> {
         color: widget.backgroundColor ?? AppCardColors.cardSurface(),
         gradient: widget.gradient,
         borderRadius: BorderRadius.circular(widget.borderRadius),
-        border: widget.border ??
+        border:
+            widget.border ??
             Border.all(
-              color: AppCardColors.cardBorder().withOpacity(0.3),
+              color: AppCardColors.cardBorder().withValues(alpha: 0.3),
               width: 1,
             ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: widget.elevation + (_isHovered ? 4 : 0),
             offset: Offset(0, widget.elevation / 2 + (_isHovered ? 2 : 0)),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: widget.elevation * 2,
             offset: const Offset(0, 1),
           ),
         ],
       ),
       transform: Matrix4.identity()
-        ..scale(_isPressed && widget.enablePressEffect ? 0.98 : 1.0),
+        ..scaleByDouble(
+          _isPressed && widget.enablePressEffect ? 0.98 : 1.0,
+          _isPressed && widget.enablePressEffect ? 0.98 : 1.0,
+          _isPressed && widget.enablePressEffect ? 0.98 : 1.0,
+          _isPressed && widget.enablePressEffect ? 0.98 : 1.0,
+        ),
       child: Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(widget.borderRadius),
@@ -150,10 +148,7 @@ class MatchCard extends StatelessWidget {
   Gradient? _getStatusGradient() {
     if (status.toLowerCase() == 'live') {
       return const LinearGradient(
-        colors: [
-          AppCardColors.liveStatus,
-          Color(0xFFFF6666),
-        ],
+        colors: [AppCardColors.liveStatus, Color(0xFFFF6666)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );
@@ -164,11 +159,12 @@ class MatchCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     return ModernCard(
       onTap: onTap,
       gradient: _getStatusGradient(),
-      elevation: status.toLowerCase() == 'live' ? AppElevation.level3 : AppElevation.level2,
+      elevation: status.toLowerCase() == 'live'
+          ? AppElevation.level3
+          : AppElevation.level2,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -217,7 +213,9 @@ class MatchCard extends StatelessWidget {
                             Text(
                               subtitle!,
                               style: AppTypographyExtended.bodySmall.copyWith(
-                                color: theme.colorScheme.onSurface.withOpacity(0.7),
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
                               ),
                             ),
                         ],
@@ -234,10 +232,10 @@ class MatchCard extends StatelessWidget {
                   vertical: AppSpacing.xs,
                 ),
                 decoration: BoxDecoration(
-                  color: _getStatusColor().withOpacity(0.1),
+                  color: _getStatusColor().withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(AppBorderRadius.sm),
                   border: Border.all(
-                    color: _getStatusColor().withOpacity(0.3),
+                    color: _getStatusColor().withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -265,13 +263,13 @@ class MatchCard extends StatelessWidget {
                   Icon(
                     Icons.access_time,
                     size: 14,
-                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   Text(
                     dateTime,
                     style: AppTypographyExtended.bodySmall.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -332,7 +330,9 @@ class SkeletonCard extends StatelessWidget {
                         width: double.infinity,
                         decoration: BoxDecoration(
                           color: Colors.grey[700],
-                          borderRadius: BorderRadius.circular(AppBorderRadius.sm),
+                          borderRadius: BorderRadius.circular(
+                            AppBorderRadius.sm,
+                          ),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xs),
@@ -341,7 +341,9 @@ class SkeletonCard extends StatelessWidget {
                         width: 100,
                         decoration: BoxDecoration(
                           color: Colors.grey[600],
-                          borderRadius: BorderRadius.circular(AppBorderRadius.sm),
+                          borderRadius: BorderRadius.circular(
+                            AppBorderRadius.sm,
+                          ),
                         ),
                       ),
                     ],

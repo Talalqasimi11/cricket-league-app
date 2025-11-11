@@ -2,12 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../database/hive_service.dart';
-import '../database/tournament_repository.dart';
-import '../database/match_repository.dart';
-import '../database/team_repository.dart';
-import '../database/player_repository.dart';
 import '../../models/pending_operation.dart';
-import '../../models/tournament.dart';
 import '../../services/api_service.dart';
 
 /// Conflict resolution strategies
@@ -41,11 +36,6 @@ class OfflineManager {
   final ApiService _apiService;
   final Connectivity _connectivity;
 
-  late final TournamentRepository _tournamentRepo;
-  late final MatchRepository _matchRepo;
-  late final TeamRepository _teamRepo;
-  late final PlayerRepository _playerRepo;
-
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Timer? _syncTimer;
   bool _isOnline = false;
@@ -73,11 +63,6 @@ class OfflineManager {
     if (_isInitialized) return;
 
     try {
-      _tournamentRepo = TournamentRepository(_hiveService);
-      _matchRepo = MatchRepository(_hiveService);
-      _teamRepo = TeamRepository(_hiveService);
-      _playerRepo = PlayerRepository(_hiveService);
-
       // Check initial connectivity
       final connectivityResults = await _connectivity.checkConnectivity();
       _updateOnlineStatus(connectivityResults);
@@ -324,7 +309,6 @@ class OfflineManager {
     try {
       switch (operation.operationType) {
         case OperationType.create:
-          final tournament = Tournament.fromJson(operation.data);
           await _apiService.createTournament(operation.data);
           // Update local with server response if needed
           return true;

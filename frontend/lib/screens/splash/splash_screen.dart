@@ -153,10 +153,9 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     const primaryGreen = Color(0xFF38E07B);
-    const darkGreen = Color(0xFF122118);
 
     return Scaffold(
-      backgroundColor: darkGreen,
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -182,7 +181,7 @@ class _SplashScreenState extends State<SplashScreen>
               const Text(
                 'CricLeague',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Color(0xFF122118),
                   fontSize: 36,
                   fontWeight: FontWeight.bold,
                 ),

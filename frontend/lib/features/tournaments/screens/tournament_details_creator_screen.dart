@@ -2,7 +2,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/tournament_model.dart';
-import '../../matches/screens/create_match_screen.dart'; // ✅ scoring screen (replace with your matches page)
 import '../../matches/screens/live_match_view_screen.dart';
 import '../../matches/screens/scorecard_screen.dart';
 import '../../../core/api_client.dart';
@@ -76,6 +75,7 @@ class _TournamentDetailsCaptainScreenState
             isRescheduling: _reschedulingMatchId == m.id,
             match: m,
             onEdit: _reschedulingMatchId == null ? () async {
+              if (!mounted) return;
               final newDate = await _pickDate(context, m.scheduledAt);
               if (!mounted) return;
               if (newDate != null) {
@@ -224,18 +224,21 @@ class _TournamentDetailsCaptainScreenState
   }
 
   Future<DateTime?> _pickDate(BuildContext context, DateTime? initial) async {
+    if (!mounted) return null;
     final date = await showDatePicker(
       context: context,
       initialDate: initial ?? DateTime.now().add(const Duration(days: 1)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
+    if (!mounted) return null;
     if (date == null) return null;
 
     final time = await showTimePicker(
       context: context,
       initialTime: const TimeOfDay(hour: 10, minute: 0),
     );
+    if (!mounted) return null;
     if (time == null) return null;
 
     return DateTime(date.year, date.month, date.day, time.hour, time.minute);

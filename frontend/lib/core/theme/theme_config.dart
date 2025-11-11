@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Core colors used throughout the app
 class AppColors {
-  static const Color primary = Color(0xFF20DF6C);
+  static const Color primary = Color(0xFF38E07B);
   static const Color secondary = Color(0xFF2962FF);
   static const Color error = Color(0xFFB00020);
   static const Color background = Color(0xFFF5F5F5);
@@ -97,29 +97,24 @@ class AppElevation {
   static const double level5 = 24.0;
 }
 
-/// Card-specific colors and gradients (theme-aware)
+/// Card-specific colors (light theme only)
 class AppCardColors {
   // Light theme colors
   static const Color lightCardSurface = Color(0xFFFFFFFF);
   static const Color lightCardSurfaceLight = Color(0xFFF5F5F5);
   static const Color lightCardBorder = Color(0xFFE0E0E0);
 
-  // Dark theme colors
-  static const Color darkCardSurface = Color(0xFF2C4A44);
-  static const Color darkCardSurfaceLight = Color(0xFF3A5A52);
-  static const Color darkCardBorder = Color(0xFF4A6A62);
-
-  // Gradient colors (same for both themes)
+  // Gradient colors
   static const Color gradientStart = Color(0xFF20DF6C);
   static const Color gradientMiddle = Color(0xFF36e27b);
   static const Color gradientEnd = Color(0xFF4CAF50);
 
-  // Status colors (same for both themes)
+  // Status colors
   static const Color liveStatus = Color(0xFFFF4444);
   static const Color finishedStatus = Color(0xFF4CAF50);
   static const Color upcomingStatus = Color(0xFFFF9800);
 
-  // Helper methods to get theme-appropriate colors
+  // Helper methods to get colors
   static Color cardSurface() => lightCardSurface;
   static Color cardSurfaceLight() => lightCardSurfaceLight;
   static Color cardBorder() => lightCardBorder;

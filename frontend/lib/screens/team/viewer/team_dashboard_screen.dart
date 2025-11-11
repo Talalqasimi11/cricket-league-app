@@ -144,9 +144,9 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
     final players = this.players;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF122118),
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        backgroundColor: const Color(0xFF122118),
+        backgroundColor: Colors.green[700],
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),

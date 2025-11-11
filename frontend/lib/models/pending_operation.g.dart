@@ -1,6 +1,10 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
 part of 'pending_operation.dart';
 
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// **************************************************************************
+// TypeAdapterGenerator
+// **************************************************************************
 
 class PendingOperationAdapter extends TypeAdapter<PendingOperation> {
   @override
@@ -14,10 +18,10 @@ class PendingOperationAdapter extends TypeAdapter<PendingOperation> {
     };
     return PendingOperation(
       id: fields[0] as String,
-      operationType: OperationType.values[fields[1] as int],
+      operationType: fields[1] as OperationType,
       entityType: fields[2] as String,
       entityId: fields[3] as int,
-      data: (fields[4] as Map<dynamic, dynamic>).cast<String, dynamic>(),
+      data: (fields[4] as Map).cast<String, dynamic>(),
       createdAt: fields[5] as DateTime,
       retryCount: fields[6] as int,
       lastAttempt: fields[7] as DateTime?,
@@ -33,7 +37,7 @@ class PendingOperationAdapter extends TypeAdapter<PendingOperation> {
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
-      ..write(obj.operationType.index)
+      ..write(obj.operationType)
       ..writeByte(2)
       ..write(obj.entityType)
       ..writeByte(3)

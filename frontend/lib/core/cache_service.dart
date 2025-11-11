@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -54,7 +55,7 @@ class CacheService {
       final file = File('${cacheDir.path}/$filename');
       await file.writeAsString(content);
     } catch (e) {
-      print('Failed to write to file cache: $e');
+      debugPrint('Failed to write to file cache: $e');
     }
   }
 
@@ -67,7 +68,7 @@ class CacheService {
         return await file.readAsString();
       }
     } catch (e) {
-      print('Failed to read from file cache: $e');
+      debugPrint('Failed to read from file cache: $e');
     }
     return null;
   }
@@ -81,7 +82,7 @@ class CacheService {
         await file.delete();
       }
     } catch (e) {
-      print('Failed to delete from file cache: $e');
+      debugPrint('Failed to delete from file cache: $e');
     }
   }
 
@@ -114,7 +115,7 @@ class CacheService {
       await _writeToSecureStorage(_cacheVersionKey, _currentCacheVersion);
     } catch (e) {
       // Cache write failure shouldn't break the app
-      print('Failed to cache team data: $e');
+      debugPrint('Failed to cache team data: $e');
     }
   }
 
@@ -130,7 +131,7 @@ class CacheService {
       await _writeToFileCache(_playersDataFile, jsonEncode(cacheData));
     } catch (e) {
       // Cache write failure shouldn't break the app
-      print('Failed to cache players data: $e');
+      debugPrint('Failed to cache players data: $e');
     }
   }
 
@@ -161,7 +162,7 @@ class CacheService {
       await _writeToSecureStorage(_cacheVersionKey, _currentCacheVersion);
     } catch (e) {
       // Cache write failure shouldn't break the app
-      print('Failed to cache atomic team data: $e');
+      debugPrint('Failed to cache atomic team data: $e');
     }
   }
 
@@ -295,7 +296,7 @@ class CacheService {
       await _deleteFromSecureStorage(_cacheVersionKey);
     } catch (e) {
       // Cache clear failure shouldn't break the app
-      print('Failed to clear cache: $e');
+      debugPrint('Failed to clear cache: $e');
     }
   }
 

@@ -172,21 +172,7 @@ class LiveMatchProvider extends ChangeNotifier {
     }
   }
 
-  // Handle match completion
-  void _handleMatchComplete(String matchId, Map<String, dynamic> data) {
-    final match = _matches[matchId];
-    if (match == null) return;
 
-    _matches[matchId] = match.copyWith(
-      status: 'Completed',
-      team1Score:
-          (data['final_team1_score'] as num?)?.toInt() ?? match.team1Score,
-      team2Score:
-          (data['final_team2_score'] as num?)?.toInt() ?? match.team2Score,
-    );
-
-    notifyListeners();
-  }
 
   // Fetch live matches with retry policy
   Future<void> fetchLiveMatches() async {

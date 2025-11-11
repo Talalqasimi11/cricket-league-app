@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../../core/api_client.dart';
 import '../../../core/retry_policy.dart';
+import '../../../core/offline/offline_manager.dart';
+import '../../../models/pending_operation.dart';
 import '../models/tournament_model.dart';
 
 /// State for a tournament
@@ -53,6 +55,12 @@ class TournamentProvider extends ChangeNotifier {
   String? _error;
   String _filter = 'all'; // all, active, upcoming, completed, mine
   int? _currentUserId;
+  OfflineManager? _offlineManager;
+
+  // Set offline manager
+  void setOfflineManager(OfflineManager manager) {
+    _offlineManager = manager;
+  }
 
   // Getters
   List<Tournament> get tournaments => List.unmodifiable(_tournaments);
@@ -160,6 +168,24 @@ class TournamentProvider extends ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       debugPrint('Error creating tournament: $e');
+
+      // Queue for offline sync if offline manager is available
+      if (_offlineManager != null && !_offlineManager!.isOnline) {
+        try {
+          await _offlineManager!.queueOperation(
+            operationType: OperationType.create,
+            entityType: 'tournament',
+            entityId: 0, // Will be assigned by server
+            data: tournamentData,
+          );
+          debugPrint('Tournament creation queued for offline sync');
+          // Consider it successful for UI purposes
+          return true;
+        } catch (queueError) {
+          debugPrint('Error queuing tournament creation: $queueError');
+        }
+      }
+
       return false;
     } finally {
       _setLoading(false);
@@ -192,6 +218,23 @@ class TournamentProvider extends ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       debugPrint('Error updating tournament: $e');
+
+      // Queue for offline sync if offline manager is available
+      if (_offlineManager != null && !_offlineManager!.isOnline) {
+        try {
+          await _offlineManager!.queueOperation(
+            operationType: OperationType.update,
+            entityType: 'tournament',
+            entityId: int.parse(id),
+            data: tournamentData,
+          );
+          debugPrint('Tournament update queued for offline sync');
+          return true;
+        } catch (queueError) {
+          debugPrint('Error queuing tournament update: $queueError');
+        }
+      }
+
       return false;
     } finally {
       _setLoading(false);

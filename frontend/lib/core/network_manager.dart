@@ -20,7 +20,7 @@ class NetworkManager {
 
   void _startMonitoring() {
     _connectivity.onConnectivityChanged.listen((result) async {
-      if (result == ConnectivityResult.none) {
+      if (result.contains(ConnectivityResult.none)) {
         _hasConnection = false;
         connectionChangeController.add(false);
       } else {
@@ -40,7 +40,7 @@ class NetworkManager {
 
   Future<bool> checkConnectivity() async {
     final result = await _connectivity.checkConnectivity();
-    if (result == ConnectivityResult.none) {
+    if (result.contains(ConnectivityResult.none)) {
       _hasConnection = false;
       connectionChangeController.add(false);
       return false;

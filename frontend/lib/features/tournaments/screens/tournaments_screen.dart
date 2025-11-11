@@ -134,7 +134,6 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
           appBar: AppBar(
             title: const Text("Tournaments"),
             centerTitle: true,
-            backgroundColor: Colors.green[800],
           ),
           body: Padding(
             padding: const EdgeInsets.all(12.0),
@@ -235,8 +234,6 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     icon: const Icon(Icons.add),
                     label: const Text("Create Tournament"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green[700],
-                      foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(48),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -320,8 +317,6 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
               icon: const Icon(Icons.add),
               label: const Text("Create Your First Tournament"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green[700],
-                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
             ),

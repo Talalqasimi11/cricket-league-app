@@ -40,14 +40,14 @@ dependencies:
   url_launcher: ^6.2.1
   connectivity_plus: ^7.0.0  # Update to latest version for List<ConnectivityResult>
   socket_io_client: ^2.0.3+1
-  web_socket_channel: ^2.4.0
+  # web_socket_channel: ^2.4.0  # Removed web dependency
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   cached_network_image: ^3.3.0
   flutter_cache_manager: ^3.3.1
   performance: 0.1.1  # For performance monitoring
   # workmanager: ^0.5.2  # For background sync - Commented out due to compatibility issues
-  flutter_offline: ^6.0.0  # For offline detection
+  # flutter_offline: ^6.0.0  # For offline detection - Commented out, causes web package issues
   device_info_plus: ^9.1.2  # For device information
   image_picker: ^1.0.0  # Image picking from camera/gallery
   intl: ^0.19.0  # Date/time formatting
@@ -71,6 +71,7 @@ dev_dependencies:
 
 # Dependency overrides to fix compatibility issues
 dependency_overrides:
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

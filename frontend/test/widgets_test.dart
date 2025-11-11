@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/widgets/shared/app_header.dart';
-import 'package:frontend/widgets/shared/buttons.dart';
+import 'package:frontend/widgets/custom_button.dart';
 import 'package:frontend/widgets/shared/form_fields.dart';
 import 'package:frontend/widgets/shared/status_widgets.dart';
 

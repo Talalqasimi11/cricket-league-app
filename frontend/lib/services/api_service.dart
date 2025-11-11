@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../core/api_client.dart';
+import '../core/caching/cache_manager.dart';
 import '../models/match.dart';
 import '../models/tournament.dart';
 import '../models/player_match_stats.dart';
@@ -18,6 +19,7 @@ class ApiService {
   ApiService._internal();
 
   final ApiClient _apiClient = ApiClient.instance;
+  final CacheManager _cacheManager = CacheManager.instance;
 
   // Helper method to parse response
   Future<T> _parseResponse<T>(
@@ -72,6 +74,16 @@ class ApiService {
 
   Future<List<Tournament>> getTournaments({String? status}) async {
     try {
+      // Try cache first
+      final cacheKey = 'tournaments_$status';
+      final cached = await _cacheManager.get<List>(cacheKey);
+      if (cached != null) {
+        debugPrint('Using cached tournaments');
+        return cached
+            .map((item) => Tournament.fromJson(item as Map<String, dynamic>))
+            .toList();
+      }
+
       final path = status != null
           ? '/api/tournaments?status=$status'
           : '/api/tournaments';
@@ -79,7 +91,17 @@ class ApiService {
         path,
         cacheDuration: const Duration(minutes: 10),
       );
-      return await _parseListResponse(response, Tournament.fromJson);
+      final result = await _parseListResponse(response, Tournament.fromJson);
+
+      // Cache the result
+      await _cacheManager.set(
+        cacheKey,
+        result.map((t) => t.toJson()).toList(),
+        memoryExpiry: const Duration(minutes: 5),
+        persistentExpiry: const Duration(minutes: 10),
+      );
+
+      return result;
     } catch (e) {
       debugPrint('Get tournaments error: $e');
       rethrow;
@@ -120,6 +142,16 @@ class ApiService {
 
   Future<List<Match>> getMatches({String? status, int? tournamentId}) async {
     try {
+      // Try cache first
+      final cacheKey = 'matches_${status}_$tournamentId';
+      final cached = await _cacheManager.get<List>(cacheKey);
+      if (cached != null) {
+        debugPrint('Using cached matches');
+        return cached
+            .map((item) => Match.fromJson(item as Map<String, dynamic>))
+            .toList();
+      }
+
       String path = '/api/matches';
       final params = <String>[];
       if (status != null) params.add('status=$status');
@@ -132,7 +164,17 @@ class ApiService {
         path,
         cacheDuration: const Duration(minutes: 5),
       );
-      return await _parseListResponse(response, Match.fromJson);
+      final result = await _parseListResponse(response, Match.fromJson);
+
+      // Cache the result
+      await _cacheManager.set(
+        cacheKey,
+        result.map((m) => m.toJson()).toList(),
+        memoryExpiry: const Duration(minutes: 3),
+        persistentExpiry: const Duration(minutes: 5),
+      );
+
+      return result;
     } catch (e) {
       debugPrint('Get matches error: $e');
       rethrow;

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../core/api_client.dart';
-import '../../../core/error_handler.dart';
+import '../../../core/error_dialog.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -102,14 +102,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         _resetToken = data['token']?.toString() ?? '';
 
         setState(() => _otpSent = true);
-        ErrorHandler.showSuccessSnackBar(context, 'OTP sent to your phone');
+        ErrorDialog.showSuccessSnackBar(context, message: 'OTP sent to your phone');
       } else {
         throw Exception('Failed to send OTP');
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _errorMessage = e.toString());
-      ErrorHandler.showErrorSnackBar(context, e);
+      ErrorDialog.showErrorSnackBar(context, message: e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -141,9 +141,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (!mounted) return;
         setState(() => _passwordChanged = true);
-        ErrorHandler.showSuccessSnackBar(
+        ErrorDialog.showSuccessSnackBar(
           context,
-          'Password reset successful. Please login with your new password.',
+          message: 'Password reset successful. Please login with your new password.',
         );
 
         // Show success message for 2 seconds then navigate
@@ -156,7 +156,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _errorMessage = e.toString());
-      ErrorHandler.showErrorSnackBar(context, e);
+      ErrorDialog.showErrorSnackBar(context, message: e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

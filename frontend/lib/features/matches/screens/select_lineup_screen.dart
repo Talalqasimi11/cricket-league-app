@@ -38,13 +38,16 @@ class _SelectLineupScreenState extends State<SelectLineupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1A2D2A),
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A2D2A),
+        backgroundColor: Colors.green[700],
         elevation: 0,
         title: Text(
           "Select Lineup (11)",
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
       body: Column(
@@ -57,12 +60,16 @@ class _SelectLineupScreenState extends State<SelectLineupScreen> {
               children: [
                 const Text(
                   "Team Players (15)",
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 ElevatedButton.icon(
                   onPressed: () {},
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2C4A44),
+                    backgroundColor: Colors.green[700],
                     foregroundColor: const Color(0xFF95c6a9),
                     shape: StadiumBorder(),
                   ),
@@ -92,7 +99,10 @@ class _SelectLineupScreenState extends State<SelectLineupScreen> {
                     children: [
                       Row(
                         children: [
-                          CircleAvatar(radius: 22, backgroundImage: NetworkImage(player["image"])),
+                          CircleAvatar(
+                            radius: 22,
+                            backgroundImage: NetworkImage(player["image"]),
+                          ),
                           const SizedBox(width: 10),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,7 +116,10 @@ class _SelectLineupScreenState extends State<SelectLineupScreen> {
                               ),
                               Text(
                                 player["role"],
-                                style: const TextStyle(color: Color(0xFF95c6a9), fontSize: 12),
+                                style: const TextStyle(
+                                  color: Color(0xFF95c6a9),
+                                  fontSize: 12,
+                                ),
                               ),
                             ],
                           ),
@@ -114,8 +127,12 @@ class _SelectLineupScreenState extends State<SelectLineupScreen> {
                       ),
                       IconButton(
                         icon: Icon(
-                          player["selected"] ? Icons.check_circle : Icons.circle_outlined,
-                          color: player["selected"] ? Colors.greenAccent : Colors.grey,
+                          player["selected"]
+                              ? Icons.check_circle
+                              : Icons.circle_outlined,
+                          color: player["selected"]
+                              ? Colors.greenAccent
+                              : Colors.grey,
                         ),
                         onPressed: () {
                           setState(() {
@@ -142,7 +159,9 @@ class _SelectLineupScreenState extends State<SelectLineupScreen> {
                 backgroundColor: const Color(0xFF36e27b),
                 foregroundColor: const Color(0xFF122118),
                 minimumSize: const Size(double.infinity, 55),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: const Text(
                 "Confirm Lineup",
