@@ -85,14 +85,39 @@ class AppBootstrap extends StatefulWidget {
   State<AppBootstrap> createState() => _AppBootstrapState();
 }
 
-class _AppBootstrapState extends State<AppBootstrap> {
+class _AppBootstrapState extends State<AppBootstrap> with WidgetsBindingObserver {
   bool _isInitialized = false;
   String? _initError;
+  OfflineManager? _offlineManager;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeApp();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _offlineManager?.dispose();
+    HiveService().dispose();
+    ApiClient.instance.dispose();
+    debugPrint('[AppBootstrap] Resources disposed successfully');
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.detached) {
+      debugPrint('[AppLifecycle] App detached, cleaning up resources...');
+      try {
+        ApiClient.instance.dispose();
+      } catch (e) {
+        debugPrint('[AppLifecycle] Error disposing ApiClient: $e');
+      }
+    }
   }
 
   Future<void> _initializeApp() async {
@@ -107,6 +132,26 @@ class _AppBootstrapState extends State<AppBootstrap> {
       debugPrint('[AppBootstrap] Initializing CacheManager...');
       await CacheManager.instance.init();
       debugPrint('[AppBootstrap] CacheManager initialized');
+
+      // Initialize OfflineManager
+      debugPrint('[AppBootstrap] Initializing OfflineManager...');
+      final apiService = ApiService();
+      _offlineManager = OfflineManager(
+        hiveService: HiveService(),
+        apiService: apiService,
+      );
+      await _offlineManager!.init();
+      debugPrint('[AppBootstrap] OfflineManager initialized');
+
+      // Listen to online status changes
+      _offlineManager!.onlineStatus.listen((isOnline) {
+        debugPrint('[OfflineManager] Online status: $isOnline');
+      });
+
+      // Listen to pending operations count
+      _offlineManager!.pendingOperationsCount.listen((count) {
+        debugPrint('[OfflineManager] Pending operations: $count');
+      });
 
       // Set custom base URL from environment variable or use platform default
       const customUrl = String.fromEnvironment('API_BASE_URL');
@@ -130,8 +175,8 @@ class _AppBootstrapState extends State<AppBootstrap> {
       debugPrint(
         '[AppBootstrap] All services initialized - splash screen will appear',
       );
-    } catch (e) {
-      debugPrint('[AppBootstrap] App initialization error: $e');
+    } catch (e, stackTrace) {
+      debugPrint('[AppBootstrap] App initialization error: $e\n$stackTrace');
       if (!mounted) return;
       setState(() {
         _initError = e.toString();
@@ -176,8 +221,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
     return MultiProvider(
       providers: [
-        // AuthProvider created normally. Its initialization which needs context
-        // will be done inside AuthInitializer (after the first frame).
+        Provider<OfflineManager>.value(value: _offlineManager!),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => TournamentProvider()),
         ChangeNotifierProvider(create: (_) => LiveMatchProvider()),
@@ -194,111 +238,33 @@ class AuthInitializer extends StatefulWidget {
   State<AuthInitializer> createState() => _AuthInitializerState();
 }
 
-class _AuthInitializerState extends State<AuthInitializer>
-    with WidgetsBindingObserver {
+class _AuthInitializerState extends State<AuthInitializer> {
   bool _authInitialized = false;
-  OfflineManager? _offlineManager;
 
   @override
   void initState() {
     super.initState();
-
-    // Add lifecycle observer to handle app termination
-    WidgetsBinding.instance.addObserver(this);
-
-    // Delay actual auth initialization to after the first frame so that
-    // Provider.of(context) and other context-bound calls are safe and we
-    // avoid triggering rebuilds during widget mounting.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeAuth();
     });
   }
 
-  @override
-  void dispose() {
-    // Remove lifecycle observer
-    WidgetsBinding.instance.removeObserver(this);
-
-    // Clean up resources
-    try {
-      _offlineManager?.dispose();
-      ApiClient.instance.dispose();
-      HiveService().dispose();
-      debugPrint('[AuthInitializer] Resources disposed successfully');
-    } catch (e) {
-      debugPrint('[AuthInitializer] Error disposing resources: $e');
-    }
-
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-
-    switch (state) {
-      case AppLifecycleState.detached:
-        // App is being terminated, clean up resources
-        debugPrint('[AppLifecycle] App detached, cleaning up resources...');
-        try {
-          ApiClient.instance.dispose();
-        } catch (e) {
-          debugPrint('[AppLifecycle] Error disposing ApiClient: $e');
-        }
-        break;
-      case AppLifecycleState.paused:
-        debugPrint('[AppLifecycle] App paused');
-        break;
-      case AppLifecycleState.resumed:
-        debugPrint('[AppLifecycle] App resumed');
-        break;
-      case AppLifecycleState.inactive:
-        debugPrint('[AppLifecycle] App inactive');
-        break;
-      case AppLifecycleState.hidden:
-        debugPrint('[AppLifecycle] App hidden');
-        break;
-    }
-  }
-
   Future<void> _initializeAuth() async {
     try {
-      // listen: false is used because we're calling this in init; we don't want
-      // this method to subscribe the initState to changes.
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.initializeAuth();
 
-      // Initialize offline manager after auth
-      try {
-        final apiService = ApiService();
-        _offlineManager = OfflineManager(
-          hiveService: HiveService(),
-          apiService: apiService,
-        );
-        await _offlineManager!.init();
-        debugPrint('[AuthInitializer] OfflineManager initialized');
+      // Set offline manager for providers that need it
+      final offlineManager = context.read<OfflineManager>();
+      context.read<TournamentProvider>().setOfflineManager(offlineManager);
 
-        // Listen to online status changes
-        _offlineManager!.onlineStatus.listen((isOnline) {
-          debugPrint('[OfflineManager] Online status: $isOnline');
-        });
-
-        // Listen to pending operations count
-        _offlineManager!.pendingOperationsCount.listen((count) {
-          debugPrint('[OfflineManager] Pending operations: $count');
-        });
-      } catch (e) {
-        debugPrint(
-          '[AuthInitializer] OfflineManager initialization failed: $e',
-        );
-      }
+      debugPrint('[AuthInitializer] OfflineManager set on TournamentProvider');
 
       setState(() {
         _authInitialized = true;
       });
     } catch (e) {
       debugPrint('Auth initialization error: $e');
-      // Continue even if auth init fails; app shows UI and user can retry/login.
       setState(() {
         _authInitialized = true;
       });
@@ -308,10 +274,11 @@ class _AuthInitializerState extends State<AuthInitializer>
   @override
   Widget build(BuildContext context) {
     if (!_authInitialized) {
-      return const MaterialApp(
+      return MaterialApp(
         title: 'CricLeague',
         debugShowCheckedModeBanner: false,
-        home: Scaffold(
+        theme: AppThemeData.light(),
+        home: const Scaffold(
           body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -326,171 +293,167 @@ class _AuthInitializerState extends State<AuthInitializer>
       );
     }
 
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
-        // Validate theme in debug mode
-        if (kDebugMode) {
-          ThemeValidator.validateTheme(AppThemeData.light());
-          ThemeValidator.logThemeInfo(AppThemeData.light());
-        }
+    // Validate theme in debug mode
+    if (kDebugMode) {
+      ThemeValidator.validateTheme(AppThemeData.light());
+      ThemeValidator.logThemeInfo(AppThemeData.light());
+    }
 
-        return MaterialApp(
-          title: 'CricLeague',
-          debugShowCheckedModeBanner: false,
-          theme: AppThemeData.light(),
-          home: const SplashScreen(),
-          routes: {
-            '/login': (context) => const LoginScreen(),
-            '/forgot-password': (context) => const ForgotPasswordScreen(),
-            '/register': (context) => const RegisterScreen(),
-            '/home': (context) => const HomeScreen(),
-            '/matches': (context) => const MatchesScreen(),
-            '/tournaments': (context) =>
-                const TournamentsScreen(isCaptain: true),
-            '/my-team': (context) => const MyTeamScreen(),
-            '/tournaments/create': (context) => const CreateTournamentScreen(),
-            '/account': (context) => const AccountScreen(),
-            '/developer-settings': (context) => const DeveloperSettingsScreen(),
-            '/contact': (context) => const ContactScreen(),
-            '/feedback': (context) => const FeedbackScreen(),
-          },
-          onGenerateRoute: (settings) {
-            debugPrint('[Navigation] Navigating to: ${settings.name}');
+    return MaterialApp(
+      title: 'CricLeague',
+      debugShowCheckedModeBanner: false,
+      theme: AppThemeData.light(),
+      home: const SplashScreen(),
+      routes: {
+        '/login': (context) => const LoginScreen(),
+        '/forgot-password': (context) => const ForgotPasswordScreen(),
+        '/register': (context) => const RegisterScreen(),
+        '/home': (context) => const HomeScreen(),
+        '/matches': (context) => const MatchesScreen(),
+        '/tournaments': (context) =>
+            const TournamentsScreen(isCaptain: true),
+        '/my-team': (context) => const MyTeamScreen(),
+        '/tournaments/create': (context) => const CreateTournamentScreen(),
+        '/account': (context) => const AccountScreen(),
+        '/developer-settings': (context) => const DeveloperSettingsScreen(),
+        '/contact': (context) => const ContactScreen(),
+        '/feedback': (context) => const FeedbackScreen(),
+      },
+      onGenerateRoute: (settings) {
+        debugPrint('[Navigation] Navigating to: ${settings.name}');
 
-            switch (settings.name) {
-              case '/team/view':
-                final args = settings.arguments as Map<String, dynamic>?;
-                final teamIdString = args?['teamId']?.toString();
-                final teamName = args?['teamName']?.toString();
+        switch (settings.name) {
+          case '/team/view':
+            final args = settings.arguments as Map<String, dynamic>?;
+            final teamIdString = args?['teamId']?.toString();
+            final teamName = args?['teamName']?.toString();
 
-                if (teamIdString == null) {
-                  debugPrint(
-                    '[Navigation] Error: Missing teamId for route ${settings.name}',
-                  );
-                  return MaterialPageRoute(
-                    builder: (_) => const RouteErrorWidget(
-                      error: 'Team ID is required to view team details',
-                      routeName: '/team/view',
-                      title: 'Missing Team Information',
-                    ),
-                  );
-                }
-
-                final teamId = int.tryParse(teamIdString);
-                if (teamId == null) {
-                  debugPrint(
-                    '[Navigation] Error: Invalid teamId "$teamIdString" for route ${settings.name}',
-                  );
-                  return MaterialPageRoute(
-                    builder: (_) => RouteErrorWidget(
-                      error:
-                          'The team ID "$teamIdString" is not valid. Please try again.',
-                      routeName: '/team/view',
-                      title: 'Invalid Team ID',
-                    ),
-                  );
-                }
-
-                return MaterialPageRoute(
-                  builder: (_) => viewer.TeamDashboardScreen(
-                    teamId: teamId,
-                    teamName: teamName,
-                  ),
-                );
-
-              case '/matches/live':
-                final args = settings.arguments as Map<String, dynamic>?;
-                final matchId = args?['matchId']?.toString();
-
-                if (matchId == null) {
-                  debugPrint(
-                    '[Navigation] Error: Missing matchId for route ${settings.name}',
-                  );
-                  return MaterialPageRoute(
-                    builder: (_) => const RouteErrorWidget(
-                      error: 'Match ID is required to view live match',
-                      routeName: '/matches/live',
-                      title: 'Missing Match Information',
-                    ),
-                  );
-                }
-
-                return MaterialPageRoute(
-                  builder: (_) => LiveMatchViewScreen(matchId: matchId),
-                );
-
-              case '/matches/scorecard':
-                final args = settings.arguments as Map<String, dynamic>?;
-                final matchId = args?['matchId']?.toString();
-
-                if (matchId == null) {
-                  debugPrint(
-                    '[Navigation] Error: Missing matchId for route ${settings.name}',
-                  );
-                  return MaterialPageRoute(
-                    builder: (_) => const RouteErrorWidget(
-                      error: 'Match ID is required to view scorecard',
-                      routeName: '/matches/scorecard',
-                      title: 'Missing Match Information',
-                    ),
-                  );
-                }
-
-                return MaterialPageRoute(
-                  builder: (_) => ScorecardScreen(matchId: matchId),
-                );
-
-              case '/tournaments/register-teams':
-                final args = settings.arguments as Map<String, dynamic>?;
-                return MaterialPageRoute(
-                  builder: (_) => team_reg.RegisterTeamsScreen(
-                    tournamentName: (args?['tournamentName'] ?? '') as String,
-                    tournamentId: args?['tournamentId']?.toString(),
-                  ),
-                );
-
-              case '/player/view':
-                final args = settings.arguments as Map<String, dynamic>?;
-
-                if (args == null) {
-                  debugPrint(
-                    '[Navigation] Error: Missing arguments for route ${settings.name}',
-                  );
-                  return MaterialPageRoute(
-                    builder: (_) => const RouteErrorWidget(
-                      error:
-                          'Player information is required to view player details',
-                      routeName: '/player/view',
-                      title: 'Missing Player Information',
-                    ),
-                  );
-                }
-
-                return MaterialPageRoute(
-                  builder: (_) => player_view.PlayerDashboardScreen(
-                    playerName: (args['playerName'] ?? '').toString(),
-                    role: (args['role'] ?? '').toString(),
-                    teamName: (args['teamName'] ?? '').toString(),
-                    imageUrl: (args['imageUrl'] ?? 'https://picsum.photos/200')
-                        .toString(),
-                    runs:
-                        int.tryParse(args['runs']?.toString() ?? '') ??
-                        (args['runs'] is int ? args['runs'] as int : 0),
-                    battingAvg:
-                        double.tryParse(args['battingAvg']?.toString() ?? '') ??
-                        0,
-                    strikeRate:
-                        double.tryParse(args['strikeRate']?.toString() ?? '') ??
-                        0,
-                    wickets:
-                        int.tryParse(args['wickets']?.toString() ?? '') ??
-                        (args['wickets'] is int ? args['wickets'] as int : 0),
-                  ),
-                );
+            if (teamIdString == null) {
+              debugPrint(
+                '[Navigation] Error: Missing teamId for route ${settings.name}',
+              );
+              return MaterialPageRoute(
+                builder: (_) => const RouteErrorWidget(
+                  error: 'Team ID is required to view team details',
+                  routeName: '/team/view',
+                  title: 'Missing Team Information',
+                ),
+              );
             }
-            return null;
-          },
-        );
+
+            final teamId = int.tryParse(teamIdString);
+            if (teamId == null) {
+              debugPrint(
+                '[Navigation] Error: Invalid teamId "$teamIdString" for route ${settings.name}',
+              );
+              return MaterialPageRoute(
+                builder: (_) => RouteErrorWidget(
+                  error:
+                      'The team ID "$teamIdString" is not valid. Please try again.',
+                  routeName: '/team/view',
+                  title: 'Invalid Team ID',
+                ),
+              );
+            }
+
+            return MaterialPageRoute(
+              builder: (_) => viewer.TeamDashboardScreen(
+                teamId: teamId,
+                teamName: teamName,
+              ),
+            );
+
+          case '/matches/live':
+            final args = settings.arguments as Map<String, dynamic>?;
+            final matchId = args?['matchId']?.toString();
+
+            if (matchId == null) {
+              debugPrint(
+                '[Navigation] Error: Missing matchId for route ${settings.name}',
+              );
+              return MaterialPageRoute(
+                builder: (_) => const RouteErrorWidget(
+                  error: 'Match ID is required to view live match',
+                  routeName: '/matches/live',
+                  title: 'Missing Match Information',
+                ),
+              );
+            }
+
+            return MaterialPageRoute(
+              builder: (_) => LiveMatchViewScreen(matchId: matchId),
+            );
+
+          case '/matches/scorecard':
+            final args = settings.arguments as Map<String, dynamic>?;
+            final matchId = args?['matchId']?.toString();
+
+            if (matchId == null) {
+              debugPrint(
+                '[Navigation] Error: Missing matchId for route ${settings.name}',
+              );
+              return MaterialPageRoute(
+                builder: (_) => const RouteErrorWidget(
+                  error: 'Match ID is required to view scorecard',
+                  routeName: '/matches/scorecard',
+                  title: 'Missing Match Information',
+                ),
+              );
+            }
+
+            return MaterialPageRoute(
+              builder: (_) => ScorecardScreen(matchId: matchId),
+            );
+
+          case '/tournaments/register-teams':
+            final args = settings.arguments as Map<String, dynamic>?;
+            return MaterialPageRoute(
+              builder: (_) => team_reg.RegisterTeamsScreen(
+                tournamentName: (args?['tournamentName'] ?? '') as String,
+                tournamentId: args?['tournamentId']?.toString(),
+              ),
+            );
+
+          case '/player/view':
+            final args = settings.arguments as Map<String, dynamic>?;
+
+            if (args == null) {
+              debugPrint(
+                '[Navigation] Error: Missing arguments for route ${settings.name}',
+              );
+              return MaterialPageRoute(
+                builder: (_) => const RouteErrorWidget(
+                  error:
+                      'Player information is required to view player details',
+                  routeName: '/player/view',
+                  title: 'Missing Player Information',
+                ),
+              );
+            }
+
+            return MaterialPageRoute(
+              builder: (_) => player_view.PlayerDashboardScreen(
+                playerName: (args['playerName'] ?? '').toString(),
+                role: (args['role'] ?? '').toString(),
+                teamName: (args['teamName'] ?? '').toString(),
+                imageUrl: (args['imageUrl'] ?? 'https://picsum.photos/200')
+                    .toString(),
+                runs:
+                    int.tryParse(args['runs']?.toString() ?? '') ??
+                    (args['runs'] is int ? args['runs'] as int : 0),
+                battingAvg:
+                    double.tryParse(args['battingAvg']?.toString() ?? '') ??
+                    0,
+                strikeRate:
+                    double.tryParse(args['strikeRate']?.toString() ?? '') ??
+                    0,
+                wickets:
+                    int.tryParse(args['wickets']?.toString() ?? '') ??
+                    (args['wickets'] is int ? args['wickets'] as int : 0),
+              ),
+            );
+        }
+        return null;
       },
     );
   }

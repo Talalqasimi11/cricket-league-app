@@ -217,7 +217,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                         Text(
                           teamName,
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: Colors.black87,
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
                           ),
@@ -225,7 +225,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                         const SizedBox(height: 4),
                         Text(
                           '$trophies Trophies',
-                          style: const TextStyle(color: Color(0xFF95C6A9)),
+                          style: const TextStyle(color: Colors.grey),
                         ),
                       ],
                     ),
@@ -237,7 +237,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                         Text(
                           'Players',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: Colors.black87,
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),

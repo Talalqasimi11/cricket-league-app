@@ -109,8 +109,9 @@ class ApiClient {
 
     // For mobile platforms
     if (defaultTargetPlatform == TargetPlatform.android) {
-      const url = 'http://10.0.2.2:5000'; // Android emulator
-      debugPrint('[Developer] Android detected, using emulator URL: $url');
+      // Use ngrok URL for Android devices to connect to backend from anywhere
+      const url = 'https://foveolar-louetta-unradiant.ngrok-free.dev';
+      debugPrint('[Developer] Android detected, using ngrok URL: $url');
       return url;
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       // Check if physical device (this is synchronous but may not be perfect)

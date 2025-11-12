@@ -123,8 +123,9 @@ if (process.env.NODE_ENV !== 'production' && allowedOrigins.length === 0) {
     'http://localhost:8080', // Flutter web dev server
     'http://127.0.0.1:3000',
     'http://127.0.0.1:5000',
-    'http://127.0.0.1:8080', // Flutter web dev server alternative
+    'http://127.0.0.1:8080', // Flutter web dev dev server alternative
     'http://10.0.2.2:5000', // Android emulator
+    'http://192.168.144.1:5000', // Computer IP for physical devices
   ];
   console.log('⚠️  Development mode: Auto-adding localhost origins for CORS');
 } else if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {

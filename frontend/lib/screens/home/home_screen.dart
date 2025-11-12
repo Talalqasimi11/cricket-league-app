@@ -329,6 +329,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ).colorScheme.onSurface,
                                         fontWeight: FontWeight.w600,
                                       ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                                 subtitle: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -341,14 +343,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ).colorScheme.primary,
                                     ),
                                     const SizedBox(width: 6),
-                                    Text(
-                                      '$trophies Trophies',
-                                      style: AppTypographyExtended.bodySmall
-                                          .copyWith(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                          ),
+                                    Expanded(
+                                      child: Text(
+                                        '$trophies Trophies',
+                                        style: AppTypographyExtended.bodySmall
+                                            .copyWith(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
+                                            ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   ],
                                 ),
