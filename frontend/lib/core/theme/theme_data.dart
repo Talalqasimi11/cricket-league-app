@@ -20,7 +20,7 @@ class AppThemeData {
         surface: AppColors.surface,
         onSurface: AppColors.onSurface,
       ),
-      textTheme: TextTheme(
+      textTheme: const TextTheme(
         displayLarge: AppTypographyExtended.displayLarge,
         displayMedium: AppTypographyExtended.displayMedium,
         headlineLarge: AppTypographyExtended.headlineLarge,
@@ -45,23 +45,23 @@ class AppThemeData {
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppBorderRadius.md),
-          borderSide: BorderSide(color: AppColors.outline),
+          borderSide: const BorderSide(color: AppColors.outline),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppBorderRadius.md),
-          borderSide: BorderSide(color: AppColors.outline),
+          borderSide: const BorderSide(color: AppColors.outline),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppBorderRadius.md),
-          borderSide: BorderSide(color: AppColors.primary, width: 2),
+          borderSide: const BorderSide(color: AppColors.primary, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppBorderRadius.md),
-          borderSide: BorderSide(color: AppColors.error),
+          borderSide: const BorderSide(color: AppColors.error),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppBorderRadius.md),
-          borderSide: BorderSide(color: AppColors.error, width: 2),
+          borderSide: const BorderSide(color: AppColors.error, width: 2),
         ),
         filled: true,
         fillColor: AppColors.surfaceContainerHighest,
@@ -69,7 +69,7 @@ class AppThemeData {
           horizontal: AppSpacing.md,
           vertical: AppSpacing.sm,
         ),
-        labelStyle: TextStyle(color: AppColors.onSurface),
+        labelStyle: const TextStyle(color: AppColors.onSurface),
         hintStyle: TextStyle(color: AppColors.onSurface.withValues(alpha: 0.6)),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(

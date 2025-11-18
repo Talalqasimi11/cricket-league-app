@@ -139,6 +139,11 @@ class OfflineManager {
     required Map<String, dynamic> data,
   }) async {
     try {
+      // Reject unsupported operations at queuing time to prevent permanent sync failures
+      if (entityType == 'player') {
+        throw UnsupportedError('Player operations are not supported for offline queuing');
+      }
+
       final operation = PendingOperation.create(
         operationType: operationType,
         entityType: entityType,
@@ -372,28 +377,14 @@ class OfflineManager {
     }
   }
 
+  /// Sync player operations (intentionally unsupported)
+  ///
+  /// Player operations are rejected at queuing time in queueOperation() to prevent
+  /// permanent sync failures. This method should never be called for player operations.
   Future<bool> _syncPlayer(PendingOperation operation) async {
-    try {
-      switch (operation.operationType) {
-        case OperationType.create:
-          // Create player not implemented in API service yet
-          debugPrint('[OfflineManager] Create player not supported');
-          return false;
-
-        case OperationType.update:
-          // Update player not implemented in API service yet
-          debugPrint('[OfflineManager] Update player not supported');
-          return false;
-
-        case OperationType.delete:
-          // Delete player not implemented in API service yet
-          debugPrint('[OfflineManager] Delete player not supported');
-          return false;
-      }
-    } catch (e) {
-      debugPrint('[OfflineManager] Player sync error: $e');
-      return false;
-    }
+    // This method exists for completeness but player operations are rejected at queuing time
+    debugPrint('[OfflineManager] Player operations are intentionally unsupported for offline queuing');
+    return false;
   }
 
   // ===== CONFLICT RESOLUTION =====

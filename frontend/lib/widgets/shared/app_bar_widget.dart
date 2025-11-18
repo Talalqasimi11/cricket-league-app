@@ -101,20 +101,20 @@ class AppBarWidget extends StatelessWidget implements PreferredSizeWidget {
                 }
               },
               itemBuilder: (context) => [
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 'profile',
                   child: Row(
-                    children: const [
+                    children: [
                       Icon(Icons.person),
                       SizedBox(width: 8),
                       Text('Profile'),
                     ],
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 'settings',
                   child: Row(
-                    children: const [
+                    children: [
                       Icon(Icons.settings),
                       SizedBox(width: 8),
                       Text('Settings'),
@@ -122,10 +122,10 @@ class AppBarWidget extends StatelessWidget implements PreferredSizeWidget {
                   ),
                 ),
                 const PopupMenuDivider(),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 'logout',
                   child: Row(
-                    children: const [
+                    children: [
                       Icon(Icons.logout, color: Colors.red),
                       SizedBox(width: 8),
                       Text('Logout', style: TextStyle(color: Colors.red)),

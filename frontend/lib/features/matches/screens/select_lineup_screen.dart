@@ -42,9 +42,9 @@ class _SelectLineupScreenState extends State<SelectLineupScreen> {
       appBar: AppBar(
         backgroundColor: Colors.green[700],
         elevation: 0,
-        title: Text(
+        title: const Text(
           "Select Lineup (11)",
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
           ),
@@ -71,7 +71,7 @@ class _SelectLineupScreenState extends State<SelectLineupScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green[700],
                     foregroundColor: const Color(0xFF95c6a9),
-                    shape: StadiumBorder(),
+                    shape: const StadiumBorder(),
                   ),
                   icon: const Icon(Icons.person_add, size: 18),
                   label: const Text("Add Player"),

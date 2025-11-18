@@ -17,13 +17,13 @@ class TeamAdapter extends TypeAdapter<Team> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return Team(
-      id: fields[0] as int,
+      id: fields[0] as String,
       teamName: fields[1] as String,
       teamLogoUrl: fields[2] as String?,
       location: fields[3] as String?,
       trophies: fields[4] as int,
-      captainPlayerId: fields[5] as int?,
-      viceCaptainPlayerId: fields[6] as int?,
+      captainPlayerId: fields[5] as String?,
+      viceCaptainPlayerId: fields[6] as String?,
       ownerPhone: fields[7] as String?,
       captainPhone: fields[8] as String?,
       ownerImage: fields[9] as String?,

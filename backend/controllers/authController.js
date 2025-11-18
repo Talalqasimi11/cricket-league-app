@@ -20,92 +20,110 @@ const AUTH_THROTTLING = {
 // REGISTER CAPTAIN
 // ========================
 const registerCaptain = async (req, res) => {
-    let { phone_number, password, team_name, team_location, team_logo_url } = req.body; // ✅ ADDED team_logo_url
+  const { phone_number, email, password } = req.body;
 
-  if (!phone_number || !password || !team_name || !team_location) {
-    return res.status(400).json({ error: getUserFriendlyMessage("VALIDATION_REQUIRED_FIELD") });
+  // Require either phone_number OR email, but not both
+  if (!password) {
+    return res.status(400).json({ error: "Password is required" });
   }
 
-  // Basic phone and password validation (E.164-ish and min length)
-  const phoneRegex = /^\+?[1-9]\d{7,14}$/;
-  if (!phoneRegex.test(String(phone_number))) {
-    return res.status(400).json({ error: getUserFriendlyMessage("AUTH_INVALID_PHONE") });
+  if (!phone_number && !email) {
+    return res.status(400).json({ error: "Either phone number or email is required" });
   }
+
+  if (phone_number && email) {
+    return res.status(400).json({ error: "Provide either phone number OR email, not both" });
+  }
+
+  // Validate password
   if (String(password).length < 8) {
     return res.status(400).json({ error: getUserFriendlyMessage("AUTH_WEAK_PASSWORD") });
   }
 
-  // Validate team logo URL if provided
-  if (team_logo_url !== undefined && team_logo_url !== null) {
-    const urlValidation = validateTeamLogoUrl(team_logo_url);
-    if (!urlValidation.isValid) {
-      return res.status(400).json({ error: `Invalid team logo URL: ${urlValidation.error}` });
+  // Validate phone number if provided
+  if (phone_number) {
+    const phoneRegex = /^\+?[1-9]\d{7,14}$/;
+    if (!phoneRegex.test(String(phone_number))) {
+      return res.status(400).json({ error: getUserFriendlyMessage("AUTH_INVALID_PHONE") });
     }
-    // Use normalized URL
-    team_logo_url = urlValidation.normalizedUrl;
+  }
+
+  // Validate email if provided
+  if (email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(String(email))) {
+      return res.status(400).json({ error: "Invalid email format" });
+    }
   }
 
   try {
-    // Step 0: Check if phone number already exists
-    const [existing] = await db.query(
-      "SELECT id FROM users WHERE phone_number = ?",
-      [phone_number]
-    );
-    if (existing.length > 0) {
-      return res.status(409).json({ error: getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS") });
+    // Check if phone number or email already exists
+    let existingQuery = "";
+    let existingParams = [];
+
+    if (phone_number) {
+      existingQuery = "SELECT id FROM users WHERE phone_number = ?";
+      existingParams = [phone_number];
+    } else if (email) {
+      existingQuery = "SELECT id FROM users WHERE email = ?";
+      existingParams = [email];
     }
 
-    // Step 1: Create owner (user)
-    const passwordHash = await bcrypt.hash(password, 12);
-    const [userResult] = await db.query(
-      "INSERT INTO users (phone_number, password_hash) VALUES (?, ?)",
-      [phone_number, passwordHash]
-    );
+    const [existing] = await db.query(existingQuery, existingParams);
+    if (existing.length > 0) {
+      return res.status(409).json({
+        error: phone_number
+          ? getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS")
+          : "Email already registered"
+      });
+    }
 
+    // Create user
+    const passwordHash = await bcrypt.hash(password, 12);
+    const insertQuery = phone_number
+      ? "INSERT INTO users (phone_number, password_hash) VALUES (?, ?)"
+      : "INSERT INTO users (email, password_hash) VALUES (?, ?)";
+
+    const insertParams = [phone_number || email, passwordHash];
+
+    const [userResult] = await db.query(insertQuery, insertParams);
     const ownerId = userResult.insertId;
 
-    // Step 2: Create team linked with owner (also set historical captain_id for back-compat)
-    // ✅ ADDED team_logo_url to the INSERT statement
-    await db.query(
-      "INSERT INTO teams (team_name, team_location, team_logo_url, matches_played, matches_won, trophies, owner_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
-      [team_name, team_location, team_logo_url || null, ownerId]
-    );
-
-    // Step 3: Issue tokens on successful registration (same as login)
-    // Check if user is admin
+    // Issue tokens on successful registration
     const [adminCheck] = await db.query("SELECT is_admin FROM users WHERE id = ?", [ownerId]);
     const isAdmin = adminCheck.length > 0 && adminCheck[0].is_admin;
-    
+
     const roles = ['captain'];
     const scopes = ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'];
-    
+
     if (isAdmin) {
       roles.push('admin');
       scopes.push('admin:manage', 'user:manage', 'team:admin');
     }
-    
-    const jwtPayload = { 
-      sub: ownerId, 
-      phone_number: phone_number, 
+
+    const jwtPayload = {
+      sub: ownerId,
+      phone_number: phone_number,
+      email: email,
       roles: roles,
       scopes: scopes,
-      typ: 'access', // Token type for validation
-      iss: process.env.JWT_ISS, 
-      aud: process.env.JWT_AUD 
+      typ: 'access',
+      iss: process.env.JWT_ISS,
+      aud: process.env.JWT_AUD
     };
+
     const accessToken = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: "15m" });
     const refreshToken = jwt.sign({ sub: ownerId, typ: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
-    // Step 4: Persist refresh token (basic blacklist table)
+    // Persist refresh token
     await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [ownerId, refreshToken]);
 
-    // Step 5: Set httpOnly cookie with env-based security flags
-    // Use sameSite: 'none' for cross-site flows (mobile/web); requires secure: true
+    // Set httpOnly cookie with env-based security flags
     const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
     res.cookie("refresh_token", refreshToken, {
       httpOnly: true,
       secure: isSecure,
-      sameSite: isSecure ? "none" : "lax", // 'none' requires secure; fallback to 'lax' for local dev
+      sameSite: isSecure ? "none" : "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -113,25 +131,28 @@ const registerCaptain = async (req, res) => {
     // Set CSRF token for web clients
     const csrfToken = crypto.randomBytes(32).toString('hex');
     res.cookie("csrf-token", csrfToken, {
-      httpOnly: false, // Must be accessible to JavaScript for CSRF protection
+      httpOnly: false,
       secure: isSecure,
-      sameSite: "lax", // Use 'lax' for CSRF token regardless of environment
+      sameSite: "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // Step 6: Respond access token and conditionally refresh token (for mobile clients)
+    // Respond with access token
     const response = {
-      message: "Owner and team registered successfully",
+      message: "Registration successful",
       token: accessToken,
-      user: { id: ownerId, phone_number: phone_number },
+      user: {
+        id: ownerId,
+        phone_number: phone_number,
+        email: email
+      },
     };
-    
+
     // Only include refresh token in body for mobile clients
-    // For web clients, refresh tokens are handled via cookies only
     const isMobileClient = req.headers['x-client-type'] === 'mobile';
     const allowRefreshInBody = process.env.ALLOW_REFRESH_IN_BODY === 'true' && isMobileClient;
-    
+
     if (allowRefreshInBody) {
       response.refresh_token = refreshToken;
     }
@@ -140,7 +161,11 @@ const registerCaptain = async (req, res) => {
   } catch (err) {
     req.log?.error("registerCaptain: Database error", { error: err.message, code: err.code });
     if (err && err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS") });
+      return res.status(409).json({
+        error: phone_number
+          ? getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS")
+          : "Email already registered"
+      });
     }
     res.status(500).json({ error: "Server error" });
   }
@@ -150,24 +175,40 @@ const registerCaptain = async (req, res) => {
 // LOGIN CAPTAIN
 // ========================
 const loginCaptain = async (req, res) => {
-  const { phone_number, password } = req.body;
+  const { phone_number, email, password } = req.body;
 
-  if (!phone_number || !password) {
-    return res.status(400).json({ error: "Phone number and password are required" });
+  // Require either phone_number OR email, but not both
+  if (!password) {
+    return res.status(400).json({ error: "Password is required" });
   }
+
+  if (!phone_number && !email) {
+    return res.status(400).json({ error: "Either phone number or email is required" });
+  }
+
+  if (phone_number && email) {
+    return res.status(400).json({ error: "Provide either phone number OR email, not both" });
+  }
+
+  const loginIdentifier = phone_number || email;
+  const isPhoneLogin = !!phone_number;
 
   try {
     // 0️⃣ Check for recent auth failures to implement progressive throttling
     const ipAddress = req.ip || req.socket?.remoteAddress || null;
+    const identifierField = isPhoneLogin ? 'phone_number' : 'email';
+
+    // For throttling, we use the identifier (phone or email) as the key
     const [[{ failureCount }]] = await db.query(
-      "SELECT COUNT(*) AS failureCount FROM auth_failures WHERE phone_number = ? AND ip_address = ? AND failed_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE) AND resolved_at IS NULL",
-      [phone_number, ipAddress]
+      `SELECT COUNT(*) AS failureCount FROM auth_failures
+       WHERE ${identifierField} = ? AND ip_address = ? AND failed_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE) AND resolved_at IS NULL`,
+      [loginIdentifier, ipAddress]
     );
 
     // Progressive lockout: PRD-compliant thresholds
     let requiredDelay = 0;
     const failureCountNum = Number(failureCount);
-    
+
     // PRD thresholds: 3→1m, 5→5m, 10→30m in a 15m window
     if (failureCountNum >= AUTH_THROTTLING.THRESHOLDS.LEVEL_3.failures) {
       requiredDelay = AUTH_THROTTLING.THRESHOLDS.LEVEL_3.delayMinutes * 60 * 1000;
@@ -179,12 +220,13 @@ const loginCaptain = async (req, res) => {
 
     if (requiredDelay > 0) {
       const [[{ lastFailure }]] = await db.query(
-        "SELECT UNIX_TIMESTAMP(MAX(failed_at)) * 1000 AS lastFailure FROM auth_failures WHERE phone_number = ? AND ip_address = ? AND resolved_at IS NULL",
-        [phone_number, ipAddress]
+        `SELECT UNIX_TIMESTAMP(MAX(failed_at)) * 1000 AS lastFailure FROM auth_failures
+         WHERE ${identifierField} = ? AND ip_address = ? AND resolved_at IS NULL`,
+        [loginIdentifier, ipAddress]
       );
       const timeSinceLastFailure = Date.now() - Number(lastFailure);
       if (timeSinceLastFailure < requiredDelay) {
-        return res.status(429).json({ 
+        return res.status(429).json({
           error: "Too many failed login attempts. Please try again later.",
           retryAfter: Math.ceil((requiredDelay - timeSinceLastFailure) / 1000)
         });
@@ -193,15 +235,15 @@ const loginCaptain = async (req, res) => {
 
     // 1️⃣ Find user
     const [rows] = await db.query(
-      "SELECT * FROM users WHERE phone_number = ?",
-      [phone_number]
+      `SELECT * FROM users WHERE ${identifierField} = ?`,
+      [loginIdentifier]
     );
 
     if (rows.length === 0) {
       // Log failed attempt (no user found)
       await db.query(
-        "INSERT INTO auth_failures (phone_number, ip_address, user_agent) VALUES (?, ?, ?)",
-        [phone_number, ipAddress, req.headers['user-agent'] || null]
+        `INSERT INTO auth_failures (${identifierField}, ip_address, user_agent) VALUES (?, ?, ?)`,
+        [loginIdentifier, ipAddress, req.headers['user-agent'] || null]
       );
       return res.status(404).json({ error: "User not found" });
     }
@@ -213,39 +255,42 @@ const loginCaptain = async (req, res) => {
     if (!passwordOk) {
       // Log failed password attempt
       await db.query(
-        "INSERT INTO auth_failures (phone_number, ip_address, user_agent) VALUES (?, ?, ?)",
-        [phone_number, ipAddress, req.headers['user-agent'] || null]
+        `INSERT INTO auth_failures (${identifierField}, ip_address, user_agent) VALUES (?, ?, ?)`,
+        [loginIdentifier, ipAddress, req.headers['user-agent'] || null]
       );
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // 3️⃣ SUCCESS - Mark auth failures as resolved for this phone number and IP
+    // 3️⃣ SUCCESS - Mark auth failures as resolved for this identifier and IP
     await db.query(
-      "UPDATE auth_failures SET resolved_at = NOW() WHERE phone_number = ? AND ip_address = ? AND resolved_at IS NULL", 
-      [phone_number, ipAddress]
+      `UPDATE auth_failures SET resolved_at = NOW()
+       WHERE ${identifierField} = ? AND ip_address = ? AND resolved_at IS NULL`,
+      [loginIdentifier, ipAddress]
     );
 
     // 4️⃣ Create short-lived access token and long-lived refresh token
     // Check if user is admin
     const isAdmin = user.is_admin || false;
-    
+
     const roles = ['captain'];
     const scopes = ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'];
-    
+
     if (isAdmin) {
       roles.push('admin');
       scopes.push('admin:manage', 'user:manage', 'team:admin');
     }
-    
-    const jwtPayload = { 
-      sub: user.id, 
-      phone_number: user.phone_number, 
+
+    const jwtPayload = {
+      sub: user.id,
+      phone_number: user.phone_number,
+      email: user.email,
       roles: roles,
       scopes: scopes,
-      typ: 'access', // Token type for validation
-      iss: process.env.JWT_ISS, 
-      aud: process.env.JWT_AUD 
+      typ: 'access',
+      iss: process.env.JWT_ISS,
+      aud: process.env.JWT_AUD
     };
+
     const accessToken = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: "15m" });
     const refreshToken = jwt.sign({ sub: user.id, typ: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
@@ -253,12 +298,11 @@ const loginCaptain = async (req, res) => {
     await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [user.id, refreshToken]);
 
     // 6️⃣ Set httpOnly cookie with env-based security flags
-    // Use sameSite: 'none' for cross-site flows (mobile/web); requires secure: true
     const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
     res.cookie("refresh_token", refreshToken, {
       httpOnly: true,
       secure: isSecure,
-      sameSite: isSecure ? "none" : "lax", // 'none' requires secure; fallback to 'lax' for local dev
+      sameSite: isSecure ? "none" : "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -266,9 +310,9 @@ const loginCaptain = async (req, res) => {
     // Set CSRF token for web clients
     const csrfToken = crypto.randomBytes(32).toString('hex');
     res.cookie("csrf-token", csrfToken, {
-      httpOnly: false, // Must be accessible to JavaScript for CSRF protection
+      httpOnly: false,
       secure: isSecure,
-      sameSite: "lax", // Use 'lax' for CSRF token regardless of environment
+      sameSite: "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -277,18 +321,21 @@ const loginCaptain = async (req, res) => {
     const response = {
       message: "Login successful",
       token: accessToken,
-      user: { id: user.id, phone_number: user.phone_number },
+      user: {
+        id: user.id,
+        phone_number: user.phone_number,
+        email: user.email
+      },
     };
-    
+
     // Only include refresh token in body for mobile clients
-    // For web clients, refresh tokens are handled via cookies only
     const isMobileClient = req.headers['x-client-type'] === 'mobile';
     const allowRefreshInBody = process.env.ALLOW_REFRESH_IN_BODY === 'true' && isMobileClient;
-    
+
     if (allowRefreshInBody) {
       response.refresh_token = refreshToken;
     }
-    
+
     res.json(response);
   } catch (err) {
     req.log?.error(err);

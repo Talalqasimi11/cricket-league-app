@@ -31,41 +31,41 @@ dependencies:
   flutter:
     sdk: flutter
   provider: ^6.1.2
-  http: ^1.1.0
-  shared_preferences: ^2.5.3
+  http: ^1.2.1
+  shared_preferences: ^2.2.3
   cupertino_icons: ^1.0.8
-  path_provider: ^2.1.2
-  share_plus: ^12.0.0
-  flutter_secure_storage: ^9.2.4
-  url_launcher: ^6.2.1
-  connectivity_plus: ^7.0.0  # Update to latest version for List<ConnectivityResult>
+  path_provider: ^2.1.3
+  share_plus: ^9.0.0
+  flutter_secure_storage: ^9.1.1
+  url_launcher: ^6.3.0
+  connectivity_plus: ^6.0.3
   socket_io_client: ^2.0.3+1
   # web_socket_channel: ^2.4.0  # Removed web dependency
   hive: ^2.2.3
   hive_flutter: ^1.1.0
-  cached_network_image: ^3.3.0
-  flutter_cache_manager: ^3.3.1
+  cached_network_image: ^3.3.1
+  flutter_cache_manager: ^3.3.2
   performance: 0.1.1  # For performance monitoring
   # workmanager: ^0.5.2  # For background sync - Commented out due to compatibility issues
   # flutter_offline: ^6.0.0  # For offline detection - Commented out, causes web package issues
-  device_info_plus: ^9.1.2  # For device information
-  image_picker: ^1.0.0  # Image picking from camera/gallery
-  intl: ^0.19.0  # Date/time formatting
-  fl_chart: 1.1.1  # Statistics charts (optional)
-  shimmer: ^3.0.0  # Loading skeleton (optional)
-  pull_to_refresh: ^2.0.0  # Refresh functionality (optional)
-  flutter_svg: ^2.0.9      # SVG icons support
-  custom_pop_up_menu: ^1.2.4  # Custom popup menu
+  device_info_plus: ^10.1.0
+  image_picker: ^1.1.2
+  intl: ^0.19.0
+  fl_chart: ^0.68.0
+  shimmer: ^3.0.0
+  pull_to_refresh: ^2.0.0
+  flutter_svg: ^2.0.10+1
+  custom_pop_up_menu: ^1.2.4
 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
+  flutter_lints: ^4.0.0
   mockito: ^5.4.4
-  build_runner: ^2.4.13
+  build_runner: ^2.4.11
   hive_generator: ^2.0.1
-  test: ^1.24.9
+  test: ^1.25.2
   integration_test:
     sdk: flutter
 

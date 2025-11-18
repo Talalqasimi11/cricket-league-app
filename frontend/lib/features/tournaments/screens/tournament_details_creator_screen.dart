@@ -5,6 +5,7 @@ import '../models/tournament_model.dart';
 import '../../matches/screens/live_match_view_screen.dart';
 import '../../matches/screens/scorecard_screen.dart';
 import '../../../core/api_client.dart';
+import '../../../widgets/tournament_bracket_widget.dart';
 
 class TournamentDetailsCaptainScreen extends StatefulWidget {
   final TournamentModel tournament;
@@ -21,123 +22,336 @@ class _TournamentDetailsCaptainScreenState
   late List<MatchModel> _matches;
   String? _reschedulingMatchId;
 
+  // Safe helpers
+  String _safeString(String? value, String defaultValue) {
+    if (value == null || value.isEmpty) return defaultValue;
+    return value;
+  }
+
+  String? _safeFormatDateTime(DateTime? dateTime) {
+    if (dateTime == null) return null;
+    try {
+      final str = dateTime.toLocal().toString();
+      if (str.length >= 16) {
+        return str.substring(0, 16);
+      }
+      return str;
+    } catch (e) {
+      debugPrint('Error formatting date: $e');
+      return 'Invalid date';
+    }
+  }
+
+  String _safeFormatDateOnly(DateTime? dateTime) {
+    if (dateTime == null) return 'Unknown';
+    try {
+      final str = dateTime.toString();
+      if (str.contains(' ')) {
+        return str.split(' ')[0];
+      }
+      return str;
+    } catch (e) {
+      debugPrint('Error formatting date: $e');
+      return 'Unknown';
+    }
+  }
+
+  int _safeExtractMatchNumber(String? id, String? displayId, int fallback) {
+    try {
+      if (displayId != null && displayId.isNotEmpty) {
+        final num = int.tryParse(displayId);
+        if (num != null && num > 0) return num;
+      }
+
+      if (id == null || id.isEmpty) return fallback;
+
+      final numbersOnly = id.replaceAll(RegExp(r'[^0-9]'), '');
+      if (numbersOnly.isEmpty) return fallback;
+
+      return int.tryParse(numbersOnly) ?? fallback;
+    } catch (e) {
+      debugPrint('Error extracting match number: $e');
+      return fallback;
+    }
+  }
+
+  MatchStatus _safeGetMatchStatus(String? status) {
+    try {
+      return MatchStatus.fromString(status ?? 'upcoming');
+    } catch (e) {
+      debugPrint('Error parsing match status: $e');
+      return MatchStatus.upcoming;
+    }
+  }
+
+  dynamic _safeJsonDecode(String body) {
+    try {
+      if (body.isEmpty) {
+        throw const FormatException('Empty response body');
+      }
+      return jsonDecode(body);
+    } on FormatException catch (e) {
+      debugPrint('JSON decode error: $e');
+      debugPrint('Response body: $body');
+      throw FormatException('Invalid JSON response: ${e.message}');
+    } catch (e) {
+      debugPrint('Unexpected decode error: $e');
+      rethrow;
+    }
+  }
+
+  void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : null,
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
-    _matches = List.from(widget.tournament.matches ?? []);
+    try {
+      _matches = List.from(widget.tournament.matches ?? []);
+    } catch (e) {
+      debugPrint('Error initializing matches: $e');
+      _matches = [];
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final tournamentName = _safeString(widget.tournament.name, 'Tournament');
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.tournament.name),
+        title: Text(tournamentName),
         centerTitle: true,
         backgroundColor: Colors.green.shade600,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (_matches.isEmpty)
-            const Center(child: Text("No matches scheduled yet")),
-          if (_matches.isNotEmpty) ..._buildStages(context, _matches),
+        actions: [
+          if (_matches.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.account_tree),
+              tooltip: 'View Bracket',
+              onPressed: () => _showBracketView(context),
+            ),
         ],
+      ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    try {
+      if (_matches.isEmpty) {
+        return _buildEmptyState();
+      }
+
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: _buildStages(context, _matches),
+      );
+    } catch (e) {
+      debugPrint('Error building body: $e');
+      return _buildErrorState(e.toString());
+    }
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.sports_cricket, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            const Text(
+              "No matches scheduled yet",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(String error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red.shade400),
+            const SizedBox(height: 16),
+            const Text(
+              "Error loading matches",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   List<Widget> _buildStages(BuildContext context, List<MatchModel> matches) {
-    final List<Widget> stages = [];
+    try {
+      final List<Widget> stages = [];
 
-    stages.add(
-      _buildStage(
-        "All Matches",
-        matches.asMap().entries.map((entry) {
-          final idx = entry.key;
-          final m = entry.value;
+      final matchCards = matches.asMap().entries.map((entry) {
+        try {
+          return _buildMatchCard(entry.key, entry.value);
+        } catch (e) {
+          debugPrint('Error building match card: $e');
+          return _buildErrorMatchCard(entry.value.id);
+        }
+      }).toList();
 
-          final matchNo =
-              int.tryParse(m.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? idx + 1;
-          final scheduled = m.scheduledAt?.toLocal().toString().substring(
-            0,
-            16,
-          );
+      stages.add(_buildStage("All Matches", matchCards));
 
-          return MatchCard(
-            matchNo: int.tryParse(m.displayId) ?? matchNo,
-            teamA: m.teamA,
-            teamB: m.teamB,
-            result: MatchStatus.fromString(m.status) == MatchStatus.completed
-                ? "Winner: ${m.winner ?? 'TBD'}"
-                : null,
-            scheduled: scheduled,
-            editable: MatchStatus.fromString(m.status) == MatchStatus.upcoming,
-            isRescheduling: _reschedulingMatchId == m.id,
-            match: m,
-            onEdit: _reschedulingMatchId == null ? () async {
-              if (!mounted) return;
-              final newDate = await _pickDate(context, m.scheduledAt);
-              if (!mounted) return;
-              if (newDate != null) {
-                setState(() {
-                  _matches[idx] = m.copyWith(scheduledAt: newDate);
-                });
+      return stages;
+    } catch (e) {
+      debugPrint('Error building stages: $e');
+      return [
+        Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            'Error loading matches: $e',
+            style: TextStyle(color: Colors.red.shade700),
+          ),
+        ),
+      ];
+    }
+  }
 
-                // Save updated match date to backend
-                await _rescheduleMatch(m.id, newDate);
-              }
-            } : null,
-            onStart: () async {
-              // Call backend API to start the match
-              try {
-                final response = await ApiClient.instance.put(
-                  '/api/tournament-matches/start/${m.id}',
-                );
+  Widget _buildMatchCard(int idx, MatchModel m) {
+    final matchNo = _safeExtractMatchNumber(m.id, m.displayId, idx + 1);
+    final scheduled = _safeFormatDateTime(m.scheduledAt);
+    final matchStatus = _safeGetMatchStatus(m.status);
+    final isCompleted = matchStatus == MatchStatus.completed;
+    final isUpcoming = matchStatus == MatchStatus.upcoming;
 
-                if (response.statusCode == 200) {
-                  final data = jsonDecode(response.body) as Map<String, dynamic>;
-                  final matchId = data['match_id']?.toString();
+    return MatchCard(
+      matchNo: matchNo,
+      teamA: _safeString(m.teamA, 'Team A'),
+      teamB: _safeString(m.teamB, 'Team B'),
+      result: isCompleted ? "Winner: ${_safeString(m.winner, 'TBD')}" : null,
+      scheduled: scheduled,
+      editable: isUpcoming,
+      isRescheduling: _reschedulingMatchId == m.id,
+      match: m,
+      onEdit: _reschedulingMatchId == null && isUpcoming
+          ? () => _handleEditMatch(idx, m)
+          : null,
+      onStart: isUpcoming ? () => _handleStartMatch(idx, m) : null,
+      onViewDetails: () => _navigateToMatchDetails(m),
+    );
+  }
 
-                  if (matchId != null) {
-                    // Update local state with new status and parent_match_id
-                    setState(() {
-                      _matches[idx] = m.copyWith(
-                        status: "live",
-                        parentMatchId: matchId,
-                      );
-                    });
-
-                    // Navigate to live scoring route with the actual match ID
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => LiveMatchViewScreen(matchId: matchId),
-                      ),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Failed to get match ID from response')),
-                    );
-                  }
-                } else {
-                  final data = jsonDecode(response.body) as Map<String, dynamic>;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(data['error']?.toString() ?? 'Failed to start match')),
-                  );
-                }
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error starting match: $e')),
-                );
-              }
-            },
-            onViewDetails: () => _navigateToMatchDetails(m),
-          );
-        }).toList(),
+  Widget _buildErrorMatchCard(String matchId) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          'Error loading match: ${_safeString(matchId, 'Unknown')}',
+          style: TextStyle(color: Colors.red.shade700),
+        ),
       ),
     );
+  }
 
-    return stages;
+  Future<void> _handleEditMatch(int idx, MatchModel m) async {
+    if (!mounted) return;
+
+    try {
+      final newDate = await _pickDate(context, m.scheduledAt);
+
+      if (!mounted || newDate == null) return;
+
+      // Validate index
+      if (idx < 0 || idx >= _matches.length) {
+        debugPrint('Invalid match index: $idx');
+        return;
+      }
+
+      setState(() {
+        _matches[idx] = m.copyWith(scheduledAt: newDate);
+      });
+
+      await _rescheduleMatch(m.id, newDate, idx);
+    } catch (e) {
+      debugPrint('Error handling edit match: $e');
+      _showMessage('Failed to edit match', isError: true);
+    }
+  }
+
+  Future<void> _handleStartMatch(int idx, MatchModel m) async {
+    if (!mounted) return;
+
+    try {
+      final response = await ApiClient.instance.put(
+        '/api/tournament-matches/start/${m.id}',
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final data = _safeJsonDecode(response.body);
+
+        if (data is! Map<String, dynamic>) {
+          throw const FormatException('Invalid response format');
+        }
+
+        final matchId = data['match_id']?.toString();
+
+        if (matchId == null || matchId.isEmpty) {
+          _showMessage('Failed to get match ID from response', isError: true);
+          return;
+        }
+
+        // Validate index before updating
+        if (idx >= 0 && idx < _matches.length && mounted) {
+          setState(() {
+            _matches[idx] = m.copyWith(status: "live", parentMatchId: matchId);
+          });
+        }
+
+        if (!mounted) return;
+
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LiveMatchViewScreen(matchId: matchId),
+          ),
+        );
+      } else {
+        final data = _safeJsonDecode(response.body);
+        final errorMsg = data is Map<String, dynamic>
+            ? (data['error']?.toString() ?? 'Failed to start match')
+            : 'Failed to start match';
+
+        _showMessage(errorMsg, isError: true);
+      }
+    } catch (e) {
+      debugPrint('Error starting match: $e');
+      if (mounted) {
+        _showMessage('Error starting match: $e', isError: true);
+      }
+    }
   }
 
   Widget _buildStage(String stage, List<Widget> matches) {
@@ -155,21 +369,20 @@ class _TournamentDetailsCaptainScreenState
     );
   }
 
-  Future<void> _rescheduleMatch(String matchId, DateTime newDate) async {
-    // Find the match and store the old date
-    final matchIndex = _matches.indexWhere((m) => m.id == matchId);
-    if (matchIndex == -1) return;
+  Future<void> _rescheduleMatch(
+    String matchId,
+    DateTime newDate,
+    int matchIndex,
+  ) async {
+    if (matchIndex < 0 || matchIndex >= _matches.length) {
+      debugPrint('Invalid match index for rescheduling: $matchIndex');
+      return;
+    }
 
     final oldDate = _matches[matchIndex].scheduledAt;
 
-    // Set rescheduling state
     setState(() {
       _reschedulingMatchId = matchId;
-    });
-
-    // Update state optimistically
-    setState(() {
-      _matches[matchIndex] = _matches[matchIndex].copyWith(scheduledAt: newDate);
     });
 
     try {
@@ -178,43 +391,41 @@ class _TournamentDetailsCaptainScreenState
         body: {'match_date': newDate.toIso8601String()},
       );
 
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Match $matchId rescheduled to ${newDate.toString().split(' ')[0]}",
-              ),
-            ),
-          );
-        }
+        _showMessage(
+          "Match $matchId rescheduled to ${_safeFormatDateOnly(newDate)}",
+        );
       } else {
-        // Revert on non-200 response
-        if (mounted) {
+        // Revert on failure
+        if (matchIndex >= 0 && matchIndex < _matches.length) {
           setState(() {
-            _matches[matchIndex] = _matches[matchIndex].copyWith(scheduledAt: oldDate);
+            _matches[matchIndex] = _matches[matchIndex].copyWith(
+              scheduledAt: oldDate,
+            );
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Failed to reschedule match: ${response.statusCode}",
-              ),
-            ),
-          );
         }
+        _showMessage(
+          "Failed to reschedule match: ${response.statusCode}",
+          isError: true,
+        );
       }
     } catch (e) {
-      // Revert on exception
+      debugPrint('Error rescheduling match: $e');
+
       if (mounted) {
-        setState(() {
-          _matches[matchIndex] = _matches[matchIndex].copyWith(scheduledAt: oldDate);
-        });
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error rescheduling match: $e")));
+        // Revert on exception
+        if (matchIndex >= 0 && matchIndex < _matches.length) {
+          setState(() {
+            _matches[matchIndex] = _matches[matchIndex].copyWith(
+              scheduledAt: oldDate,
+            );
+          });
+        }
+        _showMessage("Error rescheduling match: $e", isError: true);
       }
     } finally {
-      // Clear rescheduling state
       if (mounted) {
         setState(() {
           _reschedulingMatchId = null;
@@ -225,88 +436,221 @@ class _TournamentDetailsCaptainScreenState
 
   Future<DateTime?> _pickDate(BuildContext context, DateTime? initial) async {
     if (!mounted) return null;
-    final date = await showDatePicker(
-      context: context,
-      initialDate: initial ?? DateTime.now().add(const Duration(days: 1)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (!mounted) return null;
-    if (date == null) return null;
 
-    final time = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 10, minute: 0),
-    );
-    if (!mounted) return null;
-    if (time == null) return null;
+    try {
+      final date = await showDatePicker(
+        context: context,
+        initialDate: initial ?? DateTime.now().add(const Duration(days: 1)),
+        firstDate: DateTime.now(),
+        lastDate: DateTime.now().add(const Duration(days: 365)),
+      );
 
-    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      if (!mounted || date == null) return null;
+
+      final time = await showTimePicker(
+        context: context,
+        initialTime: initial != null
+            ? TimeOfDay.fromDateTime(initial)
+            : const TimeOfDay(hour: 10, minute: 0),
+      );
+
+      if (!mounted || time == null) return null;
+
+      return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    } catch (e) {
+      debugPrint('Error picking date: $e');
+      return null;
+    }
   }
 
-  void _navigateToMatchDetails(MatchModel match) {
-    final matchStatus = MatchStatus.fromString(match.status);
-    if (matchStatus == MatchStatus.live) {
-      // Navigate to live match view for ongoing matches using parent_match_id
-      final matchId = match.parentMatchId ?? match.id;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LiveMatchViewScreen(matchId: matchId),
+  void _showBracketView(BuildContext context) {
+    try {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-      );
-    } else if (matchStatus == MatchStatus.completed) {
-      // Navigate to scorecard for completed matches using parent_match_id
-      final matchId = match.parentMatchId ?? match.id;
-      if (match.parentMatchId != null) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => ScorecardScreen(matchId: matchId)),
-        );
-      } else {
-        // Fallback message if parent_match_id not available
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text("Scorecard Not Available"),
-            content: const Text("The scorecard for this completed match is not yet available."),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Close"),
+        builder: (sheetContext) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.9,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) => Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${_safeString(widget.tournament.name, 'Tournament')} - Tournament Bracket',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        if (Navigator.canPop(sheetContext)) {
+                          Navigator.pop(sheetContext);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: TournamentBracketWidget(
+                  matches: _matches,
+                  onMatchTap: (match) => _navigateToMatchDetails(match),
+                ),
               ),
             ],
           ),
-        );
-      }
-    } else {
-      // For upcoming matches (including any other status), show a dialog with match info
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text("Match ${match.id}"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("${match.teamA} vs ${match.teamB}"),
-              const SizedBox(height: 8),
-              Text("Status: ${match.status}"),
-              if (match.scheduledAt != null)
-                Text(
-                  "Scheduled: ${match.scheduledAt!.toLocal().toString().substring(0, 16)}",
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Close"),
-            ),
-          ],
         ),
       );
+    } catch (e) {
+      debugPrint('Error showing bracket view: $e');
+      _showMessage('Failed to show bracket view', isError: true);
     }
+  }
+
+  Future<void> _navigateToMatchDetails(MatchModel match) async {
+    if (!mounted) return;
+
+    try {
+      final matchStatus = _safeGetMatchStatus(match.status);
+      final matchId = _safeString(match.parentMatchId ?? match.id, '');
+
+      if (matchId.isEmpty) {
+        _showErrorDialog('Invalid match ID');
+        return;
+      }
+
+      if (matchStatus == MatchStatus.live) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LiveMatchViewScreen(matchId: matchId),
+          ),
+        );
+      } else if (matchStatus == MatchStatus.completed) {
+        if (match.parentMatchId != null) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ScorecardScreen(matchId: matchId),
+            ),
+          );
+        } else {
+          _showScorecardNotAvailableDialog();
+        }
+      } else {
+        _showUpcomingMatchDialog(match);
+      }
+    } catch (e) {
+      debugPrint('Error navigating to match details: $e');
+      _showErrorDialog('Failed to open match details');
+    }
+  }
+
+  void _showUpcomingMatchDialog(MatchModel match) {
+    if (!mounted) return;
+
+    final scheduled = _safeFormatDateTime(match.scheduledAt);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          "Match ${_safeString(match.displayId ?? match.id, 'Details')}",
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "${_safeString(match.teamA, 'Team A')} vs ${_safeString(match.teamB, 'Team B')}",
+            ),
+            const SizedBox(height: 8),
+            Text("Status: ${_safeString(match.status, 'Unknown')}"),
+            if (scheduled != null) ...[
+              const SizedBox(height: 4),
+              Text("Scheduled: $scheduled"),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (Navigator.canPop(dialogContext)) {
+                Navigator.pop(dialogContext);
+              }
+            },
+            child: const Text("Close"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showScorecardNotAvailableDialog() {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("Scorecard Not Available"),
+        content: const Text(
+          "The scorecard for this completed match is not yet available.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (Navigator.canPop(dialogContext)) {
+                Navigator.pop(dialogContext);
+              }
+            },
+            child: const Text("Close"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("Error"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (Navigator.canPop(dialogContext)) {
+                Navigator.pop(dialogContext);
+              }
+            },
+            child: const Text("Close"),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -350,7 +694,7 @@ class MatchCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Match $matchNo",
+              "Match ${matchNo > 0 ? matchNo : 'N/A'}",
               style: TextStyle(
                 color: Colors.green.shade700,
                 fontWeight: FontWeight.w600,
@@ -360,26 +704,44 @@ class MatchCard extends StatelessWidget {
             Text(
               "$teamA vs $teamB",
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 4),
 
             if (result != null)
-              Text(result!, style: const TextStyle(color: Colors.grey)),
+              Text(
+                result!,
+                style: const TextStyle(color: Colors.grey),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+
             if (scheduled != null)
               Row(
                 children: [
-                  Text(
-                    "Scheduled: $scheduled",
-                    style: const TextStyle(color: Colors.grey, fontSize: 14),
+                  Expanded(
+                    child: Text(
+                      "Scheduled: $scheduled",
+                      style: const TextStyle(color: Colors.grey, fontSize: 14),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  if (editable)
+                  if (editable && onEdit != null && !isRescheduling)
                     IconButton(
                       icon: const Icon(Icons.edit, color: Colors.green),
                       onPressed: onEdit,
                     ),
+                  if (isRescheduling)
+                    const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                 ],
               )
-            else if (editable)
+            else if (editable && onEdit != null && !isRescheduling)
               TextButton.icon(
                 icon: const Icon(Icons.add, color: Colors.green),
                 label: const Text("Set Date"),
@@ -396,15 +758,18 @@ class MatchCard extends StatelessWidget {
                     child: const Text("View Details"),
                   ),
                 ),
-                if (editable) ...[
+                if (editable && onStart != null) ...[
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green.shade600,
                       ),
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text("Start Match"),
+                      icon: const Icon(Icons.play_arrow, size: 18),
+                      label: const Text(
+                        "Start Match",
+                        style: TextStyle(fontSize: 13),
+                      ),
                       onPressed: onStart,
                     ),
                   ),

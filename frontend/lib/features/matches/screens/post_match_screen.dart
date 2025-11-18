@@ -141,9 +141,9 @@ class _ScorecardTab extends StatelessWidget {
         children: [
           const Icon(Icons.scoreboard, color: Colors.white70, size: 48),
           const SizedBox(height: 12),
-          Text(
+          const Text(
             'Scorecard',
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white,
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -174,9 +174,9 @@ class _StatsTab extends StatelessWidget {
         children: [
           const Icon(Icons.bar_chart, color: Colors.white70, size: 48),
           const SizedBox(height: 12),
-          Text(
+          const Text(
             'Match Stats',
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white,
               fontSize: 20,
               fontWeight: FontWeight.bold,

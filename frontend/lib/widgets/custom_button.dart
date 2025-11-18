@@ -143,17 +143,17 @@ class _CustomButtonState extends State<CustomButton>
                               ),
                             ),
                           ),
-                          SizedBox(width: AppSpacing.sm),
+                          const SizedBox(width: AppSpacing.sm),
                         ] else if (widget.customIcon != null) ...[
                           widget.customIcon!,
-                          SizedBox(width: AppSpacing.sm),
+                          const SizedBox(width: AppSpacing.sm),
                         ] else if (widget.icon != null) ...[
                           Icon(
                             widget.icon,
                             size: sizeProps.iconSize,
                             color: buttonStyle.textColor,
                           ),
-                          SizedBox(width: AppSpacing.sm),
+                          const SizedBox(width: AppSpacing.sm),
                         ],
                         Flexible(
                           child: Text(
@@ -184,7 +184,7 @@ class _CustomButtonState extends State<CustomButton>
       case ButtonVariant.primary:
         return _ButtonStyle(
           decoration: BoxDecoration(
-            gradient: LinearGradient(
+            gradient: const LinearGradient(
               colors: [AppColors.primary, AppColors.secondaryGreen],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -265,8 +265,8 @@ class _CustomButtonState extends State<CustomButton>
         );
 
       case ButtonVariant.ghost:
-        return _ButtonStyle(
-          decoration: const BoxDecoration(color: Colors.transparent),
+        return const _ButtonStyle(
+          decoration: BoxDecoration(color: Colors.transparent),
           textColor: AppColors.primary,
         );
     }
@@ -287,9 +287,9 @@ class _CustomButtonState extends State<CustomButton>
         );
 
       case ButtonSize.medium:
-        return _ButtonSizeProperties(
+        return const _ButtonSizeProperties(
           height: 48,
-          padding: const EdgeInsets.symmetric(
+          padding: EdgeInsets.symmetric(
             horizontal: AppSpacing.lg,
             vertical: AppSpacing.sm,
           ),

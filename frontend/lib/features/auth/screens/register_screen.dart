@@ -1,10 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../core/api_client.dart';
-import '../../../core/error_dialog.dart';
 import '../../../core/theme/theme_config.dart';
 
 import '../../../widgets/custom_button.dart';
-import 'dart:convert';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -15,15 +15,15 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
-  final TextEditingController _teamNameController = TextEditingController();
-  final TextEditingController _locationController = TextEditingController();
 
   bool _isLoading = false;
   String? _errorMessage;
   final _formKey = GlobalKey<FormState>();
+  bool _useEmail = false; // Toggle between phone and email
 
   /// Format phone number to E.164 format
   String _formatPhoneNumber(String phone) {
@@ -76,18 +76,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return null;
   }
 
-  /// Validate team name
-  String? _validateTeamName(String? value) {
+  /// Validate email
+  String? _validateEmail(String? value) {
     if (value == null || value.isEmpty) {
-      return 'Team name is required';
+      return 'Email is required';
     }
-    if (value.length < 3) {
-      return 'Team name must be at least 3 characters';
+    final emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    if (!emailRegex.hasMatch(value)) {
+      return 'Please enter a valid email address';
     }
     return null;
   }
 
-  /// Register user after verifying OTP
+  /// Register user
   void _register() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -99,36 +100,80 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      final phone = _formatPhoneNumber(_phoneController.text.trim());
+      final body = {
+        'password': _passwordController.text,
+      };
+
+      if (_useEmail) {
+        body['email'] = _emailController.text.trim();
+      } else {
+        body['phone_number'] = _formatPhoneNumber(_phoneController.text.trim());
+      }
+
       final response = await ApiClient.instance.post(
         '/api/auth/register',
-        body: {
-          'phone_number': phone,
-          'password': _passwordController.text,
-          'team_name': _teamNameController.text,
-          'location': _locationController.text,
-        },
+        body: body,
       );
 
-      final data = jsonDecode(response.body);
-
-      if (!mounted) return;
-
       if (response.statusCode == 201 || response.statusCode == 200) {
-        ErrorDialog.showSuccessSnackBar(
-          context,
-          message: data['message'] ?? 'Registration successful',
-        );
-        // Navigate to login and update auth provider
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/login');
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('✅ ${data['message'] ?? 'Registration successful'}')),
+          );
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+      } else if (response.statusCode == 400) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final errorMsg = data['error'] ?? 'Invalid registration data';
+        if (mounted) {
+          setState(() => _errorMessage = errorMsg);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMsg)),
+          );
+        }
+      } else if (response.statusCode == 409) {
+        final identifierType = _useEmail ? 'Email' : 'Phone number';
+        if (mounted) {
+          setState(() => _errorMessage = '$identifierType already registered');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$identifierType already registered')),
+          );
+        }
+      } else if (response.statusCode == 422) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final errorMsg = data['error'] ?? 'Validation failed';
+        if (mounted) {
+          setState(() => _errorMessage = errorMsg);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMsg)),
+          );
+        }
+      } else if (response.statusCode >= 500) {
+        if (mounted) {
+          setState(() => _errorMessage = 'Server error. Please try again later.');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error. Please try again later.')),
+          );
+        }
       } else {
-        throw response;
+        if (mounted) {
+          setState(() => _errorMessage = 'Registration failed. Please try again.');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Registration failed (${response.statusCode})')),
+          );
+        }
       }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _errorMessage = e.toString());
-      ErrorDialog.showErrorSnackBar(context, message: e.toString());
+      if (mounted) {
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Registration failed. Please try again.';
+        setState(() => _errorMessage = errorMessage);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -137,10 +182,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void dispose() {
     _phoneController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _teamNameController.dispose();
-    _locationController.dispose();
     super.dispose();
   }
 
@@ -185,16 +229,62 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
 
-              // Phone number
-              TextFormField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                validator: _validatePhoneNumber,
-                decoration: _inputDecoration(
-                  'Phone Number (03XX-XXXXXXX)',
-                  Icons.phone,
-                ),
+              // Registration method toggle
+              Row(
+                children: [
+                  Expanded(
+                    child: RadioListTile<bool>(
+                      title: const Text('Phone'),
+                      value: false,
+                      groupValue: _useEmail,
+                      onChanged: (value) {
+                        setState(() {
+                          _useEmail = value!;
+                        });
+                      },
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  Expanded(
+                    child: RadioListTile<bool>(
+                      title: const Text('Email'),
+                      value: true,
+                      groupValue: _useEmail,
+                      onChanged: (value) {
+                        setState(() {
+                          _useEmail = value!;
+                        });
+                      },
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
               ),
+              const SizedBox(height: 16),
+
+              // Phone or Email field
+              if (_useEmail)
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: _validateEmail,
+                  decoration: _inputDecoration(
+                    'Email Address',
+                    Icons.email,
+                  ),
+                )
+              else
+                TextFormField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  validator: _validatePhoneNumber,
+                  decoration: _inputDecoration(
+                    'Phone Number (03XX-XXXXXXX)',
+                    Icons.phone,
+                  ),
+                ),
               const SizedBox(height: 16),
 
               // Password with requirements
@@ -203,13 +293,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 obscureText: true,
                 validator: _validatePassword,
                 decoration: _inputDecoration(
-                  'Password (min 8 chars, 1 uppercase, 1 number)',
+                  'Password (min 8 characters)',
                   Icons.lock,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                'Password must contain: at least 8 characters',
+                'Password must be at least 8 characters long',
                 style: AppTypographyExtended.bodySmall.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
@@ -226,22 +316,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Icons.lock_outline,
                 ),
               ),
-              const SizedBox(height: 16),
-
-              // Team Name
-              TextFormField(
-                controller: _teamNameController,
-                validator: _validateTeamName,
-                decoration: _inputDecoration('Team Name', Icons.sports_cricket),
-              ),
-              const SizedBox(height: 16),
-
-              // Location
-              TextFormField(
-                controller: _locationController,
-                decoration: _inputDecoration('Location', Icons.location_on),
-              ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
               PrimaryButton(
                 text: "Register",
@@ -249,7 +324,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 isLoading: _isLoading,
                 fullWidth: true,
                 size: ButtonSize.large,
-              )
+              ),
+
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () {
+                  Navigator.pushReplacementNamed(context, '/login');
+                },
+                child: Text(
+                  'Already have an account? Login',
+                  style: TextStyle(color: theme.colorScheme.primary),
+                ),
+              ),
             ],
           ),
         ),

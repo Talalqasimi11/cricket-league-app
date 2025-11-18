@@ -116,7 +116,7 @@ class WebSocketService {
 
     // Start connection timeout
     _cancelConnectionTimeout();
-    _connectionTimeoutTimer = Timer(Duration(milliseconds: _connectionTimeout), () {
+    _connectionTimeoutTimer = Timer(const Duration(milliseconds: _connectionTimeout), () {
       if (_state == WebSocketState.connecting) {
         developer.log('[WebSocket] Connection timeout');
         _setState(WebSocketState.disconnected);

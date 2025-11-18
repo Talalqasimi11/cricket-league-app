@@ -5,13 +5,15 @@ const {
   createTournament,
   getTournaments,
   updateTournament,
-  deleteTournament
+  deleteTournament,
+  startTournament
 } = require("../controllers/tournamentController");
 
 // Tournament routes following REST conventions
 router.post("/", authMiddleware, requireScope('tournament:manage'), createTournament);
 router.get("/", getTournaments);
 router.put("/:id", authMiddleware, requireScope('tournament:manage'), updateTournament);
+router.put("/:id/start", authMiddleware, requireScope('tournament:manage'), startTournament);
 router.delete("/:id", authMiddleware, requireScope('tournament:manage'), deleteTournament);
 
 // Legacy aliases for backward compatibility

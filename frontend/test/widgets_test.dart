@@ -9,7 +9,7 @@ void main() {
   group('AppHeader Tests', () {
     testWidgets('renders with title', (WidgetTester tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(appBar: AppHeader(title: 'Test Title')),
         ),
       );

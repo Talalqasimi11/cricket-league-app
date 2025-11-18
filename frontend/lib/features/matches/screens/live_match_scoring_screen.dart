@@ -1,8 +1,10 @@
 // lib/features/matches/screens/live_match_scoring_screen.dart
+// ignore_for_file: prefer_const_constructors
+
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:io';
 import '../../../core/api_client.dart';
-import '../../../core/error_handler.dart';
 import '../../../core/websocket_service.dart';
 import 'post_match_screen.dart';
 
@@ -227,6 +229,24 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                   .toList() ??
               [];
         });
+      } else if (teamAResponse.statusCode == 401 || teamAResponse.statusCode == 403) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+          );
+        }
+      } else if (teamAResponse.statusCode == 404) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Team A not found.')),
+          );
+        }
+      } else if (teamAResponse.statusCode >= 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error loading team A.')),
+          );
+        }
       }
 
       // Load team B players
@@ -240,10 +260,33 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
                   .toList() ??
               [];
         });
+      } else if (teamBResponse.statusCode == 401 || teamBResponse.statusCode == 403) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+          );
+        }
+      } else if (teamBResponse.statusCode == 404) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Team B not found.')),
+          );
+        }
+      } else if (teamBResponse.statusCode >= 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error loading team B.')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
-        ErrorHandler.showErrorSnackBar(context, e);
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Failed to load team players. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
       }
     }
   }
@@ -275,12 +318,39 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
             overs = lastInning['overs'].toString();
           });
         }
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+          );
+        }
+      } else if (response.statusCode == 404) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Match not found.')),
+          );
+        }
+      } else if (response.statusCode >= 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error. Please try again later.')),
+          );
+        }
       } else {
-        throw response;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to load match data (${response.statusCode})')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
-        ErrorHandler.showErrorSnackBar(context, e);
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Failed to load match data. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
       }
     } finally {
       setState(() => isLoading = false);
@@ -314,20 +384,60 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
         },
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         setState(() {
           currentInningId = data['inning_id']?.toString();
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Innings started successfully')),
+          const SnackBar(content: Text('✅ Innings started successfully')),
         );
+      } else if (response.statusCode == 400) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(data['error'] ?? 'Invalid innings data')),
+          );
+        }
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+          );
+        }
+      } else if (response.statusCode == 404) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Match not found.')),
+          );
+        }
+      } else if (response.statusCode == 409) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Innings already started for this match.')),
+          );
+        }
+      } else if (response.statusCode >= 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error. Please try again later.')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to start innings (${response.statusCode})')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error starting innings: $e')));
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Failed to start innings. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
       }
     } finally {
       setState(() => isLoading = false);
@@ -372,14 +482,54 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
         },
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         await _loadMatchData(); // Refresh data to get updated over/ball from server
+      } else if (response.statusCode == 400) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(data['error'] ?? 'Invalid ball data')),
+          );
+        }
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+          );
+        }
+      } else if (response.statusCode == 404) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Match or innings not found.')),
+          );
+        }
+      } else if (response.statusCode == 409) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Innings already ended or invalid state.')),
+          );
+        }
+      } else if (response.statusCode >= 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error. Please try again later.')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to add ball (${response.statusCode})')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error adding ball: $e')));
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Failed to add ball. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
       }
     } finally {
       setState(() => isLoading = false);
@@ -398,17 +548,57 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
 
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Innings ended successfully')),
+          const SnackBar(content: Text('✅ Innings ended successfully')),
         );
         setState(() {
           currentInningId = null;
         });
+      } else if (response.statusCode == 400) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(data['error'] ?? 'Invalid innings data')),
+          );
+        }
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+          );
+        }
+      } else if (response.statusCode == 404) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Innings not found.')),
+          );
+        }
+      } else if (response.statusCode == 409) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Innings already ended.')),
+          );
+        }
+      } else if (response.statusCode >= 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error. Please try again later.')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to end innings (${response.statusCode})')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error ending innings: $e')));
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Failed to end innings. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
       }
     } finally {
       setState(() => isLoading = false);
@@ -594,7 +784,7 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
     final bowlerName =
         (currentBowler['player_name'] as String?) ?? 'Unknown Bowler';
     final overs = (currentBowler['balls_bowled'] ?? 0) / 6.0;
-    final maidens = '0'; // Not tracked in current schema
+    const maidens = '0'; // Not tracked in current schema
     final runs = (currentBowler['runs_conceded'] ?? 0).toString();
     final wickets = (currentBowler['wickets'] ?? 0).toString();
 

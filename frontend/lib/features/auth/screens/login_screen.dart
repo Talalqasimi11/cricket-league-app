@@ -1,7 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/api_client.dart';
-import '../../../core/error_dialog.dart';
 import '../../../core/auth_provider.dart';
 import '../../../core/secure_storage.dart';
 import '../../../core/icons.dart';
@@ -115,35 +116,90 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final data =
-          await ApiClient.instance.postJson(
-                '/api/auth/login',
-                body: {'phone_number': phone, 'password': password},
-              )
-              as Map<String, dynamic>;
-      final token = data['token']?.toString();
-      final refresh = data['refresh_token']?.toString();
-      if (token == null || token.isEmpty) {
-        throw Exception('Invalid response: missing token');
+      final response = await ApiClient.instance.post(
+        '/api/auth/login',
+        body: {'phone_number': phone, 'password': password},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final token = data['token']?.toString();
+        final refresh = data['refresh_token']?.toString();
+
+        if (token == null || token.isEmpty) {
+          if (mounted) {
+            setState(() => _errorMessage = 'Invalid response: missing token');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Login failed. Please try again.')),
+            );
+          }
+          return;
+        }
+
+        await ApiClient.instance.setToken(token);
+        if (refresh != null && refresh.isNotEmpty) {
+          await ApiClient.instance.setRefreshToken(refresh);
+        }
+
+        if (!mounted) return;
+
+        // Update auth provider
+        final authProvider = context.read<AuthProvider>();
+        await authProvider.initializeAuth();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Login successful')),
+        );
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/home');
+      } else if (response.statusCode == 400) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final errorMsg = data['error'] ?? 'Invalid login credentials';
+        if (mounted) {
+          setState(() => _errorMessage = errorMsg);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMsg)),
+          );
+        }
+      } else if (response.statusCode == 401) {
+        if (mounted) {
+          setState(() => _errorMessage = 'Invalid phone number or password');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid phone number or password')),
+          );
+        }
+      } else if (response.statusCode == 429) {
+        if (mounted) {
+          setState(() => _errorMessage = 'Too many login attempts. Please try again later.');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Too many login attempts. Please try again later.')),
+          );
+        }
+      } else if (response.statusCode >= 500) {
+        if (mounted) {
+          setState(() => _errorMessage = 'Server error. Please try again later.');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error. Please try again later.')),
+          );
+        }
+      } else {
+        if (mounted) {
+          setState(() => _errorMessage = 'Login failed. Please try again.');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Login failed (${response.statusCode})')),
+          );
+        }
       }
-      await ApiClient.instance.setToken(token);
-      if (refresh != null && refresh.isNotEmpty) {
-        await ApiClient.instance.setRefreshToken(refresh);
-      }
-
-      if (!mounted) return;
-
-      // Update auth provider
-      final authProvider = context.read<AuthProvider>();
-      await authProvider.initializeAuth();
-
-      ErrorDialog.showSuccessSnackBar(context, message: 'Login successful');
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _errorMessage = e.toString());
-      ErrorDialog.showErrorSnackBar(context, message: e.toString());
+      if (mounted) {
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Login failed. Please try again.';
+        setState(() => _errorMessage = errorMessage);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

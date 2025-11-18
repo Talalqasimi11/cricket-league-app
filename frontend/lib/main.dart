@@ -21,9 +21,10 @@ import 'features/matches/screens/live_match_view_screen.dart';
 import 'features/matches/screens/scorecard_screen.dart';
 import 'features/tournaments/screens/tournaments_screen.dart';
 import 'features/tournaments/screens/tournament_create_screen.dart';
-import 'features/tournaments/screens/tournament_team_registration_screen.dart'
-    as team_reg;
+import 'features/tournaments/screens/tournament_team_registration_screen.dart';
 import 'features/teams/screens/my_team_screen.dart';
+import 'features/teams/screens/create_team_screen.dart';
+import 'features/stats/screens/statistics_screen.dart';
 import 'screens/team/viewer/team_dashboard_screen.dart' as viewer;
 import 'screens/player/viewer/player_dashboard_screen.dart' as player_view;
 import 'screens/settings/account_screen.dart';
@@ -313,7 +314,9 @@ class _AuthInitializerState extends State<AuthInitializer> {
         '/tournaments': (context) =>
             const TournamentsScreen(isCaptain: true),
         '/my-team': (context) => const MyTeamScreen(),
+        '/my-team/create': (context) => const CreateTeamScreen(),
         '/tournaments/create': (context) => const CreateTournamentScreen(),
+        '/stats': (context) => const StatisticsScreen(),
         '/account': (context) => const AccountScreen(),
         '/developer-settings': (context) => const DeveloperSettingsScreen(),
         '/contact': (context) => const ContactScreen(),
@@ -408,9 +411,9 @@ class _AuthInitializerState extends State<AuthInitializer> {
           case '/tournaments/register-teams':
             final args = settings.arguments as Map<String, dynamic>?;
             return MaterialPageRoute(
-              builder: (_) => team_reg.RegisterTeamsScreen(
+              builder: (_) => TournamentTeamRegistrationScreen(
                 tournamentName: (args?['tournamentName'] ?? '') as String,
-                tournamentId: args?['tournamentId']?.toString(),
+                tournamentId: (args?['tournamentId']?.toString() ?? ''),
               ),
             );
 

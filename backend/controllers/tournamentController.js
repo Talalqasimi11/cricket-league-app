@@ -175,9 +175,59 @@ const deleteTournament = async (req, res) => {
   }
 };
 
+// Start Tournament
+const startTournament = async (req, res) => {
+  const tournamentId = req.params.id;
+
+  if (!tournamentId) {
+    return sendValidationError(res, getValidationMessage('REQUIRED_FIELD', 'tournamentId'));
+  }
+
+  try {
+    // Check if tournament exists
+    const [rows] = await db.query(
+      "SELECT * FROM tournaments WHERE id = ?",
+      [tournamentId]
+    );
+
+    if (rows.length === 0) {
+      return sendValidationError(res, getValidationMessage('NOT_FOUND', 'Tournament'));
+    }
+
+    const tournament = rows[0];
+
+    // Validate status transition
+    if (!validateStatusTransition(tournament.status, 'live')) {
+      return sendValidationError(res, getValidationMessage('INVALID_STATUS_TRANSITION', tournament.status, 'live'));
+    }
+
+    // Check if tournament has at least 2 teams registered
+    const [teamCount] = await db.query(
+      "SELECT COUNT(*) as count FROM tournament_teams WHERE tournament_id = ?",
+      [tournamentId]
+    );
+
+    if (teamCount[0].count < 2) {
+      return sendValidationError(res, "Tournament must have at least 2 teams registered to start");
+    }
+
+    // Update tournament status to live
+    await db.query(
+      "UPDATE tournaments SET status = 'live' WHERE id = ?",
+      [tournamentId]
+    );
+
+    sendUpdated(res, null, "Tournament started successfully");
+  } catch (err) {
+    req.log?.error("startTournament: Database error", { error: err.message, code: err.code, tournamentId });
+    sendServerError(res, "Server error");
+  }
+};
+
 module.exports = {
   createTournament,
   getTournaments,
   updateTournament,
   deleteTournament,
+  startTournament,
 };

@@ -18,7 +18,7 @@ class ApiHttpException implements Exception {
 
   @override
   String toString() {
-    return 'ApiHttpException: $message (Status: $statusCode)';
+    return 'ApiHttpException: $message (Status: $statusCode})';
   }
 
   /// Create ApiHttpException from http.Response
@@ -88,7 +88,7 @@ class ErrorHandler {
           case 422:
             return responseBody['message'] ?? 'Validation error';
           case 500:
-            return 'Server error. Please try again later.';
+            return responseBody['message'] ?? 'Server error. Please try again later.';
           default:
             return responseBody['message'] ?? 'An unexpected error occurred';
         }
@@ -106,8 +106,41 @@ class ErrorHandler {
     return 'An unexpected error occurred';
   }
 
+  /// Check if error is authentication-related and trigger logout if needed
+  static bool handleAuthError(BuildContext context, dynamic error) {
+    bool isAuthError = false;
+    
+    if (error is ApiHttpException) {
+      if (error.statusCode == 401) {
+        isAuthError = true;
+      }
+    } else if (error is http.Response) {
+      if (error.statusCode == 401) {
+        isAuthError = true;
+      }
+    }
+    
+    // If it's an auth error, trigger automatic logout
+    if (isAuthError) {
+      debugPrint('ErrorHandler: Detected 401 auth error, triggering logout');
+      // Note: We'll initialize this in the main app
+      // AuthErrorHandler.triggerAuthError(
+      //   context, 
+      //   AuthErrorEvent(reason: 'Token expired or invalid')
+      // );
+      return true;
+    }
+    
+    return false;
+  }
+
   /// Show error message as a snackbar
   static void showErrorSnackBar(BuildContext context, dynamic error) {
+    // First check if it's an auth error and handle it
+    if (handleAuthError(context, error)) {
+      return; // Auth error already handled, don't show additional error
+    }
+    
     final message = getErrorMessage(error);
 
     ScaffoldMessenger.of(context).showSnackBar(

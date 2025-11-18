@@ -129,7 +129,7 @@ class ErrorDialog {
         ),
         title: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.check_circle,
               color: AppColors.primary,
               size: 24,
@@ -241,7 +241,7 @@ class ErrorDialog {
       SnackBar(
         content: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.error_outline,
               color: AppColors.onError,
               size: 20,
@@ -250,7 +250,7 @@ class ErrorDialog {
             Expanded(
               child: Text(
                 message,
-                style: TextStyle(color: AppColors.onError),
+                style: const TextStyle(color: AppColors.onError),
               ),
             ),
           ],
@@ -275,7 +275,7 @@ class ErrorDialog {
       SnackBar(
         content: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.check_circle,
               color: AppColors.onPrimary,
               size: 20,
@@ -284,7 +284,7 @@ class ErrorDialog {
             Expanded(
               child: Text(
                 message,
-                style: TextStyle(color: AppColors.onPrimary),
+                style: const TextStyle(color: AppColors.onPrimary),
               ),
             ),
           ],
@@ -321,7 +321,7 @@ _ErrorInfo _parseApiError(http.Response response) {
 
   switch (statusCode) {
     case 400:
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Bad Request',
         message: 'The request was invalid. Please check your input and try again.',
         icon: Icons.warning,
@@ -329,7 +329,7 @@ _ErrorInfo _parseApiError(http.Response response) {
       );
 
     case 401:
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Authentication Required',
         message: 'Please log in to continue.',
         icon: Icons.lock,
@@ -337,7 +337,7 @@ _ErrorInfo _parseApiError(http.Response response) {
       );
 
     case 403:
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Access Denied',
         message: 'You don\'t have permission to perform this action.',
         icon: Icons.block,
@@ -345,7 +345,7 @@ _ErrorInfo _parseApiError(http.Response response) {
       );
 
     case 404:
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Not Found',
         message: 'The requested resource was not found.',
         icon: Icons.search_off,
@@ -353,7 +353,7 @@ _ErrorInfo _parseApiError(http.Response response) {
       );
 
     case 409:
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Conflict',
         message: 'This action conflicts with existing data.',
         icon: Icons.warning,
@@ -361,7 +361,7 @@ _ErrorInfo _parseApiError(http.Response response) {
       );
 
     case 422:
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Validation Error',
         message: 'Please check your input data.',
         icon: Icons.error_outline,
@@ -369,7 +369,7 @@ _ErrorInfo _parseApiError(http.Response response) {
       );
 
     case 429:
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Too Many Requests',
         message: 'Please wait a moment before trying again.',
         icon: Icons.timer,
@@ -377,7 +377,7 @@ _ErrorInfo _parseApiError(http.Response response) {
       );
 
     case 500:
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Server Error',
         message: 'Something went wrong on our end. Please try again later.',
         icon: Icons.cloud_off,
@@ -387,7 +387,7 @@ _ErrorInfo _parseApiError(http.Response response) {
     case 502:
     case 503:
     case 504:
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Service Unavailable',
         message: 'The service is temporarily unavailable. Please try again later.',
         icon: Icons.cloud_off,
@@ -411,7 +411,7 @@ _ErrorInfo _parseApiError(http.Response response) {
         // Ignore parsing errors
       }
 
-      return _ErrorInfo(
+      return const _ErrorInfo(
         title: 'Connection Error',
         message: 'Unable to connect to the server. Please check your internet connection.',
         icon: Icons.wifi_off,
@@ -423,7 +423,7 @@ _ErrorInfo _parseApiError(http.Response response) {
 /// Parses generic exceptions and returns user-friendly error information
 _ErrorInfo _parseGenericError(Object error) {
   if (error is FormatException) {
-    return _ErrorInfo(
+    return const _ErrorInfo(
       title: 'Data Error',
       message: 'The received data was in an unexpected format.',
       icon: Icons.data_object,
@@ -434,7 +434,7 @@ _ErrorInfo _parseGenericError(Object error) {
   if (error.toString().contains('SocketException') ||
       error.toString().contains('Connection refused') ||
       error.toString().contains('Network is unreachable')) {
-    return _ErrorInfo(
+    return const _ErrorInfo(
       title: 'Connection Error',
       message: 'Unable to connect to the server. Please check your internet connection.',
       icon: Icons.wifi_off,
@@ -443,7 +443,7 @@ _ErrorInfo _parseGenericError(Object error) {
   }
 
   if (error.toString().contains('TimeoutException')) {
-    return _ErrorInfo(
+    return const _ErrorInfo(
       title: 'Request Timeout',
       message: 'The request took too long to complete. Please try again.',
       icon: Icons.timer_off,
@@ -451,7 +451,7 @@ _ErrorInfo _parseGenericError(Object error) {
     );
   }
 
-  return _ErrorInfo(
+  return const _ErrorInfo(
     title: 'Unexpected Error',
     message: 'An unexpected error occurred. Please try again.',
     icon: Icons.error,

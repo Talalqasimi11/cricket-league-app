@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import 'developer_settings_screen.dart';
@@ -46,20 +47,54 @@ class _AccountScreenState extends State<AccountScreen> {
     }
     setState(() => _loadingPwd = true);
     try {
-      await ApiClient.instance.put(
+      final response = await ApiClient.instance.put(
         '/api/auth/change-password',
         body: {'current_password': current, 'new_password': next},
       );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password changed. Please re-login on other devices.'),
-        ),
-      );
+
+      if (response.statusCode == 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Password changed successfully. Please re-login on other devices.')),
+        );
+        // Clear form
+        _currentController.clear();
+        _newController.clear();
+        _confirmController.clear();
+      } else if (response.statusCode == 400) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Current password is incorrect')),
+          );
+        }
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+          );
+        }
+      } else if (response.statusCode >= 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error. Please try again later.')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to change password (${response.statusCode})')),
+          );
+        }
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Change failed: $e')));
+      if (mounted) {
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Failed to change password. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loadingPwd = false);
     }
@@ -75,18 +110,58 @@ class _AccountScreenState extends State<AccountScreen> {
     }
     setState(() => _loadingPhone = true);
     try {
-      await ApiClient.instance.put(
+      final response = await ApiClient.instance.put(
         '/api/auth/change-phone',
         body: {'new_phone_number': phone},
       );
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Phone updated')));
+
+      if (response.statusCode == 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Phone number updated successfully')),
+        );
+        // Clear form
+        _phoneController.clear();
+      } else if (response.statusCode == 400) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid phone number format')),
+          );
+        }
+      } else if (response.statusCode == 409) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Phone number already in use')),
+          );
+        }
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+          );
+        }
+      } else if (response.statusCode >= 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error. Please try again later.')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to update phone number (${response.statusCode})')),
+          );
+        }
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
+      if (mounted) {
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Failed to update phone number. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loadingPhone = false);
     }

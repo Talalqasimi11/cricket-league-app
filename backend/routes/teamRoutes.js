@@ -2,12 +2,13 @@ const express = require("express");
 const router = express.Router();
 const { verifyToken, requireScope } = require("../middleware/authMiddleware");
 const { validateSingleNumericParam } = require("../utils/inputValidation");
-const { getMyTeam, updateMyTeam, getAllTeams, getTeamById, deleteMyTeam } = require("../controllers/teamController");
+const { createMyTeam, getMyTeam, updateMyTeam, getAllTeams, getTeamById, deleteMyTeam } = require("../controllers/teamController");
 
 // Public routes
 router.get("/", getAllTeams);
 
 // Protected routes
+router.post("/my-team", verifyToken, requireScope('team:manage'), createMyTeam);
 router.get("/my-team", verifyToken, requireScope('team:read'), getMyTeam);
 router.put("/update", verifyToken, requireScope('team:manage'), updateMyTeam);
 router.delete("/my-team", verifyToken, requireScope('team:manage'), deleteMyTeam);

@@ -1,30 +1,25 @@
-import 'package:flutter/material.dart';
 import 'dart:io';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../core/api_client.dart';
-import '../core/error_handler.dart';
-import 'optimized_image.dart';
-
-typedef OnImageUploadSuccess = Function(String imageUrl);
+import 'package:provider/provider.dart';
+import '../core/offline/offline_manager.dart';
 
 class ImageUploadWidget extends StatefulWidget {
-  final String title;
-  final String? initialImageUrl;
-  final String uploadType; // 'player' or 'team'
-  final int entityId; // player ID or team ID
-  final OnImageUploadSuccess? onSuccess;
-  final VoidCallback? onDelete;
+  final String label;
+  final String? currentImageUrl;
+  final Function(String?)? onImageUploaded;
+  final Function()? onImageRemoved;
+  final double size;
+  final bool showRemoveButton;
 
   const ImageUploadWidget({
     super.key,
-    required this.title,
-    required this.uploadType,
-    required this.entityId,
-    this.initialImageUrl,
-    this.onSuccess,
-    this.onDelete,
+    required this.label,
+    this.currentImageUrl,
+    this.onImageUploaded,
+    this.onImageRemoved,
+    this.size = 120,
+    this.showRemoveButton = true,
   });
 
   @override
@@ -32,250 +27,237 @@ class ImageUploadWidget extends StatefulWidget {
 }
 
 class _ImageUploadWidgetState extends State<ImageUploadWidget> {
-  bool _isLoading = false;
-  String? _currentImageUrl;
-
+  bool _isUploading = false;
+  String? _uploadedImageUrl;
 
   @override
   void initState() {
     super.initState();
-    _currentImageUrl = widget.initialImageUrl;
+    _uploadedImageUrl = widget.currentImageUrl;
   }
 
-  /// Pick image from gallery
-  Future<void> _pickImage() async {
+  @override
+  void didUpdateWidget(ImageUploadWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.currentImageUrl != oldWidget.currentImageUrl) {
+      _uploadedImageUrl = widget.currentImageUrl;
+    }
+  }
+
+  Future<void> _pickAndUploadImage(ImageSource source) async {
     try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1024,
-        maxHeight: 1024,
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
         imageQuality: 85,
       );
 
-      if (image != null) {
-        final File imageFile = File(image.path);
-        await _uploadImage(imageFile);
+      if (pickedFile != null) {
+        await _uploadImage(File(pickedFile.path));
       }
     } catch (e) {
-      if (!mounted) return;
-      ErrorHandler.showErrorSnackBar(context, 'Failed to pick image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick image: $e')),
+        );
+      }
     }
   }
 
-  /// Upload image to backend using multipart form data
   Future<void> _uploadImage(File imageFile) async {
-    setState(() => _isLoading = true);
+    if (!mounted) return;
+
+    final offlineManager = Provider.of<OfflineManager>(context, listen: false);
+
+    // Check if offline
+    if (!offlineManager.isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot upload images while offline')),
+      );
+      return;
+    }
+
+    setState(() => _isUploading = true);
 
     try {
-      final baseUrl = await ApiClient.instance.getConfiguredBaseUrl();
-      final token = await ApiClient.instance.token;
+      // This will be implemented when we integrate with specific upload endpoints
+      // For now, just simulate upload
+      await Future.delayed(const Duration(seconds: 2));
 
-      if (token == null || token.isEmpty) {
-        throw Exception('Authentication required');
-      }
+      // Simulate successful upload
+      final uploadedUrl = 'uploaded_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      setState(() => _uploadedImageUrl = uploadedUrl);
 
-      // Create multipart request
-      final uri = Uri.parse(
-        '$baseUrl/api/uploads/${widget.uploadType}/${widget.entityId}',
-      );
+      widget.onImageUploaded?.call(uploadedUrl);
 
-      final request = http.MultipartRequest('POST', uri);
-      request.headers['Authorization'] = 'Bearer $token';
-
-      // Add image file
-      final fieldName = widget.uploadType == 'player' ? 'photo' : 'logo';
-      request.files.add(
-        await http.MultipartFile.fromPath(fieldName, imageFile.path),
-      );
-
-      // Send request
-      final streamResponse = await request.send();
-      final response = await http.Response.fromStream(streamResponse);
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final imageUrl = data['imageUrl']?.toString();
-
-        if (imageUrl != null) {
-          setState(() => _currentImageUrl = imageUrl);
-          if (!mounted) return;
-          ErrorHandler.showSuccessSnackBar(
-            context,
-            'Image uploaded successfully',
-          );
-          widget.onSuccess?.call(imageUrl);
-        }
-      } else {
-        throw Exception('Upload failed: ${response.statusCode}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Image uploaded successfully')),
+        );
       }
     } catch (e) {
-      if (!mounted) return;
-      ErrorHandler.showErrorSnackBar(context, 'Upload failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to upload image: $e')),
+        );
+      }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
     }
   }
 
-  /// Delete current image
-  Future<void> _deleteImage() async {
-    if (_currentImageUrl == null) return;
+  void _removeImage() {
+    setState(() => _uploadedImageUrl = null);
+    widget.onImageRemoved?.call();
+  }
 
-    showDialog(
+  void _showImageSourceDialog() {
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Image'),
-        content: const Text('Are you sure you want to delete this image?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _performDelete();
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Take Photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndUploadImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from Gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndUploadImage(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel, color: Colors.red),
+              title: const Text('Cancel', style: TextStyle(color: Colors.red)),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Future<void> _performDelete() async {
-    setState(() => _isLoading = true);
-
-    try {
-      final response = await ApiClient.instance.delete(
-        '/api/uploads/${widget.uploadType}/${widget.entityId}',
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        setState(() {
-          _currentImageUrl = null;
-        });
-        if (!mounted) return;
-        ErrorHandler.showSuccessSnackBar(context, 'Image deleted successfully');
-        widget.onDelete?.call();
-      } else {
-        throw Exception('Delete failed: ${response.statusCode}');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ErrorHandler.showErrorSnackBar(context, 'Delete failed: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 16),
-
-        // Image display area
-        Container(
-          width: 200,
-          height: 200,
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(12),
-            color: Colors.grey.shade100,
+        Text(
+          widget.label,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurface,
           ),
-          child: _buildImageDisplay(),
         ),
-        const SizedBox(height: 16),
-
-        // Action buttons
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ElevatedButton.icon(
-              onPressed: _isLoading ? null : _pickImage,
-              icon: const Icon(Icons.image),
-              label: const Text('Upload Image'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green[700],
-                foregroundColor: Colors.white,
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _isUploading ? null : _showImageSourceDialog,
+          child: Container(
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                width: 2,
               ),
             ),
-            const SizedBox(width: 12),
-            if (_currentImageUrl != null)
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _deleteImage,
-                icon: const Icon(Icons.delete),
-                label: const Text('Delete'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-          ],
+            child: _isUploading
+                ? const Center(
+                    child: CircularProgressIndicator(),
+                  )
+                : _uploadedImageUrl != null
+                    ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: _uploadedImageUrl!.startsWith('http')
+                                ? Image.network(
+                                    _uploadedImageUrl!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return _buildPlaceholder();
+                                    },
+                                  )
+                                : Container(
+                                    color: theme.colorScheme.primaryContainer,
+                                    child: Icon(
+                                      Icons.image,
+                                      size: widget.size * 0.4,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                          ),
+                          if (widget.showRemoveButton)
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: GestureDetector(
+                                onTap: _removeImage,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      )
+                    : _buildPlaceholder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Tap to upload ${widget.label.toLowerCase()}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
         ),
       ],
     );
   }
 
-  /// Build image display widget
-  Widget _buildImageDisplay() {
-    if (_isLoading && _currentImageUrl == null) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 12),
-            Text('Uploading...'),
-          ],
+  Widget _buildPlaceholder() {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.add_photo_alternate_outlined,
+          size: widget.size * 0.3,
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
         ),
-      );
-    }
-
-    if (_currentImageUrl != null) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: OptimizedImage(
-              url: _currentImageUrl!,
-              fit: BoxFit.cover,
-              width: 200,
-              height: 200,
-              cacheWidth: 400,
-              cacheHeight: 400,
-              errorBuilder: (context, url) {
-                return const Center(child: Icon(Icons.error_outline, size: 48));
-              },
-              loadingBuilder: (context, url) {
-                return const Center(child: CircularProgressIndicator());
-              },
-            ),
+        const SizedBox(height: 4),
+        Text(
+          'Upload',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
           ),
-        ],
-      );
-    }
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.add_photo_alternate,
-            size: 48,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'No image selected',
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

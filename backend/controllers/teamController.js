@@ -3,6 +3,82 @@ const { validateSingleNumericParam } = require("../utils/inputValidation");
 const { validateTeamLogoUrl } = require("../utils/urlValidation");
 const { logDatabaseError, logRequestError } = require("../utils/safeLogger");
 
+// ========================
+// CREATE TEAM FOR USER
+// ========================
+const createMyTeam = async (req, res) => {
+  const { team_name, team_location, team_logo_url } = req.body;
+
+  if (!team_name || !team_location) {
+    return res.status(400).json({ error: "Team name and location are required" });
+  }
+
+  // Validate team name length
+  if (String(team_name).length < 3) {
+    return res.status(400).json({ error: "Team name must be at least 3 characters" });
+  }
+
+  // Validate team location length
+  if (String(team_location).length < 2) {
+    return res.status(400).json({ error: "Team location must be at least 2 characters" });
+  }
+
+  // Validate team logo URL if provided
+  if (team_logo_url !== undefined && team_logo_url !== null) {
+    const urlValidation = validateTeamLogoUrl(team_logo_url);
+    if (!urlValidation.isValid) {
+      return res.status(400).json({ error: `Invalid team logo URL: ${urlValidation.error}` });
+    }
+  }
+
+  try {
+    // Check if user already has a team
+    const [existingTeam] = await db.query(
+      "SELECT id FROM teams WHERE owner_id = ?",
+      [req.user.id]
+    );
+
+    if (existingTeam.length > 0) {
+      return res.status(409).json({ error: "User already has a team. Only one team per user is allowed." });
+    }
+
+    // Create the team
+    const [result] = await db.query(
+      "INSERT INTO teams (team_name, team_location, team_logo_url, matches_played, matches_won, trophies, owner_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+      [team_name, team_location, team_logo_url || null, req.user.id]
+    );
+
+    const teamId = result.insertId;
+
+    // Return the created team data
+    const [newTeamRows] = await db.query(
+      `SELECT
+         t.id,
+         t.team_name,
+         t.team_location,
+         t.team_logo_url,
+         t.matches_played,
+         t.matches_won,
+         t.trophies,
+         t.owner_id,
+         u.phone_number AS owner_phone
+       FROM teams t
+       LEFT JOIN users u ON t.owner_id = u.id
+       WHERE t.id = ?`,
+      [teamId]
+    );
+
+    res.status(201).json({
+      message: "Team created successfully",
+      team: newTeamRows[0]
+    });
+
+  } catch (err) {
+    logDatabaseError(req.log, "createMyTeam", err, { userId: req.user?.id });
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
 // 📌 Get owner's own team (backward compatible with historical captain_id)
 // API Contract Note: This endpoint returns owner_phone in the response for authenticated team owners.
 // Public endpoints (getAllTeams, getTeamById) do not expose owner information for privacy.
@@ -370,4 +446,4 @@ const deleteMyTeam = async (req, res) => {
   }
 };
 
-module.exports = { getMyTeam, updateMyTeam, getAllTeams, getTeamById, deleteMyTeam };
+module.exports = { createMyTeam, getMyTeam, updateMyTeam, getAllTeams, getTeamById, deleteMyTeam };

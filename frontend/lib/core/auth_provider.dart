@@ -106,18 +106,35 @@ class AuthProvider extends ChangeNotifier {
         // Extract user info from JWT token
         _extractUserInfoFromToken(token);
 
-        // Token exists, verify it's still valid by making a test request
+        // Check if token is expired based on JWT claims
+        if (_tokenExpiry != null && _tokenExpiry!.isBefore(DateTime.now())) {
+          debugPrint('JWT token has expired, clearing auth');
+          _clearAuth();
+          _setAuthenticated(false);
+          return;
+        }
+
+        // Try to verify token with server, but don't fail if offline
         try {
-          final response = await ApiClient.instance.get('/api/teams/my-team');
+          final response = await ApiClient.instance.get('/api/teams/my-team')
+              .timeout(const Duration(seconds: 5)); // Short timeout for offline detection
+
           if (response.statusCode == 200) {
             _setAuthenticated(true);
           } else if (response.statusCode == 401) {
             // Token is invalid, clear it
-            await logout();
+            debugPrint('Token verification failed (401), clearing auth');
+            _clearAuth();
+            _setAuthenticated(false);
+          } else {
+            // Other server errors, but keep the token for offline use
+            debugPrint('Token verification failed (${response.statusCode}), keeping for offline use');
+            _setAuthenticated(true);
           }
         } catch (e) {
-          // Network error or invalid token
-          await logout();
+          // Network error - assume token is valid for offline use
+          debugPrint('Network error during token verification, assuming valid for offline use: $e');
+          _setAuthenticated(true);
         }
       } else {
         _setAuthenticated(false);
@@ -180,9 +197,16 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     _setLoading(true);
     try {
-      await ApiClient.instance.logout();
+      // Try to logout from server, but don't fail if offline
+      await ApiClient.instance.logout().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {
+          debugPrint('Logout API call timed out, clearing local auth state only');
+        },
+      );
     } catch (e) {
-      debugPrint('Logout error: $e');
+      debugPrint('Logout API call failed, clearing local auth state only: $e');
+      // Continue with local logout even if server call fails
     } finally {
       _clearAuth();
       _setLoading(false);
@@ -205,24 +229,20 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // Refresh access token using refresh token
+  // Refresh access token using refresh token (delegates to ApiClient)
   Future<void> _refreshToken() async {
     try {
-      final response = await ApiClient.instance.post(
-        '/api/auth/refresh',
-        body: {'refresh_token': await ApiClient.instance.refreshToken},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final newToken = data['token']?.toString();
+      final success = await ApiClient.instance.refreshTokensExplicitly();
+      if (success) {
+        // Extract updated user info from the new token
+        final newToken = await ApiClient.instance.token;
         if (newToken != null && newToken.isNotEmpty) {
-          await ApiClient.instance.setToken(newToken);
           _extractUserInfoFromToken(newToken);
-          debugPrint('Token refreshed successfully');
+          debugPrint('Token refreshed successfully via ApiClient');
         }
       } else {
-        // Refresh failed, logout user
+        // Refresh failed, trigger logout
+        debugPrint('Token refresh failed, initiating logout');
         await logout();
       }
     } catch (e) {

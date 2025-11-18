@@ -32,13 +32,15 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 2. **Real-time Match Scoring:** Enable live ball-by-ball scoring accessible to players and spectators
 3. **Player Statistics:** Automatically calculate and maintain comprehensive player performance metrics
 4. **Team Management:** Provide tools for captains to manage their teams and players efficiently
+5. **Tournament Creator Controls:** Give tournament creators centralized control over tournament management and scoring
 
 ### 2.2 Success Metrics
-- **User Adoption:** 100+ registered teams within 6 months
-- **Engagement:** 80% of registered teams actively participate in tournaments
+- **User Adoption:** 500+ registered users within 6 months, with 100+ users creating teams and 50+ creating tournaments
+- **Engagement:** 80% of registered teams actively participate in tournaments, 70% coordinator engagement
 - **Match Completion Rate:** 90% of started matches are completed with full scorecards
 - **User Satisfaction:** 4.0+ star rating on app stores
 - **API Performance:** < 500ms average response time for critical endpoints
+- **Tournament Creation:** 300+ tournaments created within 6 months
 
 ---
 
@@ -51,10 +53,10 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Runs a local cricket team with 15 players
 - Organizes weekend matches and participates in local tournaments
 - Previously used WhatsApp groups and paper scorecards
-- Registered user who automatically becomes team owner
+- Registered user who creates and owns a team after registration
 
 **Goals:**
-- Easy team registration and player management
+- Easy team creation and player management
 - Track team performance across multiple tournaments
 - Access match history and statistics
 - Start tournaments and manage matches
@@ -92,25 +94,29 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 **Priority:** P0 (Must Have)
 
 **Functional Requirements:**
-- Users register using phone number (E.164 format)
+- Users register using phone number (E.164 format) or email address
 - Password must be at least 8 characters
-- Upon registration, a team is automatically created
-- User becomes the team owner/captain
-- System validates unique phone numbers
-- Optional fields: captain name, team logo URL
+- Email validation for proper format when provided
+- System validates unique phone numbers and email addresses
+- Users do not automatically create teams during registration
+- Team creation happens as a separate step after registration
+- Optional fields: full name
 
 **Technical Specifications:**
 - Endpoint: `POST /api/auth/register`
 - Password hashing: bcrypt with 12 salt rounds
 - Phone validation: E.164 regex pattern
+- Email validation: RFC 5322 compliant format
 - Response: Success message (201) or error (400/409)
 
 **Acceptance Criteria:**
-- ✅ User can register with valid phone and password
+- ✅ User can register with valid phone/email and password
 - ✅ System rejects duplicate phone numbers
+- ✅ System rejects duplicate email addresses
 - ✅ System rejects passwords < 8 characters
 - ✅ System rejects invalid phone number formats
-- ✅ Team is automatically created upon registration
+- ✅ System rejects invalid email formats
+- ✅ No team is automatically created upon registration
 
 #### 4.1.2 User Login
 **Priority:** P0 (Must Have)
@@ -231,7 +237,31 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 
 ### 4.2 Team Management
 
-#### 4.2.1 View Teams
+#### 4.2.1 Create Team
+**Priority:** P0 (Must Have)
+
+**Functional Requirements:**
+- Authenticated users can create teams after registration
+- Required: team name, location
+- Optional: team logo URL
+- User becomes team owner upon creation
+- One team per user (prevent duplicate team ownership)
+- Team creation is separate from user registration
+
+**Technical Specifications:**
+- Endpoint: `POST /api/teams`
+- Requires authentication
+- Validates user doesn't already own a team
+- Response: Success message (201) or error (400/409)
+
+**Acceptance Criteria:**
+- ✅ Authenticated user can create a team
+- ✅ System rejects duplicate team ownership
+- ✅ Required fields validated
+- ✅ User becomes team owner
+- ✅ Team creation separate from registration
+
+#### 4.2.2 View Teams
 **Priority:** P0 (Must Have)
 
 **Functional Requirements:**
@@ -250,7 +280,7 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - ✅ Team statistics are accurate
 - ✅ Response is properly formatted
 
-#### 4.2.2 View My Team
+#### 4.2.3 View My Team
 **Priority:** P0 (Must Have)
 
 **Functional Requirements:**
@@ -258,19 +288,21 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Returns detailed team information
 - Includes all players in the team
 - Shows owner and captain details
+- Shows "Add Team" button when user has no team
 
 **Technical Specifications:**
 - Endpoint: `GET /api/teams/my-team`
 - Requires authentication
-- Returns team with nested players array
+- Returns team with nested players array or null if no team
 
 **Acceptance Criteria:**
 - ✅ Authenticated user can view their team
-- ✅ All team details are returned
+- ✅ All team details are returned when team exists
 - ✅ Player list is included
+- ✅ Returns appropriate response when no team exists
 - ✅ Unauthenticated requests are rejected
 
-#### 4.2.3 Update Team
+#### 4.2.4 Update Team
 **Priority:** P1 (Should Have)
 
 **Functional Requirements:**
@@ -373,21 +405,58 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 **Priority:** P0 (Must Have)
 
 **Functional Requirements:**
-- Authenticated users can create tournaments
-- Required: tournament name, location, start date
-- Default status: 'not_started' or 'upcoming'
-- Creator becomes tournament organizer
+- **Complete separation: Any registered user can create tournaments (independent of team ownership)**
+- Guest/unauthenticated users cannot create tournaments
+- **Team owners have NO automatic participation privileges in ANY tournaments**
+- **Tournament creator = Tournament Director with complete administrative authority**
+- Tournament creator has sole authority to invite/select ANY registered teams
+- Required: tournament name, location, start date, overs (5-50 range)
+- Optional: end date, description
+- **Teams are explicitly invited by tournament creator AFTER tournament creation**
+- Creator becomes tournament administrator with exclusive management and live scoring rights
+- No team owner can participate in tournaments without tournament creator invitation
+- Overs constraint: 5-50 overs per innings
 
 **Technical Specifications:**
 - Endpoint: `POST /api/tournaments`
 - Requires authentication
-- Status ENUM: upcoming, not_started, live, completed, abandoned
+- Status ENUM: upcoming, not_started, live, completed, aborted
+- Overs validation: INTEGER(2) with CHECK constraint (overs >= 5 AND overs <= 50)
+- **Team selection completely separate** - tournament creator uses `/api/tournament-teams` to invite teams
+- **Team ownership provides ZERO tournament privileges** - participation by invitation only
 
 **Acceptance Criteria:**
-- ✅ User can create tournament
-- ✅ Required fields validated
-- ✅ Creator stored as `created_by`
-- ✅ Status defaults to 'not_started'
+- ✅ Any authenticated user can create tournament (regardless of team ownership)
+- ✅ Guest users blocked from tournament creation
+- ✅ Team owners have no automatic tournament participation rights
+- ✅ Tournament creator acts as tournament director with complete authority
+- ✅ Tournament creator can invite ANY registered teams (by invitation, not automatic)
+- ✅ Teams participate ONLY by tournament creator invitation
+- ✅ Overs must be between 5-50
+- ✅ Tournament creator has exclusive management and live scoring rights
+
+#### 4.4.1.1 List Tournaments with "My Tournaments" Section
+**Priority:** P1 (Should Have)
+
+**Functional Requirements:**
+- Tournament list divided into sections: "All Tournaments" and "My Tournaments"
+- "My Tournaments" section shows tournaments created by the authenticated user
+- "My Tournaments" provides direct access to tournament management functions
+- Public "All Tournaments" section shows all publicly visible tournaments
+- User must close and reopen app for changes to reflect properly
+
+**Technical Specifications:**
+- Endpoint: `GET /api/tournaments` with user context
+- Response includes separate arrays: { allTournaments: [...], myTournaments: [...] }
+- My tournaments filtered by `created_by = user.id`
+- Frontend must persist and restore user session state
+
+**Acceptance Criteria:**
+- ✅ Authenticated users see "My Tournaments" section
+- ✅ "My Tournaments" shows tournaments they created
+- ✅ Direct access to manage tournaments from the list
+- ✅ App reopen required for session state restoration
+- ✅ Guest users only see "All Tournaments" section
 
 #### 4.4.2 List Tournaments
 **Priority:** P0 (Must Have)
@@ -593,13 +662,16 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Match must be in 'live' status
 - Initialize runs=0, wickets=0, overs=0
 - Status: 'in_progress'
+- Only tournament creator can start innings (not team owners)
 
 **Technical Specifications:**
 - Endpoint: `POST /api/live/start-innings`
+- Authorization: tournament.created_by = user.id
 - Creates record in match_innings table
 
 **Acceptance Criteria:**
-- ✅ Team owner can start innings for live match
+- ✅ Tournament creator can start innings for live match
+- ✅ Team owners cannot start innings (only view)
 - ✅ Cannot start if match not live
 - ✅ Statistics initialized correctly
 
@@ -611,20 +683,21 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 - Required: match_id, inning_id, over_number, ball_number, batsman_id, bowler_id, runs
 - Optional: extras, wicket_type, out_player_id
 - Update innings totals automatically
-- Update player statistics automatically (if scorer is team owner)
+- Update player statistics automatically (only for tournament creator)
 - Auto-end innings if:
   - 10 wickets fall
   - Overs completed (match overs reached)
-- Team owner authorization check (owner_id = user.id)
+- Tournament creator authorization check (tournament.created_by = user.id)
 
 **Technical Specifications:**
 - Endpoint: `POST /api/live/add-ball`
 - Updates match_innings (runs, wickets, overs)
 - Updates player_match_stats (runs, balls_faced, balls_bowled, runs_conceded, wickets)
-- Uses owner_id for authorization
+- Uses tournament.created_by for authorization
 
 **Acceptance Criteria:**
-- ✅ Authorized scorer can add balls
+- ✅ Tournament creator can add balls (exclusive scoring rights)
+- ✅ Team owners cannot add balls (view-only access)
 - ✅ Innings totals update correctly
 - ✅ Player stats update correctly
 - ✅ Auto-end works on 10 wickets
@@ -1048,6 +1121,7 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 ### 6.2 Team Routes (`/api/teams`)
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
+| POST | / | Yes | Create new team |
 | GET | / | No | Get all teams |
 | GET | /my-team | Yes | Get authenticated user's team |
 
@@ -1116,22 +1190,23 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
 ### 7.2 Key Screens
 1. **Authentication**
    - Login screen
-   - Registration screen
+   - Registration screen (phone/email, no team creation)
    - Password reset flow
 
 2. **Dashboard**
-   - My team overview
+   - My team overview (shows "Add Team" when no team exists)
    - Upcoming matches
    - Recent results
 
 3. **Team Management**
+   - Create team screen (separate from registration)
    - Team details
    - Player roster
    - Add/edit players
 
 4. **Tournament**
    - Tournament list
-   - Tournament details
+   - Tournament details (with bracket view)
    - Standings
    - Fixtures
 
@@ -1141,9 +1216,10 @@ To become the go-to platform for amateur and semi-professional cricket leagues, 
    - Live scorecard view
 
 6. **Statistics**
-   - Player stats
-   - Team stats
-   - Tournament leaders
+   - Overview dashboard
+   - Player rankings
+   - Team rankings
+   - Tournament statistics
 
 ### 7.3 State Management
 - Provider pattern for state management
@@ -1509,6 +1585,6 @@ With a robust backend architecture, comprehensive security measures, real-time c
 
 ---
 
-**Document Version:** 1.1
-**Last Updated:** November 3, 2025
+**Document Version:** 1.2
+**Last Updated:** November 14, 2025
 **Status:** Living Document - Updated as requirements evolve

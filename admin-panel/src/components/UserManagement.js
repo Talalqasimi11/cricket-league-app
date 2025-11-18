@@ -12,6 +12,10 @@ const UserManagement = ({ onToast }) => {
   const [filterAdmin, setFilterAdmin] = useState('all');
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Bulk actions state
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [selectAll, setSelectAll] = useState(false);
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -94,6 +98,90 @@ const UserManagement = ({ onToast }) => {
     }
   };
 
+  // Bulk actions handlers
+  const handleSelectUser = (userId) => {
+    setSelectedUsers(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(filteredUsers.map(user => user.id));
+    }
+    setSelectAll(!selectAll);
+  };
+
+  const handleBulkPromoteToAdmin = async () => {
+    if (selectedUsers.length === 0) return;
+
+    try {
+      setActionLoading(true);
+      await Promise.all(selectedUsers.map(userId =>
+        adminAPI.updateUserAdminStatus(userId, true)
+      ));
+      setUsers(users.map(user =>
+        selectedUsers.includes(user.id)
+          ? { ...user, is_admin: true }
+          : user
+      ));
+      setSelectedUsers([]);
+      setSelectAll(false);
+      onToast?.(`${selectedUsers.length} users promoted to admin`, 'success');
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to promote users';
+      onToast?.(errorMsg, 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkRemoveAdmin = async () => {
+    if (selectedUsers.length === 0) return;
+
+    try {
+      setActionLoading(true);
+      await Promise.all(selectedUsers.map(userId =>
+        adminAPI.updateUserAdminStatus(userId, false)
+      ));
+      setUsers(users.map(user =>
+        selectedUsers.includes(user.id)
+          ? { ...user, is_admin: false }
+          : user
+      ));
+      setSelectedUsers([]);
+      setSelectAll(false);
+      onToast?.(`Admin privileges removed from ${selectedUsers.length} users`, 'success');
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to remove admin privileges';
+      onToast?.(errorMsg, 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedUsers.length === 0) return;
+
+    try {
+      setActionLoading(true);
+      await Promise.all(selectedUsers.map(userId => adminAPI.deleteUser(userId)));
+      setUsers(users.filter(user => !selectedUsers.includes(user.id)));
+      setSelectedUsers([]);
+      setSelectAll(false);
+      onToast?.(`${selectedUsers.length} users deleted successfully`, 'success');
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to delete users';
+      onToast?.(errorMsg, 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -158,6 +246,48 @@ const UserManagement = ({ onToast }) => {
         </div>
       </div>
 
+      {/* Bulk Actions Bar */}
+      {selectedUsers.length > 0 && (
+        <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <span className="text-sm font-medium text-indigo-800">
+                {selectedUsers.length} user{selectedUsers.length !== 1 ? 's' : ''} selected
+              </span>
+              <button
+                onClick={() => setSelectedUsers([])}
+                className="text-sm text-indigo-600 hover:text-indigo-800 underline"
+              >
+                Clear selection
+              </button>
+            </div>
+            <div className="flex space-x-2">
+              <button
+                onClick={handleBulkPromoteToAdmin}
+                disabled={actionLoading}
+                className="bg-purple-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-purple-700 disabled:opacity-50"
+              >
+                {actionLoading ? 'Processing...' : 'Make Admin'}
+              </button>
+              <button
+                onClick={handleBulkRemoveAdmin}
+                disabled={actionLoading}
+                className="bg-orange-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-orange-700 disabled:opacity-50"
+              >
+                {actionLoading ? 'Processing...' : 'Remove Admin'}
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={actionLoading}
+                className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {actionLoading ? 'Deleting...' : 'Delete Selected'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Users Table */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {filteredUsers.length === 0 ? (
@@ -165,67 +295,92 @@ const UserManagement = ({ onToast }) => {
             <p className="text-gray-500">No users found matching your criteria</p>
           </div>
         ) : (
-          <ul className="divide-y divide-gray-200">
-            {filteredUsers.map((user) => (
-              <li key={user.id}>
-                <div className="px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center flex-1">
-                    <div className="flex-shrink-0">
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center text-white font-bold">
-                        {user.phone_number.charAt(user.phone_number.length - 1)}
+          <>
+            {/* Table Header with Select All */}
+            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={selectAll}
+                  onChange={handleSelectAll}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <span className="ml-3 text-sm font-medium text-gray-900">
+                  Select All ({filteredUsers.length} users)
+                </span>
+              </div>
+            </div>
+            <ul className="divide-y divide-gray-200">
+              {filteredUsers.map((user) => (
+                <li key={user.id}>
+                  <div className="px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center flex-1">
+                      {/* Checkbox */}
+                      <div className="flex-shrink-0 mr-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.includes(user.id)}
+                          onChange={() => handleSelectUser(user.id)}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                      </div>
+                      <div className="flex-shrink-0">
+                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center text-white font-bold">
+                          {user.phone_number.charAt(user.phone_number.length - 1)}
+                        </div>
+                      </div>
+                      <div className="ml-4 flex-1">
+                        <div className="text-sm font-medium text-gray-900">
+                          {user.phone_number}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {user.team_name ? (
+                            <>
+                              {user.team_name} • {user.team_location}
+                            </>
+                          ) : (
+                            'No team assigned'
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="ml-4 flex-1">
-                      <div className="text-sm font-medium text-gray-900">
-                        {user.phone_number}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {user.team_name ? (
-                          <>
-                            {user.team_name} • {user.team_location}
-                          </>
-                        ) : (
-                          'No team assigned'
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-4 ml-4">
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                      user.is_admin
-                        ? 'bg-purple-100 text-purple-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {user.is_admin ? '👑 Admin' : 'Regular'}
-                    </span>
-                    <button
-                      onClick={() => handleToggleAdmin(user.id, user.is_admin)}
-                      disabled={actionLoading}
-                      className={`${
+                    <div className="flex items-center space-x-4 ml-4">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
                         user.is_admin
-                          ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                          : 'bg-green-100 text-green-700 hover:bg-green-200'
-                      } px-3 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50`}
-                    >
-                      {user.is_admin ? 'Remove Admin' : 'Make Admin'}
-                    </button>
-                    {!user.is_admin && (
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {user.is_admin ? '👑 Admin' : 'Regular'}
+                      </span>
                       <button
-                        onClick={() => {
-                          setSelectedUser(user);
-                          setShowDeleteModal(true);
-                        }}
+                        onClick={() => handleToggleAdmin(user.id, user.is_admin)}
                         disabled={actionLoading}
-                        className="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+                        className={`${
+                          user.is_admin
+                            ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                            : 'bg-green-100 text-green-700 hover:bg-green-200'
+                        } px-3 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50`}
                       >
-                        Delete
+                        {user.is_admin ? 'Remove Admin' : 'Make Admin'}
                       </button>
-                    )}
+                      {!user.is_admin && (
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setShowDeleteModal(true);
+                          }}
+                          disabled={actionLoading}
+                          className="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
 

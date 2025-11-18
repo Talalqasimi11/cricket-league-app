@@ -2,12 +2,14 @@ const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
-const pinoHttp = require("pino-http");
-const { sanitizeObject } = require("./utils/safeLogger");
 const { v4: uuidv4 } = require("uuid");
 require("dotenv").config();
 const validateEnv = require("./config/validateEnv");
-const rateLimit = require("express-rate-limit");
+
+// Import custom middleware
+const { validate } = require("./middleware/validationMiddleware");
+const { createRequestLogger } = require("./utils/logger");
+const { combinedRateLimit, createDynamicRateLimit } = require("./middleware/rateLimitMiddleware");
 
 // Initialize database connection
 const { db, checkConnection } = require("./config/db");
@@ -24,6 +26,7 @@ const liveScoreViewerRoutes = require("./routes/liveScoreViewerRoutes");
 const matchInningsRoutes = require("./routes/matchInningsRoutes");
 const playerStatsRoutes = require("./routes/playerStatsRoutes");
 const teamTournamentSummaryRoutes = require("./routes/teamTournamentSummaryRoutes");
+const statsRoutes = require("./routes/statsRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
@@ -51,6 +54,8 @@ validateEnv();
 
 const app = express();
 
+// Trust proxy headers (needed for ngrok and other reverse proxies)
+app.set('trust proxy', true);
 
 app.use((req, res, next) => {
 
@@ -63,53 +68,12 @@ app.use((req, res, next) => {
 
 // Security headers with helmet (moved after getConnectSrc function definition)
 
-app.use(pinoHttp({
-  redact: [
-    'req.headers.authorization',
-    'req.headers.cookie',
-    'res.headers.set-cookie',
-    'req.headers.x-csrf-token',
-    'req.headers.x-requested-with',
-    'req.body.password',
-    'req.body.current_password',
-    'req.body.new_password',
-    'req.body.refresh_token',
-    'req.body.token',
-    'req.body.phone_number'
-  ],
-  genReqId: (req) => req.headers['x-request-id'] || uuidv4(),
-  serializers: {
-    req(request) {
-      // avoid logging bodies for auth endpoints and sensitive data
-      const isAuth = request.url && request.url.startsWith('/api/auth');
-      const isSensitive = request.url && (
-        request.url.includes('/password') ||
-        request.url.includes('/login') ||
-        request.url.includes('/register')
-      );
-
-      const sanitizedHeaders = sanitizeObject(request.headers);
-
-      return {
-        method: request.method,
-        url: request.url,
-        headers: sanitizedHeaders,
-        id: request.id,
-        remoteAddress: request.socket?.remoteAddress,
-        remotePort: request.socket?.remotePort,
-        // Use request.body after express.json middleware, sanitize sensitive data
-        body: (isAuth || isSensitive) ? undefined : sanitizeObject(request.body || {}),
-        query: sanitizeObject(request.query || {}),
-      };
-    },
-    res(response) {
-      return {
-        statusCode: response.statusCode,
-        headers: sanitizeObject(response.getHeaders?.() || {})
-      };
-    }
-  }
-}));
+// Request ID middleware (must be before other middleware)
+app.use((req, res, next) => {
+  req.id = req.headers['x-request-id'] || uuidv4();
+  res.setHeader('X-Request-ID', req.id);
+  next();
+});
 // Configure CORS: allow credentials and restrict origins explicitly via CORS_ORIGINS
 let allowedOrigins = (process.env.CORS_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 
@@ -197,6 +161,23 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false, // Disable for development compatibility
 }));
 
+// Logging middleware - must be added after basic middleware but before routes
+app.use(createRequestLogger({
+  logAllRequests: process.env.NODE_ENV !== 'production',
+  logErrors: true,
+  logPerformance: true,
+  excludePaths: ['/health', '/favicon.ico'],
+  slowRequestThreshold: 1000
+}));
+
+// Dynamic rate limiting for suspicious activity
+app.use(createDynamicRateLimit({
+  windowMs: 60 * 1000, // 1 minute base window
+  maxRequests: 100, // 100 requests per minute before increasing window
+  increaseFactor: 1.5,
+  maxWindowMs: 15 * 60 * 1000 // Max 15 minute window
+}));
+
 // Production validation: warn when credentials=true but no HTTPS origins
 if (process.env.NODE_ENV === 'production') {
   const hasHttpsOrigins = allowedOrigins.some(origin => origin.startsWith('https://'));
@@ -277,6 +258,7 @@ app.use("/api/tournament-teams", tournamentTeamRoutes);
 app.use("/api/tournament-matches", tournamentMatchRoutes); // ✅ Register here
 app.use("/api/live", liveScoreRoutes);
 app.use("/api/match-innings", matchInningsRoutes);
+app.use("/api/stats", statsRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/uploads", uploadRoutes);

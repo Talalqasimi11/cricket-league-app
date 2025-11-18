@@ -1,5 +1,6 @@
 // lib/features/home/screens/home_screen.dart
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../widgets/bottom_nav.dart';
@@ -8,8 +9,8 @@ import '../../widgets/offline_status_indicator.dart';
 import '../../features/tournaments/screens/tournaments_screen.dart';
 import '../../core/json_utils.dart';
 import '../../core/theme/theme_config.dart';
-import '../../core/error_dialog.dart';
 import '../../features/teams/screens/my_team_screen.dart'; // ✅ My Team screen
+import '../../features/stats/screens/statistics_screen.dart'; // ✅ Statistics screen
 import 'package:provider/provider.dart';
 import '../../core/auth_provider.dart';
 import '../../features/matches/screens/matches_screen.dart'; // ✅ Matches screen
@@ -95,22 +96,32 @@ class _HomeScreenState extends State<HomeScreen> {
               .toList();
           _filteredTeams = _teams;
         });
+      } else if (resp.statusCode == 401 || resp.statusCode == 403) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+          );
+        }
+      } else if (resp.statusCode >= 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Server error. Please try again later.')),
+          );
+        }
       } else {
         if (mounted) {
-          await ErrorDialog.showApiError(
-            context,
-            response: resp,
-            onRetry: () => _fetchTeams(),
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to load teams (${resp.statusCode})')),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        await ErrorDialog.showGenericError(
-          context,
-          error: e,
-          onRetry: () => _fetchTeams(),
-          showRetryButton: true,
+        final errorMessage = e is SocketException
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Failed to load teams. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
         );
       }
     } finally {
@@ -376,6 +387,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _homeTab(), // ✅ All Teams
       const MatchesScreen(), // ✅ Matches screen connected here
       const TournamentsScreen(), // ✅ real tournaments page
+      const StatisticsScreen(), // ✅ Statistics page
       const MyTeamScreen(), // ✅ My Team page
     ];
 

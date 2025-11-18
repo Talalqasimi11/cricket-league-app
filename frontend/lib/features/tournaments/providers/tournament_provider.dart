@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../../../core/api_client.dart';
 import '../../../core/retry_policy.dart';
 import '../../../core/offline/offline_manager.dart';
 import '../../../models/pending_operation.dart';
+import '../../../models/team.dart';
 import '../models/tournament_model.dart';
 
 /// State for a tournament
@@ -140,7 +142,11 @@ class TournamentProvider extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      if (e is SocketException) {
+        _error = 'No internet connection. Please check your network and try again.';
+      } else {
+        _error = 'Failed to load tournaments. Please try again.';
+      }
       debugPrint('Error fetching tournaments: $e');
     } finally {
       _setLoading(false);
@@ -163,10 +169,23 @@ class TournamentProvider extends ChangeNotifier {
       if (response.statusCode == 201) {
         await fetchTournaments(); // Refresh list
         return true;
+      } else if (response.statusCode == 400) {
+        final data = jsonDecode(response.body);
+        _error = data['error'] ?? 'Invalid tournament data';
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        _error = 'Authentication failed. Please log in again.';
+      } else if (response.statusCode >= 500) {
+        _error = 'Server error. Please try again later.';
+      } else {
+        _error = 'Failed to create tournament (${response.statusCode})';
       }
       return false;
     } catch (e) {
-      _error = e.toString();
+      if (e is SocketException) {
+        _error = 'No internet connection. Please check your network and try again.';
+      } else {
+        _error = 'Failed to create tournament. Please try again.';
+      }
       debugPrint('Error creating tournament: $e');
 
       // Queue for offline sync if offline manager is available
@@ -213,10 +232,25 @@ class TournamentProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         await fetchTournaments(); // Refresh list
         return true;
+      } else if (response.statusCode == 400) {
+        final data = jsonDecode(response.body);
+        _error = data['error'] ?? 'Invalid tournament data';
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        _error = 'Authentication failed. Please log in again.';
+      } else if (response.statusCode == 404) {
+        _error = 'Tournament not found';
+      } else if (response.statusCode >= 500) {
+        _error = 'Server error. Please try again later.';
+      } else {
+        _error = 'Failed to update tournament (${response.statusCode})';
       }
       return false;
     } catch (e) {
-      _error = e.toString();
+      if (e is SocketException) {
+        _error = 'No internet connection. Please check your network and try again.';
+      } else {
+        _error = 'Failed to update tournament. Please try again.';
+      }
       debugPrint('Error updating tournament: $e');
 
       // Queue for offline sync if offline manager is available
@@ -257,10 +291,25 @@ class TournamentProvider extends ChangeNotifier {
         _tournaments.removeWhere((t) => t.id == id);
         notifyListeners();
         return true;
+      } else if (response.statusCode == 400) {
+        final data = jsonDecode(response.body);
+        _error = data['error'] ?? 'Cannot delete tournament';
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        _error = 'Authentication failed. Please log in again.';
+      } else if (response.statusCode == 404) {
+        _error = 'Tournament not found';
+      } else if (response.statusCode >= 500) {
+        _error = 'Server error. Please try again later.';
+      } else {
+        _error = 'Failed to delete tournament (${response.statusCode})';
       }
       return false;
     } catch (e) {
-      _error = e.toString();
+      if (e is SocketException) {
+        _error = 'No internet connection. Please check your network and try again.';
+      } else {
+        _error = 'Failed to delete tournament. Please try again.';
+      }
       debugPrint('Error deleting tournament: $e');
       return false;
     } finally {
@@ -272,6 +321,33 @@ class TournamentProvider extends ChangeNotifier {
     if (_isLoading != loading) {
       _isLoading = loading;
       notifyListeners();
+    }
+  }
+
+  /// Fetch tournament teams
+  Future<List<Team>> fetchTournamentTeams(String tournamentId) async {
+    try {
+      final response = await RetryPolicy.execute(
+        apiCall: () => ApiClient.instance.get('/api/tournaments/$tournamentId/teams'),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> data = [];
+        
+        if (decoded is Map<String, dynamic> && decoded.containsKey('data')) {
+          data = decoded['data'] as List<dynamic>;
+        } else if (decoded is List<dynamic>) {
+          data = decoded;
+        }
+
+        return data.map((json) => Team.fromJson(json)).toList();
+      } else {
+        throw Exception('Failed to fetch tournament teams');
+      }
+    } catch (e) {
+      debugPrint('Error fetching tournament teams: $e');
+      rethrow;
     }
   }
 }

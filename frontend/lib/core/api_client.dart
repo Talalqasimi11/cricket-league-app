@@ -37,23 +37,17 @@ class ApiClient {
   ApiClient._() : _client = http.Client();
   static final ApiClient instance = ApiClient._();
 
-  // Cached base URL for synchronous access
   String? _cachedBaseUrl;
   bool _isInitialized = false;
-
-  // Private http.Client field to prevent resource leaks
   late final http.Client _client;
 
-  // Platform-aware base URL detection
   static String get baseUrl {
     return instance._cachedBaseUrl ?? instance.getPlatformDefaultUrl();
   }
 
-  // Initialize the cached base URL at app startup (now non-blocking)
   Future<void> init() async {
     if (_isInitialized) return;
 
-    // Asynchronous base URL setup - don't await this
     getConfiguredBaseUrl()
         .then((url) {
           _cachedBaseUrl = url;
@@ -61,17 +55,12 @@ class ApiClient {
         })
         .catchError((error) {
           debugPrint('[ApiClient] Error configuring base URL: $error');
-          // Fallback to platform default on error
           _cachedBaseUrl = getPlatformDefaultUrl();
         });
 
-    // Initialize connectivity listener synchronously
     _initializeConnectivityListener();
-
     _isInitialized = true;
     debugPrint('[ApiClient] Init completed (isInitialized=true)');
-
-    // Start background health check
     _checkServerHealth();
   }
 
@@ -88,12 +77,9 @@ class ApiClient {
         results = [result];
       }
 
-      // Check if any result indicates a connection
       _isOnline = results.any((res) => res != ConnectivityResult.none);
-
       debugPrint('Connectivity changed: $_isOnline (results: $results)');
 
-      // Process queued requests when connection is restored
       if (!wasOnline && _isOnline) {
         _processQueuedRequests();
       }
@@ -107,17 +93,12 @@ class ApiClient {
       '[Developer] Detecting platform default URL for $defaultTargetPlatform',
     );
 
-    // For mobile platforms
     if (defaultTargetPlatform == TargetPlatform.android) {
-      // Use ngrok URL for Android devices to connect to backend from anywhere
       const url = 'https://foveolar-louetta-unradiant.ngrok-free.dev';
       debugPrint('[Developer] Android detected, using ngrok URL: $url');
       return url;
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-      // Check if physical device (this is synchronous but may not be perfect)
-      // Physical iOS devices cannot connect to localhost, need IP
-      const url =
-          'http://localhost:5000'; // iOS simulator or physical with manual config
+      const url = 'http://localhost:5000';
       debugPrint(
         '[Developer] iOS detected, using localhost URL: $url (Note: Physical devices may need custom URL in developer settings)',
       );
@@ -131,41 +112,32 @@ class ApiClient {
     }
   }
 
-  // New methods for custom URL configuration
   Future<void> setCustomBaseUrl(String url) async {
-    // Normalize URL by trimming trailing slash
     final normalizedUrl = _normalizeUrl(url);
     await _writeToStorage('custom_api_url', normalizedUrl);
-    // Update cached URL
     _cachedBaseUrl = normalizedUrl;
   }
 
   Future<void> clearCustomBaseUrl() async {
     await _deleteFromStorage('custom_api_url');
-    // Update cached URL to platform default
     _cachedBaseUrl = getPlatformDefaultUrl();
   }
 
   Future<String> getConfiguredBaseUrl() async {
-    // First priority: Check for API_BASE_URL environment variable
     const String envUrl = String.fromEnvironment('API_BASE_URL');
     if (envUrl.isNotEmpty) {
       return _normalizeUrl(envUrl);
     }
 
-    // Second priority: Check for custom URL in storage
     final customUrl = await _readFromStorage('custom_api_url');
     if (customUrl != null && customUrl.isNotEmpty) {
       return _normalizeUrl(customUrl);
     }
 
-    // Third priority: Platform default
     return getPlatformDefaultUrl();
   }
 
-  // Helper method to get the actual base URL for API calls
   Future<String> _getBaseUrl() async {
-    // Use cached URL if available, otherwise get configured URL
     if (_cachedBaseUrl != null) {
       return _cachedBaseUrl!;
     }
@@ -174,7 +146,6 @@ class ApiClient {
 
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
-  // Mobile storage abstraction
   Future<void> _writeToStorage(String key, String value) async {
     await _storage.write(key: key, value: value);
   }
@@ -187,12 +158,10 @@ class ApiClient {
     await _storage.delete(key: key);
   }
 
-  // URL normalization helper
   String _normalizeUrl(String url) {
     return url.trim().replaceAll(RegExp(r'/+$'), '');
   }
 
-  // URL joining helper
   String _joinUrl(String base, String path) {
     final normalizedBase = _normalizeUrl(base);
     final normalizedPath = path.startsWith('/') ? path : '/$path';
@@ -223,7 +192,6 @@ class ApiClient {
     await _storage.delete(key: 'refresh_token');
   }
 
-  // Background server health check
   Future<void> _checkServerHealth() async {
     try {
       debugPrint('[ApiClient] Starting background health check');
@@ -240,11 +208,9 @@ class ApiClient {
       }
     } catch (e) {
       debugPrint('[ApiClient] Server health check ERROR: $e');
-      // Optionally queue a retry or just log
     }
   }
 
-  // Dispose method to close the http.Client and prevent resource leaks
   void dispose() {
     debugPrint('[ApiClient] Disposing resources...');
     try {
@@ -266,7 +232,6 @@ class ApiClient {
     debugPrint('[ApiClient] Disposal complete');
   }
 
-  // Request queuing for offline mode
   final List<_QueuedRequest> _requestQueue = [];
   final Map<String, _CacheEntry> _cache = {};
   bool _isOnline = true;
@@ -336,6 +301,76 @@ class ApiClient {
     debugPrint('[Error] $method $path - $error');
   }
 
+  // NEW: Validate if response is JSON
+  bool _isJsonResponse(http.Response response) {
+    final contentType = response.headers['content-type'] ?? '';
+    return contentType.contains('application/json') || 
+           contentType.contains('text/json');
+  }
+
+  // NEW: Safely decode JSON with validation
+  dynamic _safeJsonDecode(http.Response response) {
+    try {
+      // Check if response body is empty
+      if (response.body.isEmpty) {
+        debugPrint('[ApiClient] Empty response body');
+        return null;
+      }
+
+      // Validate content type
+      if (!_isJsonResponse(response)) {
+        debugPrint(
+          '[ApiClient] Non-JSON response received: ${response.headers['content-type']}',
+        );
+        debugPrint('[ApiClient] Response body: ${response.body}');
+        throw FormatException('Response is not JSON');
+      }
+
+      // Try to decode
+      return jsonDecode(response.body);
+    } on FormatException catch (e) {
+      debugPrint('[ApiClient] JSON decode error: $e');
+      debugPrint('[ApiClient] Response body: ${response.body}');
+      rethrow;
+    } catch (e) {
+      debugPrint('[ApiClient] Unexpected error decoding JSON: $e');
+      rethrow;
+    }
+  }
+
+  // NEW: Validate cached response
+  http.Response? _getValidCachedResponse(
+    String path,
+    Map<String, String> authHeaders,
+    Map<String, String>? headers,
+  ) {
+    try {
+      final key = _getCacheKey(path, authHeaders, headers);
+      final entry = _cache[key];
+      
+      if (entry == null || entry.isExpired) {
+        return null;
+      }
+
+      // Validate cached response body is still valid JSON
+      if (_isJsonResponse(entry.response)) {
+        try {
+          _safeJsonDecode(entry.response);
+          return entry.response;
+        } catch (e) {
+          debugPrint('[Cache] Cached response has invalid JSON, removing');
+          _cache.remove(key);
+          return null;
+        }
+      }
+
+      return entry.response;
+    } catch (e) {
+      debugPrint('[Cache] Error retrieving cached response: $e');
+      return null;
+    }
+  }
+
   Future<void> _processQueuedRequests() async {
     final queue = List.from(_requestQueue);
     _requestQueue.clear();
@@ -372,6 +407,17 @@ class ApiClient {
               headers: request.headers,
             );
             break;
+          case 'UPLOAD':
+            final uploadBody = request.body as Map<String, dynamic>;
+            final file = uploadBody['file'];
+            final fieldName = uploadBody['fieldName'] as String?;
+            response = await uploadFile(
+              request.path,
+              file,
+              fieldName: fieldName ?? 'file',
+              headers: request.headers,
+            );
+            break;
         }
 
         if (!request.completer.isCompleted) {
@@ -399,24 +445,23 @@ class ApiClient {
       final baseUrl = await _getBaseUrl();
       final url = _joinUrl(baseUrl, path);
 
-      // Check cache first if not forcing refresh
+      // Check cache first if not forcing refresh - UPDATED
       if (!forceRefresh) {
-        final cachedResponse = _getCachedResponse(path, authHeaders, headers);
+        final cachedResponse = _getValidCachedResponse(path, authHeaders, headers);
         if (cachedResponse != null) {
           debugPrint('[Cache] GET $path - returning cached response');
           return cachedResponse;
         }
       }
 
-      // If offline, return cached response or queue request
+      // If offline, return cached response or queue request - UPDATED
       if (!_isOnline) {
-        final cachedResponse = _getCachedResponse(path, authHeaders, headers);
+        final cachedResponse = _getValidCachedResponse(path, authHeaders, headers);
         if (cachedResponse != null) {
           debugPrint('[Offline] GET $path - returning cached response');
           return cachedResponse;
         }
 
-        // Queue the request for later processing
         final completer = Completer<http.Response>();
         _requestQueue.add(
           _QueuedRequest(
@@ -434,7 +479,6 @@ class ApiClient {
       Timer? timeoutTimer;
 
       try {
-        // Set timeout
         timeoutTimer = Timer(timeout, () {
           if (!completer.isCompleted) {
             completer.completeError(
@@ -451,15 +495,23 @@ class ApiClient {
             throw ApiHttpException.fromResponse(resp);
           }
 
-          // Cache successful responses
+          // Cache successful responses - UPDATED with validation
           if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            _cacheResponse(
-              path,
-              authHeaders,
-              headers,
-              resp,
-              cacheDuration ?? _defaultCacheDuration,
-            );
+            try {
+              // Validate response before caching
+              if (_isJsonResponse(resp)) {
+                _safeJsonDecode(resp); // Validate it's valid JSON
+                _cacheResponse(
+                  path,
+                  authHeaders,
+                  headers,
+                  resp,
+                  cacheDuration ?? _defaultCacheDuration,
+                );
+              }
+            } catch (e) {
+              debugPrint('[Cache] Skipping cache due to invalid JSON: $e');
+            }
           }
 
           return resp;
@@ -482,7 +534,6 @@ class ApiClient {
     });
   }
 
-  // Helper methods for caching
   String _getCacheKey(
     String path,
     Map<String, String> authHeaders,
@@ -519,7 +570,6 @@ class ApiClient {
       expiresAt: DateTime.now().add(duration),
     );
 
-    // Clean up expired cache entries periodically
     if (_cache.length % 10 == 0) {
       _cleanCache();
     }
@@ -542,7 +592,6 @@ class ApiClient {
       final baseUrl = await _getBaseUrl();
       final encoded = body == null ? null : jsonEncode(body);
 
-      // If offline, queue the request
       if (!_isOnline) {
         final completer = Completer<http.Response>();
         _requestQueue.add(
@@ -619,7 +668,6 @@ class ApiClient {
       final baseUrl = await _getBaseUrl();
       final encoded = body == null ? null : jsonEncode(body);
 
-      // If offline, queue the request
       if (!_isOnline) {
         final completer = Completer<http.Response>();
         _requestQueue.add(
@@ -696,7 +744,6 @@ class ApiClient {
       final baseUrl = await _getBaseUrl();
       final encoded = body == null ? null : jsonEncode(body);
 
-      // If offline, queue the request
       if (!_isOnline) {
         final completer = Completer<http.Response>();
         _requestQueue.add(
@@ -760,13 +807,11 @@ class ApiClient {
     });
   }
 
-  // Logout method to revoke refresh tokens and clear storage
   Future<void> logout() async {
     try {
       final baseUrl = await _getBaseUrl();
-
-      // On mobile, use body-based logout
       final refreshToken = await this.refreshToken;
+      
       if (refreshToken != null && refreshToken.isNotEmpty) {
         await _client.post(
           Uri.parse(_joinUrl(baseUrl, '/api/auth/logout')),
@@ -775,21 +820,18 @@ class ApiClient {
         );
       }
     } catch (e) {
-      // Log error but don't throw - we want to clear local tokens regardless
-      // Note: In production, consider using a proper logging service
       debugPrint('Logout API call failed: $e');
     } finally {
-      // Always clear local tokens
       await clearToken();
       await clearRefreshToken();
     }
   }
 
-  // JSON helpers
+  // UPDATED: Safe JSON helpers with validation
   Future<dynamic> getJson(String path, {Map<String, String>? headers}) async {
     final resp = await get(path, headers: headers);
     _throwIfNotOk(resp);
-    return jsonDecode(resp.body);
+    return _safeJsonDecode(resp);
   }
 
   Future<dynamic> postJson(
@@ -799,20 +841,18 @@ class ApiClient {
   }) async {
     final resp = await post(path, body: body, headers: headers);
     _throwIfNotOk(resp);
-    return jsonDecode(resp.body);
+    return _safeJsonDecode(resp);
   }
 
   void _throwIfNotOk(http.Response resp) {
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      // Return the response object instead of throwing a generic exception
-      // This allows more detailed error handling in the UI
-      throw resp;
+      throw ApiHttpException.fromResponse(resp);
     }
   }
 
   Future<Map<String, String>> _authHeaders(Map<String, String>? headers) async {
     final h = {
-      'x-client-type': 'mobile', // Mobile-only client type
+      'x-client-type': 'mobile',
       ...?headers,
     };
     final t = await token;
@@ -828,36 +868,161 @@ class ApiClient {
     final first = await fn();
     if (first.statusCode != 401) return first;
 
-    // try refresh
     final baseUrl = await _getBaseUrl();
-
-    // Mobile platform: use body-based refresh
     final rt = await refreshToken;
     if (rt == null || rt.isEmpty) return first;
 
-    final refreshResp = await _client.post(
-      Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'refresh_token': rt}),
-    );
+    try {
+      final refreshResp = await _client.post(
+        Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': rt}),
+      );
 
-    if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
-      try {
-        final data = jsonDecode(refreshResp.body) as Map<String, dynamic>;
-        final newAccess = data['token']?.toString();
-        final newRefresh = data['refresh_token']?.toString();
+      if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
+        final data = _safeJsonDecode(refreshResp) as Map<String, dynamic>?;
+        
+        if (data != null) {
+          final newAccess = data['token']?.toString();
+          final newRefresh = data['refresh_token']?.toString();
 
-        if (newAccess != null && newAccess.isNotEmpty) {
-          await setToken(newAccess);
-          if (newRefresh != null && newRefresh.isNotEmpty) {
-            await setRefreshToken(newRefresh);
+          if (newAccess != null && newAccess.isNotEmpty) {
+            await setToken(newAccess);
+            if (newRefresh != null && newRefresh.isNotEmpty) {
+              await setRefreshToken(newRefresh);
+            }
+            return await fn();
           }
-          return await fn();
         }
-      } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('[ApiClient] Error during token refresh: $e');
     }
+    
     return first;
   }
 
+  Future<bool> refreshTokensExplicitly() async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final rt = await refreshToken;
+      if (rt == null || rt.isEmpty) {
+        debugPrint('[ApiClient] No refresh token available');
+        return false;
+      }
 
+      final refreshResp = await _client.post(
+        Uri.parse(_joinUrl(baseUrl, '/api/auth/refresh')),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': rt}),
+      );
+
+      if (refreshResp.statusCode >= 200 && refreshResp.statusCode < 300) {
+        try {
+          final data = _safeJsonDecode(refreshResp) as Map<String, dynamic>?;
+          
+          if (data != null) {
+            final newAccess = data['token']?.toString();
+            final newRefresh = data['refresh_token']?.toString();
+
+            if (newAccess != null && newAccess.isNotEmpty) {
+              await setToken(newAccess);
+              if (newRefresh != null && newRefresh.isNotEmpty) {
+                await setRefreshToken(newRefresh);
+              }
+              debugPrint('[ApiClient] Tokens refreshed successfully via explicit refresh');
+              return true;
+            }
+          }
+        } catch (e) {
+          debugPrint('[ApiClient] Error parsing refresh response: $e');
+        }
+      }
+
+      debugPrint('[ApiClient] Token refresh failed: ${refreshResp.statusCode}');
+      return false;
+    } catch (e) {
+      debugPrint('[ApiClient] Error during explicit token refresh: $e');
+      return false;
+    }
+  }
+
+  Future<http.Response> uploadFile(
+    String path,
+    dynamic file, {
+    String fieldName = 'file',
+    Map<String, String>? headers,
+    Duration timeout = _defaultTimeout,
+  }) async {
+    return _withRetry(() async {
+      final authHeaders = await _authHeaders(headers);
+      _logRequest('UPLOAD', path, authHeaders, 'File: ${file.toString()}');
+
+      final baseUrl = await _getBaseUrl();
+      final url = _joinUrl(baseUrl, path);
+
+      if (!_isOnline) {
+        final completer = Completer<http.Response>();
+        _requestQueue.add(
+          _QueuedRequest(
+            method: 'UPLOAD',
+            path: path,
+            body: {'file': file, 'fieldName': fieldName},
+            headers: headers,
+            completer: completer,
+          ),
+        );
+        debugPrint('[Offline] UPLOAD $path - queued for processing');
+        return await completer.future;
+      }
+
+      final completer = Completer<http.Response>();
+      Timer? timeoutTimer;
+
+      try {
+        timeoutTimer = Timer(timeout, () {
+          if (!completer.isCompleted) {
+            completer.completeError(
+              TimeoutException('Upload timed out', timeout),
+            );
+          }
+        });
+
+        final response = await _withRefreshRetry(() async {
+          final request = http.MultipartRequest('POST', Uri.parse(url));
+          request.headers.addAll(authHeaders);
+
+          if (file is http.MultipartFile) {
+            request.files.add(file);
+          } else {
+            request.files.add(await http.MultipartFile.fromPath(fieldName, file.toString()));
+          }
+
+          final streamedResponse = await request.send();
+          final resp = await http.Response.fromStream(streamedResponse);
+          _logResponse('UPLOAD', path, resp);
+
+          if (resp.statusCode >= 400) {
+            throw ApiHttpException.fromResponse(resp);
+          }
+
+          return resp;
+        });
+
+        if (!completer.isCompleted) {
+          completer.complete(response);
+        }
+
+        return response;
+      } catch (error) {
+        _logError('UPLOAD', path, error);
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
+        rethrow;
+      } finally {
+        timeoutTimer?.cancel();
+      }
+    });
+  }
 }

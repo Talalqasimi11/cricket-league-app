@@ -6,6 +6,16 @@ const { db } = require("../config/db");
 const getLiveScoreViewer = async (req, res) => {
   const { match_id } = req.params;
 
+  // Validate match_id parameter
+  if (!match_id) {
+    return res.status(400).json({ error: "Match ID is required" });
+  }
+
+  const matchIdNum = parseInt(match_id, 10);
+  if (isNaN(matchIdNum) || matchIdNum <= 0) {
+    return res.status(400).json({ error: "Invalid match ID format" });
+  }
+
   try {
     // Innings info with enhanced data
     const [innings] = await db.query(
@@ -19,11 +29,11 @@ const getLiveScoreViewer = async (req, res) => {
                 ELSE 0 
               END AS current_run_rate,
               -- Calculate required run rate (if second innings) using overs_decimal
-              CASE 
-                WHEN mi.inning_number = 2 THEN 
-                  ROUND((SELECT mi2.runs FROM match_innings mi2 
-                         WHERE mi2.match_id = ? AND mi2.inning_number = 1) / mi.overs_decimal, 2)
-                ELSE NULL 
+              CASE
+                WHEN mi.inning_number = 2 AND mi.overs_decimal > 0 THEN
+                  ROUND((SELECT mi2.runs FROM match_innings mi2
+                         WHERE mi2.match_id = mi.match_id AND mi2.inning_number = 1) / mi.overs_decimal, 2)
+                ELSE NULL
               END AS required_run_rate
        FROM match_innings mi
        LEFT JOIN teams bt ON mi.batting_team_id = bt.id

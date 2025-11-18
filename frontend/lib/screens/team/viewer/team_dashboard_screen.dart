@@ -92,7 +92,7 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
           children: [
             const Icon(Icons.error_outline, size: 64, color: Colors.red),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'Oops! Something went wrong',
               style: TextStyle(
                 fontSize: 20,
@@ -200,8 +200,8 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                               right: -2,
                               child: Container(
                                 padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF122118),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF122118),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
@@ -232,8 +232,8 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
                     const SizedBox(height: 20),
 
                     // Players title
-                    Row(
-                      children: const [
+                    const Row(
+                      children: [
                         Text(
                           'Players',
                           style: TextStyle(

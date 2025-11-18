@@ -162,11 +162,11 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             children: [
               const Spacer(),
-              Stack(
+              const Stack(
                 alignment: Alignment.center,
                 children: [
                   Icon(Icons.sports_cricket, color: primaryGreen, size: 100),
-                  const Positioned(
+                  Positioned(
                     top: -10,
                     right: -20,
                     child: Icon(

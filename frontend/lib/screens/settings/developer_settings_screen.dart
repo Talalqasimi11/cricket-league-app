@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../core/api_client.dart';
@@ -91,16 +92,19 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        String errorMessage = 'Connection failed: $e';
-        if (e.toString().contains('Connection refused')) {
-          errorMessage =
-              'Connection refused. Make sure the backend server is running on port 5000.';
+        String errorMessage;
+        if (e is SocketException) {
+          errorMessage = 'No internet connection. Please check your network and try again.';
+        } else if (e.toString().contains('Connection refused')) {
+          errorMessage = 'Connection refused. Make sure the backend server is running on port 5000.';
         } else if (e.toString().contains('Network is unreachable')) {
-          errorMessage =
-              'Network unreachable. Check if your device and computer are on the same network.';
+          errorMessage = 'Network unreachable. Check if your device and computer are on the same network.';
         } else if (e.toString().contains('CORS')) {
-          errorMessage =
-              'CORS error. Add this origin to backend CORS_ORIGINS in .env file.';
+          errorMessage = 'CORS error. Add this origin to backend CORS_ORIGINS in .env file.';
+        } else if (e.toString().contains('TimeoutException')) {
+          errorMessage = 'Connection timed out. The server may be slow or unreachable.';
+        } else {
+          errorMessage = 'Connection failed. Please check the URL and try again.';
         }
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -132,10 +136,11 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('API Configuration'),
-        backgroundColor: Colors.blue.shade50,
+        backgroundColor: theme.colorScheme.surfaceContainerHighest,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -172,7 +177,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
 
             // Platform Default Info
             Card(
-              color: Colors.blue.shade50,
+              color: theme.colorScheme.surfaceContainerHighest,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -296,9 +301,9 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
+                          color: theme.colorScheme.secondaryContainer,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orange.shade200),
+                          border: Border.all(color: theme.colorScheme.secondary),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -307,7 +312,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                               children: [
                                 Icon(
                                   Icons.info,
-                                  color: Colors.orange.shade700,
+                                  color: theme.colorScheme.secondary,
                                   size: 16,
                                 ),
                                 const SizedBox(width: 8),
@@ -315,7 +320,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                                   'Finding Your Computer\'s IP Address',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.orange.shade700,
+                                    color: theme.colorScheme.onSecondaryContainer,
                                   ),
                                 ),
                               ],
@@ -327,7 +332,7 @@ class _DeveloperSettingsScreenState extends State<DeveloperSettingsScreen> {
                               'Linux: Open Terminal, run "ip addr show"',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.orange.shade700,
+                                color: theme.colorScheme.onSecondaryContainer,
                               ),
                             ),
                           ],

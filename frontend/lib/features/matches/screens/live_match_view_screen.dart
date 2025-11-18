@@ -33,12 +33,22 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
 
   @override
   void dispose() {
+    _stopPollingFallback();
     WebSocketService.instance.disconnect();
     super.dispose();
   }
 
   void _setupWebSocket() {
-    // Set up WebSocket callbacks
+    // Clear any existing callbacks to prevent duplicates
+    WebSocketService.instance.onScoreUpdate = null;
+    WebSocketService.instance.onInningsEnded = null;
+    WebSocketService.instance.onConnected = null;
+    WebSocketService.instance.onDisconnected = null;
+    WebSocketService.instance.onError = null;
+    WebSocketService.instance.onSubscribed = null;
+    WebSocketService.instance.onSubscribeError = null;
+
+    // Set up WebSocket callbacks with proper null checks
     WebSocketService.instance.onScoreUpdate = (data) {
       if (mounted) {
         _handleScoreUpdate(data);
@@ -56,6 +66,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
         setState(() {
           _websocketConnected = true;
         });
+        debugPrint('WebSocket connected successfully');
       }
     };
 
@@ -64,19 +75,60 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
         setState(() {
           _websocketConnected = false;
         });
+        debugPrint('WebSocket disconnected');
+        // Start polling fallback when disconnected
+        _startPollingFallback();
       }
     };
 
     WebSocketService.instance.onError = (error) {
       if (mounted) {
         debugPrint('WebSocket error: $error');
-        // Fallback to polling if WebSocket fails
-        _fetchLive();
+        setState(() {
+          _websocketConnected = false;
+        });
+        // Start polling fallback on error
+        _startPollingFallback();
+      }
+    };
+
+    WebSocketService.instance.onSubscribed = (data) {
+      if (mounted) {
+        debugPrint('Successfully subscribed to match updates');
+      }
+    };
+
+    WebSocketService.instance.onSubscribeError = (data) {
+      if (mounted) {
+        debugPrint('Failed to subscribe to match updates: $data');
+        // Fallback to polling if subscription fails
+        _startPollingFallback();
       }
     };
 
     // Connect to WebSocket
     WebSocketService.instance.connect(widget.matchId);
+  }
+
+  Timer? _pollingTimer;
+
+  void _startPollingFallback() {
+    // Stop any existing polling
+    _stopPollingFallback();
+
+    // Start polling every 10 seconds as fallback
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (mounted && !_websocketConnected) {
+        _fetchLive();
+      }
+    });
+
+    debugPrint('Started polling fallback for live updates');
+  }
+
+  void _stopPollingFallback() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
   }
 
   void _handleScoreUpdate(Map<String, dynamic> data) {
@@ -287,25 +339,26 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FBFA),
+      backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 1,
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87),
+          icon: Icon(Icons.arrow_back_ios_new, color: theme.colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           "Live Match",
-          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+          style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
           IconButton(
             tooltip: 'View Scorecard',
-            icon: const Icon(Icons.scoreboard, color: Colors.black87),
+            icon: Icon(Icons.scoreboard, color: theme.colorScheme.onSurface),
             onPressed: () {
               Navigator.pushNamed(
                 context,
@@ -318,7 +371,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
             padding: const EdgeInsets.only(right: 8.0),
             child: _websocketConnected
                 ? const Icon(Icons.wifi, color: Colors.green, size: 18)
-                : const Icon(Icons.wifi_off, color: Colors.grey, size: 18),
+                : Icon(Icons.wifi_off, color: theme.colorScheme.onSurface.withValues(alpha: 0.5), size: 18),
           ),
         ],
       ),
@@ -333,35 +386,42 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
+                      color: theme.colorScheme.surface,
+                      borderRadius: const BorderRadius.all(Radius.circular(16)),
                       border: Border.all(
-                        color: Colors.grey.shade300,
+                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
                       ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Column(
                       children: [
-                        // Match Title + Overs
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        // Match Title + Status
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
                               "$teamA vs $teamB",
-                              style: const TextStyle(
-                                color: Colors.black87,
-                                fontSize: 16,
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface,
+                                fontSize: 18,
                                 fontWeight: FontWeight.w600,
                               ),
+                              textAlign: TextAlign.center,
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        // Match Details
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
                             Text(
                               "$overs Overs Match",
                               style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 12,
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                fontSize: 14,
                               ),
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(width: 12),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -369,7 +429,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                               ),
                               decoration: BoxDecoration(
                                 color: Colors.green.shade100,
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: const BorderRadius.all(Radius.circular(12)),
                               ),
                               child: Text(
                                 "LIVE",
@@ -382,29 +442,31 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                             ),
                           ],
                         ),
-
-                        // Team Logos simplified (no network fetch for web safety)
+                        const SizedBox(height: 12),
+                        // Team Logos
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: Colors.grey.shade200,
-                              child: Icon(Icons.shield, color: Colors.grey.shade600),
+                              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                              child: Icon(Icons.shield, color: theme.colorScheme.onSurfaceVariant),
                             ),
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
                               child: Text(
                                 "vs",
                                 style: TextStyle(
-                                  color: Colors.grey.shade600,
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                                   fontSize: 16,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: Colors.grey.shade200,
-                              child: Icon(Icons.shield, color: Colors.grey.shade600),
+                              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                              child: Icon(Icons.shield, color: theme.colorScheme.onSurfaceVariant),
                             ),
                           ],
                         ),
@@ -418,10 +480,10 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
+                      color: theme.colorScheme.surface,
+                      borderRadius: const BorderRadius.all(Radius.circular(16)),
                       border: Border.all(
-                        color: Colors.grey.shade300,
+                              color: theme.colorScheme.outline.withValues(alpha: 0.3),
                       ),
                     ),
                     child: Column(
@@ -429,7 +491,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                         Text(
                           "Batting Team",
                           style: TextStyle(
-                            color: Colors.grey.shade600,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -443,8 +505,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                               children: [
                                 Text(
                                   score,
-                                  style: const TextStyle(
-                                    color: Colors.black87,
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface,
                                     fontSize: 36,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -452,7 +514,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                                 Text(
                                   "Runs / Wickets",
                                   style: TextStyle(
-                                    color: Colors.grey.shade600,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                                     fontSize: 12,
                                   ),
                                 ),
@@ -464,14 +526,14 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                               margin: const EdgeInsets.symmetric(
                                 horizontal: 20,
                               ),
-                              color: Colors.grey.shade300,
+                              color: theme.colorScheme.outline.withOpacity(0.3),
                             ),
                             Column(
                               children: [
                                 Text(
                                   currentOvers,
-                                  style: const TextStyle(
-                                    color: Colors.black87,
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface,
                                     fontSize: 36,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -479,7 +541,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                                 Text(
                                   "Overs",
                                   style: TextStyle(
-                                    color: Colors.grey.shade600,
+                                    color: theme.colorScheme.onSurface.withOpacity(0.6),
                                     fontSize: 12,
                                   ),
                                 ),
@@ -494,10 +556,10 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                   const SizedBox(height: 20),
 
                   // 📒 Ball-by-Ball Log
-                  const Text(
+                  Text(
                     "Ball-by-Ball Log",
                     style: TextStyle(
-                      color: Colors.black87,
+                      color: theme.colorScheme.onSurface,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -516,29 +578,6 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                 ],
               ),
             ),
-
-      // 🔽 Bottom Navigation
-      bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: Colors.white,
-        selectedItemColor: Colors.green.shade700,
-        unselectedItemColor: Colors.grey.shade600,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.sports_cricket),
-            label: "Matches",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.emoji_events),
-            label: "Tournaments",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.query_stats),
-            label: "Stats",
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
-        ],
-      ),
     );
   }
 
@@ -549,6 +588,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
     required String commentary,
     required String result,
   }) {
+    final theme = Theme.of(context);
+
     // Extract extras from over string if present
     final hasWide = over.contains('wd');
     final hasNoBall = over.contains('nb');
@@ -565,22 +606,22 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
     } else if (result == "4") {
       resultColor = Colors.greenAccent;
     } else {
-      resultColor = Colors.black87;
+      resultColor = theme.colorScheme.onSurface;
     }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: theme.colorScheme.surface,
+        borderRadius: const BorderRadius.all(Radius.circular(12)),
         // Add border for extras
         border: hasExtras
             ? Border.all(
                 color: Colors.orange.shade300,
                 width: 1.5,
               )
-            : Border.all(color: Colors.grey.shade300),
+            : Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
       ),
       child: Row(
         children: [
@@ -591,7 +632,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                 ? Colors.red.shade100
                 : hasExtras
                 ? Colors.orange.shade100
-                : Colors.grey.shade200,
+                : theme.colorScheme.surfaceContainerHighest,
             child: Text(
               over,
               style: TextStyle(
@@ -601,7 +642,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                     ? Colors.red.shade700
                     : hasExtras
                     ? Colors.orange.shade700
-                    : Colors.green.shade700,
+                    : theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -617,8 +658,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                     Expanded(
                       child: Text(
                         "$bowler to $batsman",
-                        style: const TextStyle(
-                          color: Colors.black87,
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -630,9 +671,9 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                           horizontal: 6,
                           vertical: 2,
                         ),
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           color: Colors.orange,
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.all(Radius.circular(4)),
                         ),
                         child: const Text(
                           'WD',
@@ -649,9 +690,9 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                           horizontal: 6,
                           vertical: 2,
                         ),
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           color: Colors.orange,
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.all(Radius.circular(4)),
                         ),
                         child: const Text(
                           'NB',
@@ -666,7 +707,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                 ),
                 Text(
                   commentary,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 12),
                 ),
               ],
             ),

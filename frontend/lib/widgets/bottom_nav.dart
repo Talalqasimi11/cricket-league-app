@@ -39,6 +39,10 @@ class BottomNavBar extends StatelessWidget {
               icon: Icon(Icons.emoji_events),
               label: 'Tournaments',
             ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.query_stats),
+              label: 'Stats',
+            ),
             BottomNavigationBarItem(icon: Icon(Icons.shield), label: 'My Team'),
           ],
         ),
