@@ -18,24 +18,24 @@ const dbConfig = {
 };
 
 // Create database pool with retry mechanism
-let db;
+// Create database pool
+const db = mysql.createPool(dbConfig);
+
 let retryCount = 0;
 const MAX_RETRIES = 5;
 const RETRY_DELAY = 5000; // 5 seconds
 
 const initializePool = async () => {
   try {
-    db = mysql.createPool(dbConfig);
-    
     // Verify connection
     await db.execute('SELECT 1');
     console.log('✅ Database connection established successfully');
     retryCount = 0; // Reset retry count on successful connection
-    
+
     // Add connection monitoring
     db.on('connection', (connection) => {
       console.log('New database connection established');
-      
+
       connection.on('error', (err) => {
         console.error('Database connection error:', err);
         handleConnectionError(err);
@@ -62,7 +62,7 @@ const handleConnectionError = async (err) => {
   if (err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'ECONNREFUSED') {
     retryCount++;
     console.log(`Attempting to reconnect... (Attempt ${retryCount}/${MAX_RETRIES})`);
-    
+
     setTimeout(async () => {
       await initializePool();
     }, RETRY_DELAY);
@@ -92,7 +92,7 @@ const checkConnection = async (timeout = 5000) => {
 const withTransaction = async (callback) => {
   const conn = await db.getConnection();
   await conn.beginTransaction();
-  
+
   try {
     const result = await callback(conn);
     await conn.commit();
@@ -105,8 +105,8 @@ const withTransaction = async (callback) => {
   }
 };
 
-module.exports = { 
-  db, 
+module.exports = {
+  db,
   checkConnection,
   withTransaction,
   // Export for testing

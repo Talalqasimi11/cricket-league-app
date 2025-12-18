@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+// Ensure this matches your backend port (often 5000 or 5001 or 3000)
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 // Create axios instance
 const api = axios.create({
@@ -8,16 +9,18 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000, // 10 second timeout
+  timeout: 15000, // Increased to 15s for slower connections
 });
 
-// Add request interceptor to include auth token
+// --- REQUEST INTERCEPTOR ---
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('admin_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Debug log: Check if we are actually sending the token
+    console.log(`[API Request] ${config.method.toUpperCase()} ${config.url}`, config);
     return config;
   },
   (error) => {
@@ -25,79 +28,103 @@ api.interceptors.request.use(
   }
 );
 
-// Add response interceptor to handle auth errors and token refresh
+// --- RESPONSE INTERCEPTOR ---
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Debug log: Check what data is actually coming back
+    console.log(`[API Response] ${response.config.url}:`, response.data);
+    return response;
+  },
   (error) => {
-    // Handle network errors
+    const originalRequest = error.config;
+
+    // Handle Network Errors (Server down / CORS / Offline)
     if (!error.response) {
-      console.error('Network error:', error.message);
-      error.userMessage = 'Network connection failed. Please check your internet connection and try again.';
+      console.error('Network Error:', error);
+      error.userMessage = 'Cannot connect to server. Check your internet or if server is running.';
       return Promise.reject(error);
     }
 
-    // Handle 401/403 - Token expired or access denied
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    // Handle 401/403 (Unauthorized)
+    if ((error.response.status === 401 || error.response.status === 403) && !originalRequest._retry) {
+      console.warn('Unauthorized access. Logging out...');
       localStorage.removeItem('admin_token');
       localStorage.removeItem('admin_user');
-      window.location.reload();
+      
+      // Only reload if we aren't already at login to prevent loops
+      if (window.location.pathname !== '/login') {
+         window.location.href = '/'; 
+      }
     }
 
-    // Handle 429 - Rate limited
-    if (error.response?.status === 429) {
-      error.userMessage = 'Too many requests. Please wait a moment and try again.';
+    // Handle 429 (Rate Limit)
+    if (error.response.status === 429) {
+      error.userMessage = 'Too many requests. Please wait a moment.';
     }
 
-    // Handle 500+ server errors
-    if (error.response?.status >= 500) {
-      error.userMessage = 'Server error occurred. Please try again later.';
+    // Handle 500+ (Server Errors)
+    if (error.response.status >= 500) {
+      error.userMessage = 'Server error. Please try again later.';
     }
 
-    // Handle 400 - Bad request with validation errors
-    if (error.response?.status === 400 && error.response?.data?.validation) {
-      const validationErrors = Object.values(error.response.data.validation).flat();
-      error.userMessage = validationErrors.join(', ');
-    }
-
-    // Set default user message if not already set
-    if (!error.userMessage) {
-      error.userMessage = error.response?.data?.error ||
-                         error.response?.data?.message ||
-                         'An unexpected error occurred. Please try again.';
-    }
-
+    // Extract readable error message
+    const errorMessage = 
+      error.response.data?.message || 
+      error.response.data?.error || 
+      error.userMessage || 
+      'Something went wrong.';
+    
+    // Attach readable message to error object for UI to use
+    error.userMessage = errorMessage;
+    
+    console.error('API Error:', errorMessage);
     return Promise.reject(error);
   }
 );
 
-// Auth API
+// --- AUTH API ---
 export const authAPI = {
   login: (phoneNumber, password) => {
-    return api.post('/auth/login', { 
-      phone_number: phoneNumber, 
-      password 
+    return api.post('/auth/login', {
+      phone_number: phoneNumber,
+      password
     });
   },
 };
 
-// Admin API
+// --- ADMIN API ---
 export const adminAPI = {
+  // Dashboard
   getDashboardStats: () => api.get('/admin/dashboard'),
-  
+
+  // Users
   getAllUsers: () => api.get('/admin/users'),
-  
-  updateUserAdminStatus: (userId, isAdmin) => 
+  updateUserAdminStatus: (userId, isAdmin) =>
     api.put(`/admin/users/${userId}/admin`, { is_admin: isAdmin }),
-  
   deleteUser: (userId) => api.delete(`/admin/users/${userId}`),
-  
+
+  // Teams
   getAllTeams: () => api.get('/admin/teams'),
-  
   getTeamDetails: (teamId) => api.get(`/admin/teams/${teamId}`),
-  
   updateTeam: (teamId, teamData) => api.put(`/admin/teams/${teamId}`, teamData),
-  
   deleteTeam: (teamId) => api.delete(`/admin/teams/${teamId}`),
+
+  // Tournaments
+  getAllTournaments: () => api.get('/admin/tournaments'),
+  createTournament: (data) => api.post('/admin/tournaments', data),
+  updateTournament: (id, data) => api.put(`/admin/tournaments/${id}`, data),
+  deleteTournament: (id) => api.delete(`/admin/tournaments/${id}`),
+
+  // Matches
+  getAllMatches: () => api.get('/admin/matches'),
+  getMatchDetails: (matchId) => api.get(`/admin/matches/${matchId}`),
+  createMatch: (matchData) => api.post('/admin/matches', matchData),
+  updateMatch: (matchId, matchData) => api.put(`/admin/matches/${matchId}`, matchData),
+  deleteMatch: (matchId) => api.delete(`/admin/matches/${matchId}`),
+
+  // Missing Endpoints referenced in App.js (Added placeholders to prevent crashes)
+  getSystemHealth: () => api.get('/admin/system-health'),
+  getReports: () => api.get('/admin/reports'),
 };
 
 export default api;

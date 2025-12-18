@@ -1,30 +1,37 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../../services/api_service.dart';
+import '../../../core/api_client.dart';
 import '../../../models/team.dart';
+import '../models/player.dart';
 
 class TeamProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
 
+  // General Teams State
   List<Team> _teams = [];
   Team? _selectedTeam;
+
+  // "My Team" Specific State
+  Map<String, dynamic>? _myTeamData;
+  List<Player> _myTeamPlayers = [];
+
   bool _isLoading = false;
   bool _isDisposed = false;
   String? _error;
 
-  // Safe helpers
-  String _safeString(dynamic value, String defaultValue) {
-    if (value == null) return defaultValue;
-    final str = value.toString().trim();
-    return str.isNotEmpty ? str : defaultValue;
-  }
+  // Getters
+  List<Team> get teams => List.unmodifiable(_teams);
+  Team? get selectedTeam => _selectedTeam;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  bool get hasTeams => _teams.isNotEmpty;
+  int get teamCount => _teams.length;
 
-  int _safeInt(dynamic value, int defaultValue) {
-    if (value == null) return defaultValue;
-    if (value is int) return value;
-    if (value is String) return int.tryParse(value) ?? defaultValue;
-    if (value is num) return value.toInt();
-    return defaultValue;
-  }
+  // "My Team" Getters
+  Map<String, dynamic>? get myTeamData => _myTeamData;
+  List<Player> get myTeamPlayers => List.unmodifiable(_myTeamPlayers);
+  bool get hasMyTeam => _myTeamData != null;
 
   void _safeNotifyListeners() {
     if (!_isDisposed) {
@@ -37,27 +44,14 @@ class TeamProvider extends ChangeNotifier {
   }
 
   String _getErrorMessage(dynamic error) {
-    if (error == null) return 'Unknown error';
+    if (error == null) return 'Unknown error occurred';
     final message = error.toString();
     return message.replaceAll('Exception:', '').trim();
   }
 
-  // Getters
-  List<Team> get teams => List.unmodifiable(_teams);
-  Team? get selectedTeam => _selectedTeam;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-
-  // Get team count
-  int get teamCount => _teams.length;
-
-  // Check if has teams
-  bool get hasTeams => _teams.isNotEmpty;
-
-  // Check if has selected team
-  bool get hasSelectedTeam => _selectedTeam != null;
-
-  // Fetch user's team
+  // ==========================================
+  // FETCH MY TEAM (Optimized)
+  // ==========================================
   Future<void> fetchMyTeam() async {
     if (_isDisposed) return;
 
@@ -65,523 +59,258 @@ class TeamProvider extends ChangeNotifier {
     _error = null;
 
     try {
-      final dynamic response = await _apiService.getMyTeam();
+      debugPrint("📥 Fetching My Team Data...");
+      // ✅ Correct Direct API Call
+      final response = await ApiClient.instance.get(
+        '/api/teams/my-team',
+        forceRefresh: true, // Force fresh fetch to bypass cache
+      );
 
-      if (_isDisposed) return;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
 
-      if (response == null) {
-        _selectedTeam = null;
-        _safeNotifyListeners();
-        return;
-      }
+        if (data is Map<String, dynamic>) {
+          dynamic teamPayload = data;
+          // Handle various API wrapper structures
+          if (data.containsKey('team')) {
+            teamPayload = data['team'];
+          } else if (data.containsKey('data')) {
+            teamPayload = data['data'];
+          }
 
-      // Parse response
-      Map<String, dynamic>? teamData;
+          _myTeamData = teamPayload;
 
-      if (response is Map<String, dynamic>) {
-        if (response['team'] is Map<String, dynamic>) {
-          teamData = response['team'] as Map<String, dynamic>;
-        } else if (response.containsKey('id')) {
-          teamData = response;
+          // Safe parsing for players
+          List<dynamic> playersList = [];
+          if (teamPayload['players'] != null) {
+            playersList = teamPayload['players'];
+          } else if (data['players'] != null) {
+            playersList = data['players'];
+          }
+
+          _myTeamPlayers = playersList.map((e) => Player.fromJson(e)).toList();
         }
-      }
-
-      if (teamData != null) {
-        _selectedTeam = Team.fromJson(teamData);
+      } else if (response.statusCode == 404) {
+        _myTeamData = null;
+        _myTeamPlayers = [];
+      } else if (response.statusCode == 401) {
+        _myTeamData = null;
+        _myTeamPlayers = [];
+        _error = 'Unauthorized';
       } else {
-        _selectedTeam = null;
-        _error = 'Invalid team data';
+        _error = 'Failed to load team: ${response.statusCode}';
       }
-
-      if (!_isDisposed) {
-        _safeNotifyListeners();
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Fetch my team error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      
-      if (!_isDisposed) {
-        _error = _getErrorMessage(e);
-        _safeNotifyListeners();
-      }
+    } catch (e) {
+      debugPrint("❌ Error in fetchMyTeam: $e");
+      _error = _getErrorMessage(e);
     } finally {
-      if (!_isDisposed) {
-        _setLoading(false);
-      }
+      _setLoading(false);
     }
   }
 
-  // Fetch all teams
-  Future<void> fetchTeams() async {
+  Future<bool> createTeam(Map<String, dynamic> teamData) async {
+    _setLoading(true);
+    try {
+      final response = await ApiClient.instance.post(
+        '/api/teams/my-team',
+        body: teamData,
+      );
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        await fetchMyTeam();
+        return true;
+      }
+      _error = 'Failed to create team';
+      return false;
+    } catch (e) {
+      _error = _getErrorMessage(e);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> updateMyTeam(Map<String, dynamic> updates) async {
+    _setLoading(true);
+    try {
+      final response = await ApiClient.instance.put(
+        '/api/teams/update',
+        body: updates,
+      );
+      if (response.statusCode == 200) {
+        await fetchMyTeam();
+        return true;
+      }
+      _error = 'Failed to update team';
+      return false;
+    } catch (e) {
+      _error = _getErrorMessage(e);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> deleteMyTeam() async {
+    _setLoading(true);
+    try {
+      final response = await ApiClient.instance.delete('/api/teams/my-team');
+      if (response.statusCode == 200) {
+        _myTeamData = null;
+        _myTeamPlayers = [];
+        _safeNotifyListeners();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      _error = _getErrorMessage(e);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> addPlayerToMyTeam(String name, String role) async {
+    _setLoading(true); // ✅ Added loading state
+    try {
+      final response = await ApiClient.instance.post(
+        '/api/players',
+        body: {'player_name': name, 'player_role': role},
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await fetchMyTeam();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      _error = _getErrorMessage(e);
+      _safeNotifyListeners();
+      return false;
+    } finally {
+      _setLoading(false); // ✅ Turn off loading
+    }
+  }
+
+  // ==========================================
+  // CREATE PLAYER (GENERIC)
+  // ==========================================
+  Future<Player?> createPlayer(String teamId, Map<String, dynamic> data) async {
+    if (_isDisposed) return null;
+    _setLoading(true);
+    _error = null;
+
+    try {
+      final playerData = {...data, 'team_id': teamId};
+      final newPlayerData = await _apiService.createPlayer(playerData);
+      return Player.fromJson(newPlayerData);
+    } catch (e, stackTrace) {
+      debugPrint('Create player error: $e');
+      debugPrint('Stack trace: $stackTrace');
+      _error = _getErrorMessage(e);
+      return null;
+    } finally {
+      if (!_isDisposed) _setLoading(false);
+    }
+  }
+
+  // ==========================================
+  // GENERAL TEAM METHODS (Dropdowns etc)
+  // ==========================================
+
+  Future<void> fetchTeams({bool forceRefresh = false}) async {
     if (_isDisposed) return;
-
     _setLoading(true);
     _error = null;
 
     try {
-      final dynamic response = await _apiService.getTeams();
+      // ApiService returns List<Map<String, dynamic>>
+      final List<Map<String, dynamic>> rawData = await _apiService.getTeams(
+        forceRefresh: forceRefresh,
+      );
 
       if (_isDisposed) return;
 
-      if (response == null) {
-        _teams = [];
-        _safeNotifyListeners();
-        return;
-      }
-
-      // Parse response
-      List<dynamic> rawTeams = [];
-      
-      if (response is List) {
-        rawTeams = response;
-      } else if (response is Map<String, dynamic>) {
-        if (response['teams'] is List) {
-          rawTeams = response['teams'] as List;
-        } else if (response['data'] is List) {
-          rawTeams = response['data'] as List;
-        }
-      }
-
-      final parsedTeams = <Team>[];
-
-      for (final teamData in rawTeams) {
-        try {
-          if (teamData is Map<String, dynamic>) {
-            final team = Team.fromJson(teamData);
-            if (team.id.isNotEmpty && team.teamName.isNotEmpty) {
-              parsedTeams.add(team);
-            } else {
-              debugPrint('Skipping invalid team: ${teamData['id']}');
-            }
-          } else {
-            debugPrint('Invalid team data type: ${teamData.runtimeType}');
-          }
-        } catch (e) {
-          debugPrint('Error parsing team: $e');
-          // Continue processing other teams
-        }
-      }
-
-      if (!_isDisposed) {
-        _teams = parsedTeams;
-        _safeNotifyListeners();
-      }
-    } catch (e, stackTrace) {
+      // Safe Parsing using Team.fromJson
+      _teams = rawData.map<Team>((json) => Team.fromJson(json)).toList();
+    } catch (e) {
       debugPrint('Fetch teams error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      
       if (!_isDisposed) {
         _error = _getErrorMessage(e);
-        _safeNotifyListeners();
+        _teams = [];
       }
     } finally {
-      if (!_isDisposed) {
-        _setLoading(false);
-      }
+      if (!_isDisposed) _setLoading(false);
     }
   }
 
-  // Create team
-  Future<Team?> createTeam(Map<String, dynamic> data) async {
-    if (_isDisposed) return null;
-
-    // Validate input data
-    if (data.isEmpty) {
-      _error = 'Team data is required';
-      _safeNotifyListeners();
-      return null;
-    }
-
+  Future<List<Player>> getPlayers(String teamId) async {
+    if (_isDisposed) return [];
     _setLoading(true);
     _error = null;
-
     try {
-      final dynamic response = await _apiService.createTeam(data);
-
-      if (_isDisposed) return null;
-
-      if (response == null) {
-        _error = 'Failed to create team';
-        _safeNotifyListeners();
-        return null;
-      }
-
-      // Parse response
-      Map<String, dynamic>? teamData;
-
-      if (response is Map<String, dynamic>) {
-        if (response['team'] is Map<String, dynamic>) {
-          teamData = response['team'] as Map<String, dynamic>;
-        } else if (response.containsKey('id')) {
-          teamData = response;
-        }
-      }
-
-      if (teamData != null) {
-        final team = Team.fromJson(teamData);
-        
-        if (!_isDisposed) {
-          _teams.insert(0, team);
-          _selectedTeam = team;
-          _safeNotifyListeners();
-        }
-        
-        return team;
-      } else {
-        _error = 'Invalid team data received';
-        _safeNotifyListeners();
-        return null;
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Create team error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      
-      if (!_isDisposed) {
-        _error = _getErrorMessage(e);
-        _safeNotifyListeners();
-      }
-      
-      return null;
+      final rawPlayers = await _apiService.getPlayers(teamId: teamId);
+      final players = (rawPlayers).map((p) => Player.fromJson(p)).toList();
+      return players;
+    } catch (e) {
+      _error = _getErrorMessage(e);
+      return [];
     } finally {
-      if (!_isDisposed) {
-        _setLoading(false);
-      }
+      if (!_isDisposed) _setLoading(false);
     }
   }
 
-  // Update team
-  Future<Team?> updateTeam(String teamId, Map<String, dynamic> data) async {
-    if (_isDisposed) return null;
-
-    // Validate input
-    if (teamId.isEmpty) {
-      _error = 'Invalid team ID';
-      _safeNotifyListeners();
-      return null;
-    }
-
-    if (data.isEmpty) {
-      _error = 'Update data is required';
-      _safeNotifyListeners();
-      return null;
-    }
-
-    _setLoading(true);
-    _error = null;
-
+  Team? getTeamById(String? teamId) {
     try {
-      final dynamic response = await _apiService.updateTeam(teamId, data);
-
-      if (_isDisposed) return null;
-
-      if (response == null) {
-        _error = 'Failed to update team';
-        _safeNotifyListeners();
-        return null;
-      }
-
-      // Parse response
-      Map<String, dynamic>? teamData;
-
-      if (response is Map<String, dynamic>) {
-        if (response['team'] is Map<String, dynamic>) {
-          teamData = response['team'] as Map<String, dynamic>;
-        } else if (response.containsKey('id')) {
-          teamData = response;
-        }
-      }
-
-      if (teamData != null) {
-        final updatedTeam = Team.fromJson(teamData);
-        
-        if (!_isDisposed) {
-          // Update in list
-          final index = _teams.indexWhere((t) => t.id == teamId);
-          if (index >= 0 && index < _teams.length) {
-            _teams[index] = updatedTeam;
-          }
-          
-          // Update selected team if it's the same
-          if (_selectedTeam?.id == teamId) {
-            _selectedTeam = updatedTeam;
-          }
-          
-          _safeNotifyListeners();
-        }
-        
-        return updatedTeam;
-      } else {
-        _error = 'Invalid team data received';
-        _safeNotifyListeners();
-        return null;
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Update team error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      
-      if (!_isDisposed) {
-        _error = _getErrorMessage(e);
-        _safeNotifyListeners();
-      }
-      
-      return null;
-    } finally {
-      if (!_isDisposed) {
-        _setLoading(false);
-      }
-    }
-  }
-
-  // Delete team
-  Future<bool> deleteTeam(String teamId) async {
-    if (_isDisposed) return false;
-
-    if (teamId.isEmpty) {
-      _error = 'Invalid team ID';
-      _safeNotifyListeners();
-      return false;
-    }
-
-    _setLoading(true);
-    _error = null;
-
-    try {
-      await _apiService.deleteTeam(teamId);
-
-      if (_isDisposed) return false;
-
-      // Remove from list
-      _teams.removeWhere((t) => t.id == teamId);
-      
-      // Clear selected team if it was deleted
-      if (_selectedTeam?.id == teamId) {
-        _selectedTeam = null;
-      }
-      
-      if (!_isDisposed) {
-        _safeNotifyListeners();
-      }
-      
-      return true;
-    } catch (e, stackTrace) {
-      debugPrint('Delete team error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      
-      if (!_isDisposed) {
-        _error = _getErrorMessage(e);
-        _safeNotifyListeners();
-      }
-      
-      return false;
-    } finally {
-      if (!_isDisposed) {
-        _setLoading(false);
-      }
-    }
-  }
-
-  // Get team by ID
-  Team? getTeamById(String teamId) {
-    try {
-      if (teamId.isEmpty || _teams.isEmpty) {
-        return null;
-      }
-
+      if (teamId == null || teamId.isEmpty || _teams.isEmpty) return null;
+      // ✅ Robust comparison (String vs String)
       return _teams.firstWhere(
-        (t) => t.id == teamId,
+        (t) => t.id.toString() == teamId.toString(),
         orElse: () => throw StateError('Team not found'),
       );
-    } on StateError {
-      debugPrint('Team not found with ID: $teamId');
-      return null;
     } catch (e) {
-      debugPrint('Error getting team by ID: $e');
       return null;
     }
   }
 
-  // Search teams
-  List<Team> searchTeams(String query) {
-    try {
-      if (query.isEmpty) return List.from(_teams);
-
-      final lowerQuery = query.toLowerCase().trim();
-      
-      return _teams.where((team) {
-        try {
-          final name = team.teamName.toLowerCase();
-          final location = team.location?.toLowerCase() ?? '';
-          
-          return name.contains(lowerQuery) || location.contains(lowerQuery);
-        } catch (e) {
-          debugPrint('Error searching team: $e');
-          return false;
-        }
-      }).toList();
-    } catch (e) {
-      debugPrint('Error in searchTeams: $e');
-      return [];
-    }
-  }
-
-  // Get top teams by trophies
-  List<Team> getTopTeams({int limit = 10}) {
-    try {
-      final sortedTeams = List<Team>.from(_teams);
-      sortedTeams.sort((a, b) => b.trophies.compareTo(a.trophies));
-      return sortedTeams.take(limit).toList();
-    } catch (e) {
-      debugPrint('Error getting top teams: $e');
-      return [];
-    }
-  }
-
-  // Update team in list
-  void updateTeamInList(Team team) {
-    try {
-      if (_isDisposed) return;
-
-      final index = _teams.indexWhere((t) => t.id == team.id);
-      
-      if (index != -1 && index < _teams.length) {
-        _teams[index] = team;
-        
-        // Update selected team if it's the same
-        if (_selectedTeam?.id == team.id) {
-          _selectedTeam = team;
-        }
-        
-        _safeNotifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error updating team in list: $e');
-    }
-  }
-
-  // Add team to list
-  void addTeamToList(Team team) {
-    try {
-      if (_isDisposed) return;
-
-      // Check if team already exists
-      final existingIndex = _teams.indexWhere((t) => t.id == team.id);
-      
-      if (existingIndex == -1) {
-        _teams.add(team);
-        _safeNotifyListeners();
-      } else {
-        debugPrint('Team already exists, updating instead');
-        updateTeamInList(team);
-      }
-    } catch (e) {
-      debugPrint('Error adding team to list: $e');
-    }
-  }
-
-  // Remove team from list
-  void removeTeamFromList(String teamId) {
-    try {
-      if (_isDisposed) return;
-
-      final initialLength = _teams.length;
-      _teams.removeWhere((t) => t.id == teamId);
-      
-      if (_teams.length != initialLength) {
-        // Team was removed
-        if (_selectedTeam?.id == teamId) {
-          _selectedTeam = null;
-        }
-        
-        _safeNotifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error removing team from list: $e');
-    }
-  }
-
-  // Set selected team
   void setSelectedTeam(Team? team) {
-    try {
-      if (_isDisposed) return;
-
-      if (_selectedTeam != team) {
-        _selectedTeam = team;
-        _safeNotifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error setting selected team: $e');
+    if (_isDisposed) return;
+    if (_selectedTeam != team) {
+      _selectedTeam = team;
+      _safeNotifyListeners();
     }
-  }
-
-  // Clear selected team
-  void clearSelectedTeam() {
-    setSelectedTeam(null);
-  }
-
-  // Refresh teams
-  Future<void> refresh() async {
-    await fetchTeams();
-  }
-
-  // Refresh my team
-  Future<void> refreshMyTeam() async {
-    await fetchMyTeam();
   }
 
   void _setLoading(bool loading) {
-    try {
-      if (_isDisposed) return;
-
-      if (_isLoading != loading) {
-        _isLoading = loading;
-        _safeNotifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error setting loading state: $e');
+    if (_isDisposed) return;
+    if (_isLoading != loading) {
+      _isLoading = loading;
+      _safeNotifyListeners();
     }
   }
 
-  // Clear error
   void clearError() {
     if (_isDisposed) return;
-
     if (_error != null) {
       _error = null;
       _safeNotifyListeners();
     }
   }
 
-  // Clear all data
   void clear() {
     if (_isDisposed) return;
-
-    try {
-      _teams = [];
-      _selectedTeam = null;
-      _error = null;
-      _safeNotifyListeners();
-    } catch (e) {
-      debugPrint('Error clearing data: $e');
-    }
+    _teams = [];
+    _myTeamData = null;
+    _myTeamPlayers = [];
+    _selectedTeam = null;
+    _error = null;
+    _safeNotifyListeners();
   }
 
   @override
   void dispose() {
     _isDisposed = true;
-    
-    try {
-      // Dispose API service if it has resources
-      // _apiService.dispose(); // Uncomment if ApiService has dispose method
-    } catch (e) {
-      debugPrint('Error disposing API service: $e');
-    }
-
-    try {
-      _teams.clear();
-    } catch (e) {
-      debugPrint('Error clearing teams on dispose: $e');
-    }
-
+    _teams.clear();
+    _myTeamPlayers.clear();
     super.dispose();
   }
 }

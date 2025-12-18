@@ -7,43 +7,30 @@ import '../../models/tournament.dart';
 import '../../models/team.dart';
 import '../../models/pending_operation.dart';
 
-/// Singleton service for managing Hive database initialization and boxes
 class HiveService {
   static final HiveService _instance = HiveService._internal();
   factory HiveService() => _instance;
-
   HiveService._internal();
 
   bool _isInitialized = false;
-  late final String _appDocumentDir;
+  late String _appDocumentDir;
 
-  // Box name constants
   static const String boxTournaments = 'tournaments';
   static const String boxMatches = 'matches';
   static const String boxTeams = 'teams';
   static const String boxPlayers = 'players';
   static const String boxPendingOperations = 'pending_operations';
 
-  /// Initialize Hive database
   Future<void> init() async {
     if (_isInitialized) return;
 
     try {
-      // Get application documents directory
       final appDocumentDir = await getApplicationDocumentsDirectory();
       _appDocumentDir = appDocumentDir.path;
 
-      // Initialize Hive
       await Hive.initFlutter();
 
-      // Register type adapters for models
-      Hive.registerAdapter(PlayerAdapter());
-      Hive.registerAdapter(MatchAdapter());
-      Hive.registerAdapter(TournamentAdapter());
-      Hive.registerAdapter(TeamAdapter());
-      Hive.registerAdapter(PendingOperationAdapter());
-
-      // Open boxes
+      _registerAdaptersSafely();
       await _openBoxes();
 
       _isInitialized = true;
@@ -54,7 +41,26 @@ class HiveService {
     }
   }
 
-  /// Open all required Hive boxes
+  /// Register adapters only if not already registered
+ void _registerAdaptersSafely() {
+  final adapters = <TypeAdapter>[
+    PlayerAdapter(),
+    MatchAdapter(),
+    TournamentAdapter(),
+    TeamAdapter(),
+    PendingOperationAdapter(),
+  ];
+
+  for (var adapter in adapters) {
+    if (!Hive.isAdapterRegistered(adapter.typeId)) {
+      Hive.registerAdapter(adapter);
+      debugPrint('[HiveService] Adapter registered for typeId ${adapter.typeId}');
+    } else {
+      debugPrint('[HiveService] Adapter already registered for typeId ${adapter.typeId}');
+    }
+  }
+}
+
   Future<void> _openBoxes() async {
     try {
       await Hive.openBox(boxTournaments);
@@ -70,7 +76,6 @@ class HiveService {
     }
   }
 
-  /// Get box instance by name
   Box getBox(String boxName) {
     if (!_isInitialized) {
       throw StateError('HiveService not initialized. Call init() first.');
@@ -78,7 +83,6 @@ class HiveService {
     return Hive.box(boxName);
   }
 
-  /// Close all boxes and dispose
   Future<void> dispose() async {
     if (_isInitialized) {
       await Hive.close();
@@ -87,7 +91,6 @@ class HiveService {
     }
   }
 
-  /// Clear all data (for debugging/reset purposes)
   Future<void> clearAll() async {
     if (!_isInitialized) return;
 
@@ -104,7 +107,6 @@ class HiveService {
     }
   }
 
-  /// Get database statistics
   Map<String, dynamic> getStats() {
     if (!_isInitialized) {
       return {'error': 'HiveService not initialized'};
@@ -119,7 +121,7 @@ class HiveService {
         boxTeams: getBox(boxTeams).length,
         boxPlayers: getBox(boxPlayers).length,
         boxPendingOperations: getBox(boxPendingOperations).length,
-      }
+      },
     };
   }
 }

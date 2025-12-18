@@ -15,7 +15,7 @@ const SystemHealth = ({ onToast }) => {
 
   useEffect(() => {
     fetchHealthStatus();
-    
+
     // Set auto-refresh interval
     const interval = autoRefresh ? setInterval(fetchHealthStatus, 30000) : null;
     return () => {
@@ -27,7 +27,7 @@ const SystemHealth = ({ onToast }) => {
     try {
       setError('');
       const startTime = performance.now();
-      
+
       const response = await api.get('/health/ready');
       const endTime = performance.now();
       const responseTime = Math.round(endTime - startTime);

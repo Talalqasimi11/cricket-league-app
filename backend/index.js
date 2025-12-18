@@ -6,6 +6,8 @@ const { v4: uuidv4 } = require("uuid");
 require("dotenv").config();
 const validateEnv = require("./config/validateEnv");
 
+const path = require('path');
+
 // Import custom middleware
 const { validate } = require("./middleware/validationMiddleware");
 const { createRequestLogger } = require("./utils/logger");
@@ -16,12 +18,13 @@ const { db, checkConnection } = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
 const teamRoutes = require("./routes/teamRoutes");
-// const matchRoutes = require("./routes/matchRoutes");
+const matchRoutes = require("./routes/matchRoutes");
 const playerRoutes = require("./routes/playerRoutes");
 const tournamentRoutes = require("./routes/tournamentRoutes");
 const tournamentTeamRoutes = require("./routes/tournamentTeamRoutes");
 const tournamentMatchRoutes = require("./routes/tournamentMatchRoutes"); // ✅ Add this
 const liveScoreRoutes = require("./routes/liveScoreRoutes");
+const { setIo } = require("./controllers/liveScoreController"); // ✅ Import setIo
 const liveScoreViewerRoutes = require("./routes/liveScoreViewerRoutes");
 const matchInningsRoutes = require("./routes/matchInningsRoutes");
 const playerStatsRoutes = require("./routes/playerStatsRoutes");
@@ -30,6 +33,9 @@ const statsRoutes = require("./routes/statsRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
+const tournamentStatsRoutes = require("./routes/tournamentStatsRoutes");
+const matchSummaryRoutes = require("./routes/matchSummaryRoutes");
+
 
 validateEnv();
 
@@ -89,7 +95,7 @@ if (process.env.NODE_ENV !== 'production' && allowedOrigins.length === 0) {
     'http://127.0.0.1:5000',
     'http://127.0.0.1:8080', // Flutter web dev dev server alternative
     'http://10.0.2.2:5000', // Android emulator
-    'http://192.168.144.1:5000', // Computer IP for physical devices
+    'http://192.168.10.38:5000', // Computer IP for physical devices
   ];
   console.log('⚠️  Development mode: Auto-adding localhost origins for CORS');
 } else if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
@@ -210,6 +216,9 @@ const corsOriginCallback = (origin, callback) => {
     return callback(null, true);
   }
 
+  // NOTE: If you are testing on phone and get CORS errors, 
+  // you might need to add your dynamic IP to allowedOrigins temporarily here
+  // or add it to your .env file
   console.warn(`🚫 CORS rejected origin: ${origin}`);
   return callback(new Error(`CORS: Origin ${origin} not allowed`), false);
 };
@@ -240,28 +249,63 @@ app.use(express.json());
 app.use(cookieParser());
 
 // ✅ Routes
+
+
+// Use Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/teams", teamRoutes);
+app.use("/api/matches", matchRoutes);
+app.use("/api/matches", require("./routes/matchFinalizationRoutes"));
+app.use("/api/players", playerRoutes);
+app.use("/api/tournaments", tournamentRoutes);
+app.use("/api/tournament-teams", tournamentTeamRoutes);
+app.use("/api/tournament-matches", tournamentMatchRoutes);
+app.use("/api/live", liveScoreRoutes);
+app.use("/api/tournament-stats", tournamentStatsRoutes);
+app.use("/api/match-summary", matchSummaryRoutes);
 app.use("/api/tournament-summary", teamTournamentSummaryRoutes);
 app.use("/api/player-stats", playerStatsRoutes);
 const ballByBallRoutes = require("./routes/ballByBallRoutes");
 app.use("/api/deliveries", ballByBallRoutes);
 app.use("/api/viewer/live-score", liveScoreViewerRoutes);
 const scorecardRoutes = require("./routes/scorecardRoutes");
-app.use("/api/viewer/scorecard", scorecardRoutes);
-
-// Mount auth routes (rate limiting is handled in authRoutes.js)
-app.use("/api/auth", authRoutes);
-app.use("/api/teams", teamRoutes);
-// app.use("/api/matches", matchRoutes);
-app.use("/api/players", playerRoutes);
-app.use("/api/tournaments", tournamentRoutes);
-app.use("/api/tournament-teams", tournamentTeamRoutes);
-app.use("/api/tournament-matches", tournamentMatchRoutes); // ✅ Register here
-app.use("/api/live", liveScoreRoutes);
 app.use("/api/match-innings", matchInningsRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/uploads", uploadRoutes);
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ✅ Health Check Alias for Admin Panel
+app.get("/api/health/ready", async (req, res) => {
+  try {
+    const isDbReady = await checkConnection();
+    if (isDbReady) {
+      res.status(200).json({
+        status: 'ready',
+        timestamp: new Date().toISOString(),
+        version: process.env.APP_VERSION || 'dev',
+        database: 'connected'
+      });
+    } else {
+      res.status(503).json({
+        status: 'not ready',
+        timestamp: new Date().toISOString(),
+        version: process.env.APP_VERSION || 'dev',
+        database: 'disconnected'
+      });
+    }
+  } catch (error) {
+    res.status(503).json({
+      status: 'not ready',
+      timestamp: new Date().toISOString(),
+      version: process.env.APP_VERSION || 'dev',
+      database: 'error',
+      error: error.message
+    });
+  }
+});
+
 
 // Health check endpoints
 // Liveness probe - always returns 200 if server is running
@@ -339,68 +383,11 @@ app.use((err, req, res, next) => {
 const httpServer = require('http').createServer(app);
 
 // Initialize Socket.IO with Redis adapter
+// Initialize Socket.IO
 const { Server } = require('socket.io');
-const { createAdapter } = require('@socket.io/redis-adapter');
-const redis = require('redis');
+
 
 // Redis client configuration
-const redisConfig = {
-  url: process.env.REDIS_URL || 'redis://localhost:6379',
-  retry_strategy: function(options) {
-    if (options.error && options.error.code === 'ECONNREFUSED') {
-      console.error('Redis connection refused. Check if Redis server is running.');
-      return new Error('Redis connection refused');
-    }
-    if (options.total_retry_time > 1000 * 60 * 60) {
-      console.error('Redis retry time exhausted');
-      return new Error('Redis retry time exhausted');
-    }
-    if (options.attempt > 10) {
-      console.error('Redis maximum retry attempts reached');
-      return new Error('Redis maximum retry attempts reached');
-    }
-    // Retry delays: 1s, 2s, 4s, 8s, 16s, 32s
-    return Math.min(options.attempt * 1000, 3000);
-  }
-};
-
-let pubClient;
-let subClient;
-
-try {
-  pubClient = redis.createClient(redisConfig);
-  subClient = pubClient.duplicate();
-
-  // Redis error handling
-  pubClient.on('error', (err) => {
-    console.error('Redis Pub Client Error:', err);
-  });
-
-  subClient.on('error', (err) => {
-    console.error('Redis Sub Client Error:', err);
-  });
-
-  // Redis connection monitoring
-  pubClient.on('connect', () => {
-    console.log('✅ Redis Pub Client Connected');
-  });
-
-  subClient.on('connect', () => {
-    console.log('✅ Redis Sub Client Connected');
-  });
-
-  pubClient.on('reconnecting', () => {
-    console.log('⚠️ Redis Pub Client Reconnecting...');
-  });
-
-  subClient.on('reconnecting', () => {
-    console.log('⚠️ Redis Sub Client Reconnecting...');
-  });
-
-} catch (err) {
-  console.error('Redis Client Creation Error:', err);
-  process.exit(1);
-}
 
 const io = new Server(httpServer, {
   cors: {
@@ -417,13 +404,9 @@ const io = new Server(httpServer, {
   maxHttpBufferSize: 1e6 // 1MB
 });
 
-try {
-  io.adapter(createAdapter(pubClient, subClient));
-  console.log('✅ Socket.IO Redis Adapter Configured');
-} catch (err) {
-  console.error('Socket.IO Redis Adapter Error:', err);
-  process.exit(1);
-}
+
+// ✅ Initialize controller with IO
+setIo(io);
 
 // Socket.IO authentication middleware
 const liveScoreNamespace = io.of('/live-score');
@@ -517,5 +500,23 @@ module.exports = { app, server: httpServer, io };
 // ✅ Start server only when run directly (not when imported for testing)
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
-  httpServer.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
+
+  // '0.0.0.0' binds to ALL network interfaces (WiFi, Ethernet, etc.)
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Server running locally: http://localhost:${PORT}`);
+
+    // --- Helper to print your Network IP automatically ---
+    const { networkInterfaces } = require('os');
+    const nets = networkInterfaces();
+
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        // Skip over non-IPv4 and internal (i.e. 127.0.0.1) addresses
+        if (net.family === 'IPv4' && !net.internal) {
+          console.log(`📲 Connect from Phone:  http://${net.address}:${PORT}`);
+        }
+      }
+    }
+    // ----------------------------------------------------
+  });
 }

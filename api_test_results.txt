@@ -1,0 +1,14 @@
+1. Logging in as Admin...
+   Login Status:
+   User:
+   Token:
+   Token Roles:
+✅ Token has admin role.
+
+2. Fetching Matches...
+   Matches Status:
+   Matches Count:
+
+3. Fetching Tournaments...
+   Tournaments Status:
+   Tournaments Count:

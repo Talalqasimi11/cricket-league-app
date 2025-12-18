@@ -1,103 +1,148 @@
 const { db } = require("../config/db");
+const { logDatabaseError } = require("../utils/safeLogger");
+
+// ==========================================
+// 🏏 SCORECARD CONTROLLER
+// ==========================================
 
 /**
- * 📌 Get complete match scorecard (after match)
+ * 📌 Get Match Scorecard
+ * Aggregates Match Info, Innings, Batting & Bowling stats into a unified response.
  */
 const getMatchScorecard = async (req, res) => {
   const match_id = Number(req.params.match_id);
-  
+
   if (!match_id || isNaN(match_id)) {
     return res.status(400).json({ error: "Invalid match_id" });
   }
 
   try {
-    // 1️⃣ Get match info
-    const [match] = await db.query(
-      `SELECT m.id, m.team1_id, t1.team_name AS team1_name,
-              m.team2_id, t2.team_name AS team2_name,
-              m.overs, m.status, m.winner_team_id,
-              tw.team_name AS winner_team_name
-       FROM matches m
-       LEFT JOIN teams t1 ON m.team1_id = t1.id
-       LEFT JOIN teams t2 ON m.team2_id = t2.id
-       LEFT JOIN teams tw ON m.winner_team_id = tw.id
-       WHERE m.id = ?`,
-      [match_id]
-    );
+    // 1. Fetch all necessary data in PARALLEL for performance
+    const [
+      matchResult,
+      inningsResult,
+      battingResult,
+      bowlingResult
+    ] = await Promise.all([
+      // Query 1: Match Basic Info
+      db.query(
+        `SELECT m.id, m.status, m.overs as max_overs, m.match_date, m.venue,
+                t1.id as team1_id, t1.team_name as team1_name, t1.team_logo_url as team1_logo,
+                t2.id as team2_id, t2.team_name as team2_name, t2.team_logo_url as team2_logo,
+                wt.id as winner_id, wt.team_name as winner_name
+         FROM matches m
+         LEFT JOIN teams t1 ON m.team1_id = t1.id
+         LEFT JOIN teams t2 ON m.team2_id = t2.id
+         LEFT JOIN teams wt ON m.winner_team_id = wt.id
+         WHERE m.id = ?`, 
+        [match_id]
+      ),
 
-    if (match.length === 0) return res.status(404).json({ error: "Match not found" });
-    const matchInfo = match[0];
+      // Query 2: Innings List
+      db.query(
+        `SELECT mi.id, mi.inning_number, mi.batting_team_id, mi.bowling_team_id,
+                mi.runs, mi.wickets, mi.overs_decimal as overs, mi.legal_balls
+         FROM match_innings mi
+         WHERE mi.match_id = ?
+         ORDER BY mi.inning_number ASC`, 
+        [match_id]
+      ),
 
-    // 2️⃣ Get innings info
-    const [innings] = await db.query(
-      `SELECT mi.id, mi.inning_number, mi.batting_team_id, bt.team_name AS batting_team_name,
-              mi.bowling_team_id, blt.team_name AS bowling_team_name,
-              mi.runs, mi.wickets, mi.overs
-       FROM match_innings mi
-       LEFT JOIN teams bt ON mi.batting_team_id = bt.id
-       LEFT JOIN teams blt ON mi.bowling_team_id = blt.id
-       WHERE mi.match_id = ?
-       ORDER BY mi.inning_number ASC`,
-      [match_id]
-    );
+      // Query 3: Detailed Batting Stats
+      db.query(
+        `SELECT pms.player_id, p.player_name, p.team_id,
+                pms.runs, pms.balls_faced, pms.fours, pms.sixes, pms.is_out,
+                CASE 
+                  WHEN pms.balls_faced > 0 
+                  THEN ROUND((pms.runs / pms.balls_faced) * 100, 2) 
+                  ELSE 0.00 
+                END AS strike_rate
+         FROM player_match_stats pms
+         JOIN players p ON pms.player_id = p.id
+         WHERE pms.match_id = ? AND pms.balls_faced > 0  -- Only show players who batted
+         ORDER BY pms.runs DESC`, 
+        [match_id]
+      ),
 
-    // 3️⃣ Get batting stats per innings with team information
-    const [battingStats] = await db.query(
-      `SELECT pms.match_id, pms.player_id, p.player_name, pms.runs, pms.balls_faced, pms.fours, pms.sixes, p.team_id
-       FROM player_match_stats pms
-       JOIN players p ON p.id = pms.player_id
-       WHERE pms.match_id = ?`,
-      [match_id]
-    );
+      // Query 4: Detailed Bowling Stats
+      db.query(
+        `SELECT pms.player_id, p.player_name, p.team_id,
+                pms.balls_bowled, pms.runs_conceded, pms.wickets, pms.maiden_overs,
+                CASE 
+                  WHEN pms.balls_bowled > 0 
+                  THEN ROUND((pms.runs_conceded / pms.balls_bowled) * 6, 2) 
+                  ELSE 0.00 
+                END AS economy
+         FROM player_match_stats pms
+         JOIN players p ON pms.player_id = p.id
+         WHERE pms.match_id = ? AND pms.balls_bowled > 0 -- Only show players who bowled
+         ORDER BY pms.wickets DESC, economy ASC`, 
+        [match_id]
+      )
+    ]);
 
-    // 4️⃣ Get bowling stats per innings with team information
-    const [bowlingStats] = await db.query(
-      `SELECT pms.match_id, pms.player_id, p.player_name, pms.balls_bowled, pms.runs_conceded, pms.wickets, p.team_id
-       FROM player_match_stats pms
-       JOIN players p ON p.id = pms.player_id
-       WHERE pms.match_id = ?`,
-      [match_id]
-    );
+    const matches = matchResult[0];
+    if (matches.length === 0) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+    const matchData = matches[0];
+    const inningsData = inningsResult[0];
+    const battingData = battingResult[0];
+    const bowlingData = bowlingResult[0];
 
-    // 5️⃣ Organize scorecard
-    const scorecard = innings.map((inn) => {
-      // Filter batting stats to players belonging to batting team for this innings
-      const batting = battingStats.filter((b) => 
-        Number(b.match_id) === match_id && 
-        b.player_id && 
-        Number(b.team_id) === Number(inn.batting_team_id)
-      );
+    // 2. Construct the Scorecard Structure
+    const scorecard = inningsData.map(inning => {
+      const battingTeamId = inning.batting_team_id;
+      const bowlingTeamId = inning.bowling_team_id;
+
+      // Determine Names
+      const battingTeamName = (battingTeamId === matchData.team1_id) 
+          ? matchData.team1_name : matchData.team2_name;
       
-      // Filter bowling stats to players belonging to bowling team for this innings
-      const bowling = bowlingStats.filter((b) => 
-        Number(b.match_id) === match_id && 
-        b.player_id && 
-        Number(b.team_id) === Number(inn.bowling_team_id)
-      );
+      const bowlingTeamName = (bowlingTeamId === matchData.team1_id) 
+          ? matchData.team1_name : matchData.team2_name;
+
+      // Filter stats for this specific inning based on Team ID
+      // Batting stats belong to the batting team
+      const inningBatting = battingData.filter(p => p.team_id === battingTeamId);
       
+      // Bowling stats belong to the bowling team
+      const inningBowling = bowlingData.filter(p => p.team_id === bowlingTeamId);
+
       return {
-        inning_number: inn.inning_number,
-        batting_team: inn.batting_team_name,
-        bowling_team: inn.bowling_team_name,
-        runs: inn.runs,
-        wickets: inn.wickets,
-        overs: inn.overs,
-        batting: batting,
-        bowling: bowling,
+        inning_number: inning.inning_number,
+        header: {
+          batting_team: battingTeamName,
+          bowling_team: bowlingTeamName,
+          score: `${inning.runs}/${inning.wickets}`,
+          overs: `${inning.overs} (${matchData.max_overs})`
+        },
+        stats: {
+          batters: inningBatting,
+          bowlers: inningBowling
+        }
       };
     });
 
+    // 3. Final Response
     res.json({
-      match: {
-        ...matchInfo,
-        winner_team_id: matchInfo.winner_team_id || null,
-        winner_team_name: matchInfo.winner_team_name || null,
+      match_info: {
+        id: matchData.id,
+        status: matchData.status,
+        result: matchData.winner_id ? `${matchData.winner_name} won` : "Match Tied/In Progress",
+        date: matchData.match_date,
+        venue: matchData.venue,
+        teams: {
+          team1: { name: matchData.team1_name, logo: matchData.team1_logo },
+          team2: { name: matchData.team2_name, logo: matchData.team2_logo }
+        }
       },
-      scorecard,
+      scorecard: scorecard
     });
+
   } catch (err) {
-    console.error("❌ Error in getMatchScorecard:", err);
-    res.status(500).json({ error: "Server error" });
+    logDatabaseError(req.log, "getMatchScorecard", err, { match_id });
+    res.status(500).json({ error: "Server error retrieving scorecard" });
   }
 };
 

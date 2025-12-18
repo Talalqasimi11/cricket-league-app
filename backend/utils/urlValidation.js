@@ -32,74 +32,101 @@ const isTrustedHostname = (hostname) => {
 };
 
 /**
- * Validates file extension for image content
- * @param {string} url - The URL to check
+ * Validates file extension for image content (Supports URLs and Local Paths)
+ * @param {string} urlStr - The URL or path to check
  * @returns {boolean} - Whether the URL has a valid image extension
  */
-const hasValidImageExtension = (url) => {
-  const pathname = new URL(url).pathname.toLowerCase();
+const hasValidImageExtension = (urlStr) => {
+  if (!urlStr) return false;
+  
+  let pathname;
+  try {
+    // If it's a local path (e.g. /uploads/...), use a dummy base to parse
+    if (urlStr.startsWith('/')) {
+      pathname = urlStr.toLowerCase();
+    } else {
+      pathname = new URL(urlStr).pathname.toLowerCase();
+    }
+  } catch (e) {
+    // Fallback for malformed URLs: check end of string ignoring query params
+    const cleanPath = urlStr.split('?')[0].toLowerCase();
+    return ALLOWED_IMAGE_EXTENSIONS.some(ext => cleanPath.endsWith(ext));
+  }
+
   return ALLOWED_IMAGE_EXTENSIONS.some(ext => pathname.endsWith(ext));
 };
 
 /**
- * Validates content type by making a HEAD request
+ * Validates content type by making a HEAD request (Remote URLs only)
  * @param {string} url - The URL to check
  * @returns {Promise<Object>} - { isValid: boolean, mimeType: string|null, error: string|null }
  */
 const validateContentType = (url) => {
   return new Promise((resolve) => {
-    const parsedUrl = new URL(url);
-    const client = parsedUrl.protocol === 'https:' ? https : http;
-    
-    const options = {
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
-      path: parsedUrl.pathname + parsedUrl.search,
-      method: 'HEAD',
-      timeout: 5000, // 5 second timeout
-      headers: {
-        'User-Agent': 'CricketLeagueApp/1.0'
-      }
-    };
+    // Skip network check for local paths
+    if (url.startsWith('/')) {
+        return resolve({ isValid: true, mimeType: null, error: null });
+    }
 
-    const req = client.request(options, (res) => {
-      const contentType = res.headers['content-type'];
-      const mimeType = contentType ? contentType.split(';')[0].trim() : null;
+    try {
+      const parsedUrl = new URL(url);
+      const client = parsedUrl.protocol === 'https:' ? https : http;
       
-      if (mimeType && ALLOWED_IMAGE_MIME_TYPES.includes(mimeType)) {
-        resolve({ isValid: true, mimeType, error: null });
-      } else {
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'HEAD',
+        timeout: 5000, // 5 second timeout
+        headers: {
+          'User-Agent': 'CricketLeagueApp/1.0'
+        }
+      };
+
+      const req = client.request(options, (res) => {
+        const contentType = res.headers['content-type'];
+        const mimeType = contentType ? contentType.split(';')[0].trim() : null;
+        
+        if (mimeType && ALLOWED_IMAGE_MIME_TYPES.includes(mimeType)) {
+          resolve({ isValid: true, mimeType, error: null });
+        } else {
+          resolve({ 
+            isValid: false, 
+            mimeType, 
+            error: `Invalid content type: ${mimeType || 'unknown'}. Expected image/*` 
+          });
+        }
+      });
+
+      req.on('error', (error) => {
         resolve({ 
           isValid: false, 
-          mimeType, 
-          error: `Invalid content type: ${mimeType || 'unknown'}. Expected image/*` 
+          mimeType: null, 
+          error: `Failed to validate content type: ${error.message}` 
         });
-      }
-    });
-
-    req.on('error', (error) => {
-      resolve({ 
-        isValid: false, 
-        mimeType: null, 
-        error: `Failed to validate content type: ${error.message}` 
       });
-    });
 
-    req.on('timeout', () => {
-      req.destroy();
-      resolve({ 
-        isValid: false, 
-        mimeType: null, 
-        error: 'Content type validation timed out' 
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ 
+          isValid: false, 
+          mimeType: null, 
+          error: 'Content type validation timed out' 
+        });
       });
-    });
 
-    req.end();
+      req.end();
+    } catch (e) {
+      resolve({ isValid: false, mimeType: null, error: 'Invalid URL' });
+    }
   });
 };
 
+// 
+
 /**
  * Validates and normalizes team logo URLs with enhanced security checks
+ * Allows both Remote URLs (http/s) and Local Paths (/uploads/...)
  * @param {string} url - The URL to validate
  * @param {number} maxLength - Maximum allowed URL length (default: 255)
  * @param {boolean} strictMode - Whether to enforce strict validation (default: false)
@@ -122,6 +149,21 @@ const validateTeamLogoUrl = (url, maxLength = 255, strictMode = false) => {
     };
   }
 
+  // ✅ 1. CHECK: Is this a local path? (starts with /)
+  if (trimmedUrl.startsWith('/')) {
+    // Even for local files, we ensure it has an image extension for basic security
+    if (!hasValidImageExtension(trimmedUrl)) {
+      return { 
+        isValid: false, 
+        normalizedUrl: null, 
+        error: 'Local file must have a valid image extension (.jpg, .png, etc.)' 
+      };
+    }
+    // It is a valid local path
+    return { isValid: true, normalizedUrl: trimmedUrl, error: null };
+  }
+
+  // ✅ 2. CHECK: Remote URL validation
   try {
     const parsedUrl = new URL(trimmedUrl);
     
@@ -197,8 +239,8 @@ const validateTeamLogoUrlAsync = async (url, maxLength = 255, strictMode = false
     return basicValidation;
   }
 
-  // If content type checking is enabled, validate it
-  if (checkContentType && basicValidation.normalizedUrl) {
+  // If content type checking is enabled, validate it (only for remote URLs)
+  if (checkContentType && basicValidation.normalizedUrl && !basicValidation.normalizedUrl.startsWith('/')) {
     const contentTypeValidation = await validateContentType(basicValidation.normalizedUrl);
     if (!contentTypeValidation.isValid) {
       return {

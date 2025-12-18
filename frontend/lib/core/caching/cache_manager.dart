@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Manages different types of caching in the app
+/// Centralized Cache Manager handling Memory, Disk (Prefs), File (Large Data), and Secure Storage.
 class CacheManager {
   static final CacheManager _instance = CacheManager._internal();
   static CacheManager get instance => _instance;
@@ -11,74 +14,175 @@ class CacheManager {
   late SharedPreferences _persistentCache;
   final Map<String, dynamic> _memoryCache = {};
   final _storage = const FlutterSecureStorage();
+  Directory? _fileCacheDir;
 
   bool _initialized = false;
+  static const String _version = '1.0.0';
 
   CacheManager._internal();
 
   Future<void> init() async {
     if (_initialized) return;
-    _persistentCache = await SharedPreferences.getInstance();
-    _initialized = true;
+    try {
+      // Initialize concurrently for performance
+      await Future.wait([
+        SharedPreferences.getInstance().then((prefs) => _persistentCache = prefs),
+        getApplicationDocumentsDirectory().then((dir) => _fileCacheDir = dir),
+      ]);
+      _initialized = true;
+      debugPrint('[CacheManager] Initialized');
+    } catch (e) {
+      debugPrint('[CacheManager] Initialization failed: $e');
+      // Fallback: try serial initialization
+      try {
+        _persistentCache = await SharedPreferences.getInstance();
+        _fileCacheDir = await getApplicationDocumentsDirectory();
+        _initialized = true;
+      } catch (e2) {
+        debugPrint('[CacheManager] Fatal initialization error: $e2');
+      }
+    }
   }
 
-  // Memory Cache Operations
-  Future<T?> getFromMemory<T>(String key) async {
-    if (!_memoryCache.containsKey(key)) return null;
+  // ==========================================
+  // UNIFIED API (Matches ApiService calls)
+  // ==========================================
 
-    final entry = _memoryCache[key] as CacheEntry<T>;
-    if (entry.isExpired) {
+  /// Generic GET: Tries Memory -> Persistent -> File
+  Future<T?> get<T>(String key) async {
+    if (!_initialized) await init();
+
+    // 1. Try Memory (Fastest)
+    if (_memoryCache.containsKey(key)) {
+      final entry = _memoryCache[key] as CacheEntry<T>;
+      if (!entry.isExpired) return entry.value;
       _memoryCache.remove(key);
-      return null;
     }
 
-    return entry.value;
+    // 2. Try Persistent (SharedPrefs) - Good for simple types
+    final prefData = _persistentCache.getString(key);
+    if (prefData != null) {
+      try {
+        final entry = CacheEntry<T>.fromJson(jsonDecode(prefData) as Map<String, dynamic>);
+        if (!entry.isExpired) {
+          // Refresh memory cache
+          _memoryCache[key] = entry;
+          return entry.value;
+        } else {
+          await _persistentCache.remove(key);
+        }
+      } catch (_) {
+        await _persistentCache.remove(key);
+      }
+    }
+
+    // 3. Try File (Good for large Lists/Maps)
+    // Only attempt file read if T is dynamic, List, or Map to avoid unnecessary I/O
+    if (T == List || T == Map || T == dynamic) {
+      return await _getFromFile<T>(key);
+    }
+
+    return null;
   }
 
-  Future<void> setInMemory<T>(
-    String key,
+  /// Generic SET: Saves to Memory and (Persistent or File based on type/size)
+  Future<void> set<T>(
+    String key, 
     T value, {
-    Duration expiry = const Duration(hours: 1),
+    Duration? memoryExpiry,
+    Duration? persistentExpiry,
   }) async {
+    if (!_initialized) await init();
+    
+    final memDuration = memoryExpiry ?? const Duration(minutes: 30);
+    final persistDuration = persistentExpiry ?? const Duration(hours: 24);
+
+    // 1. Save to Memory
     _memoryCache[key] = CacheEntry<T>(
       value: value,
-      expiryTime: DateTime.now().add(expiry),
+      expiryTime: DateTime.now().add(memDuration),
     );
+
+    // 2. Save to Persistence
+    // If it's a complex type (List/Map) that might be large, use File.
+    // Otherwise use SharedPreferences.
+    if (value is List || value is Map) {
+      await _setInFile(key, value, expiry: persistDuration);
+    } else {
+      final entry = CacheEntry<T>(
+        value: value,
+        expiryTime: DateTime.now().add(persistDuration),
+      );
+      await _persistentCache.setString(key, jsonEncode(entry.toJson()));
+    }
   }
 
-  // Persistent Cache Operations
-  Future<T?> getFromPersistent<T>(String key) async {
-    final data = _persistentCache.getString(key);
-    if (data == null) return null;
+  /// Generic REMOVE: Clears from all layers
+  Future<void> remove(String key) async {
+    if (!_initialized) await init();
+    _memoryCache.remove(key);
+    await _persistentCache.remove(key);
+    await _removeFile(key);
+    await _storage.delete(key: key);
+  }
 
+  // ==========================================
+  // FILE OPERATIONS (Internal Helpers)
+  // ==========================================
+
+  Future<void> _setInFile(String key, dynamic data, {Duration expiry = const Duration(days: 7)}) async {
+    if (_fileCacheDir == null) return;
     try {
-      final entry = CacheEntry<T>.fromJson(
-        jsonDecode(data) as Map<String, dynamic>,
-      );
-      if (entry.isExpired) {
-        await _persistentCache.remove(key);
+      final file = File('${_fileCacheDir!.path}/$key.cache.json');
+      final entry = {
+        'data': data,
+        'version': _version,
+        'expiry': DateTime.now().add(expiry).toIso8601String(),
+      };
+      await file.writeAsString(jsonEncode(entry));
+    } catch (e) {
+      debugPrint('[CacheManager] File write error for $key: $e');
+    }
+  }
+
+  Future<T?> _getFromFile<T>(String key) async {
+    if (_fileCacheDir == null) return null;
+    try {
+      final file = File('${_fileCacheDir!.path}/$key.cache.json');
+      if (!await file.exists()) return null;
+
+      final content = await file.readAsString();
+      final json = jsonDecode(content) as Map<String, dynamic>;
+
+      final expiry = DateTime.tryParse(json['expiry'] ?? '');
+      if (expiry != null && DateTime.now().isAfter(expiry)) {
+        await file.delete();
         return null;
       }
-      return entry.value;
+
+      // Check Version (Optional, can be strict or loose)
+      if (json['version'] != _version) {
+        await file.delete();
+        return null;
+      }
+
+      // Cast data back to T
+      return json['data'] as T?;
     } catch (e) {
-      await _persistentCache.remove(key);
       return null;
     }
   }
 
-  Future<void> setInPersistent<T>(
-    String key,
-    T value, {
-    Duration expiry = const Duration(hours: 24),
-  }) async {
-    final entry = CacheEntry<T>(
-      value: value,
-      expiryTime: DateTime.now().add(expiry),
-    );
-    await _persistentCache.setString(key, jsonEncode(entry.toJson()));
+  Future<void> _removeFile(String key) async {
+    if (_fileCacheDir == null) return;
+    final file = File('${_fileCacheDir!.path}/$key.cache.json');
+    if (await file.exists()) await file.delete();
   }
 
-  // Secure Storage Operations
+  // ==========================================
+  // SECURE STORAGE (Public API)
+  // ==========================================
+
   Future<String?> getFromSecure(String key) async {
     return await _storage.read(key: key);
   }
@@ -87,90 +191,31 @@ class CacheManager {
     await _storage.write(key: key, value: value);
   }
 
-  // Combined Operations
-  Future<T?> get<T>(String key) async {
-    // Try memory first
-    final memoryValue = await getFromMemory<T>(key);
-    if (memoryValue != null) return memoryValue;
-
-    // Try persistent cache
-    final persistentValue = await getFromPersistent<T>(key);
-    if (persistentValue != null) {
-      // Cache in memory for faster subsequent access
-      await setInMemory<T>(key, persistentValue);
-      return persistentValue;
-    }
-
-    return null;
-  }
-
-  Future<void> set<T>(
-    String key,
-    T value, {
-    Duration? memoryExpiry,
-    Duration? persistentExpiry,
-  }) async {
-    if (memoryExpiry != null) {
-      await setInMemory<T>(key, value, expiry: memoryExpiry);
-    }
-
-    if (persistentExpiry != null) {
-      await setInPersistent<T>(key, value, expiry: persistentExpiry);
-    }
-  }
-
-  // Cache Maintenance
-  Future<void> clearMemoryCache() async {
-    _memoryCache.clear();
-  }
-
-  Future<void> clearPersistentCache() async {
-    await _persistentCache.clear();
-  }
-
-  Future<void> clearSecureStorage() async {
-    await _storage.deleteAll();
-  }
+  // ==========================================
+  // MAINTENANCE
+  // ==========================================
 
   Future<void> clearAll() async {
-    await Future.wait([
-      clearMemoryCache(),
-      clearPersistentCache(),
-      clearSecureStorage(),
-    ]);
-  }
-
-  // Cache entry management
-  Future<void> remove(String key) async {
-    _memoryCache.remove(key);
-    await _persistentCache.remove(key);
-    await _storage.delete(key: key);
-  }
-
-  Future<void> removeExpired() async {
-    // Remove expired memory cache entries
-    _memoryCache.removeWhere((_, entry) => (entry as CacheEntry).isExpired);
-
-    // Remove expired persistent cache entries
-    final keys = _persistentCache.getKeys();
-    for (final key in keys) {
-      final data = _persistentCache.getString(key);
-      if (data != null) {
+    _memoryCache.clear();
+    if (_initialized) {
+      await _persistentCache.clear();
+      await _storage.deleteAll();
+      
+      // Clear cache files
+      if (_fileCacheDir != null) {
         try {
-          final entry = CacheEntry.fromJson(
-            jsonDecode(data) as Map<String, dynamic>,
-          );
-          if (entry.isExpired) {
-            await _persistentCache.remove(key);
-          }
+          _fileCacheDir!.listSync().where((fs) => fs.path.endsWith('.cache.json')).forEach((fs) {
+            fs.deleteSync();
+          });
         } catch (e) {
-          await _persistentCache.remove(key);
+          debugPrint('[CacheManager] Error clearing file cache: $e');
         }
       }
     }
   }
 }
 
+/// Helper class for cache entries
 class CacheEntry<T> {
   final T value;
   final DateTime expiryTime;
@@ -180,34 +225,26 @@ class CacheEntry<T> {
   bool get isExpired => DateTime.now().isAfter(expiryTime);
 
   Map<String, dynamic> toJson() => {
-    'value': value,
-    'expiryTime': expiryTime.toIso8601String(),
-    'type': T.toString(),
-  };
+        'value': value,
+        'expiryTime': expiryTime.toIso8601String(),
+        'type': T.toString(),
+      };
 
   factory CacheEntry.fromJson(Map<String, dynamic> json) {
     final value = json['value'];
-    // Removed unused variable 'type'
-
-    // Handle basic types
     T typedValue;
+    
+    // Basic type restoration
     if (T == String) {
       typedValue = value.toString() as T;
     } else if (T == int) {
-      typedValue = (value is String ? int.parse(value) : value as int) as T;
+      typedValue = (value is num ? value.toInt() : int.parse(value.toString())) as T;
     } else if (T == double) {
-      typedValue =
-          (value is String ? double.parse(value) : value as double) as T;
+      typedValue = (value is num ? value.toDouble() : double.parse(value.toString())) as T;
     } else if (T == bool) {
-      typedValue =
-          (value is String ? value.toLowerCase() == 'true' : value as bool)
-              as T;
-    } else if (T == List) {
-      typedValue = (value is String ? jsonDecode(value) : value) as T;
-    } else if (T == Map) {
-      typedValue = (value is String ? jsonDecode(value) : value) as T;
+      typedValue = (value is bool ? value : value.toString() == 'true') as T;
     } else {
-      // For complex objects, assume they can be decoded from a Map
+      // Complex types (Map/List) are handled by generic cast
       typedValue = value as T;
     }
 

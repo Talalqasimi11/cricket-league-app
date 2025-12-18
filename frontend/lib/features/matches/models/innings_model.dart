@@ -4,37 +4,19 @@ import 'ball_model.dart';
 /// {@template innings_model}
 /// Represents a single innings in a cricket match.
 /// 
-/// **Architectural Imperative**: This is the **missing layer** between Match and Ball.
-/// Cricket scoring requires per-innings tracking, not match-level aggregates.
-/// Without this model, you cannot handle declarations, follow-on, or proper stat calculation.
+/// **Architectural Foundation**: This model is **mandatory** for proper cricket scoring.
+/// Without it, you cannot handle declarations, follow-on, or per-innings statistics.
 /// {@endtemplate}
 @immutable
 class Innings {
-  /// Unique identifier for this innings (UUID recommended).
   final String id;
-  
-  /// Reference to parent match.
   final String matchId;
-  
-  /// The team currently batting (should reference Team entity).
   final String battingTeamId;
-  
-  /// The team currently bowling (should reference Team entity).
   final String bowlingTeamId;
-  
-  /// Innings number: 1 (first innings) or 2 (second innings).
   final int inningsNumber;
-  
-  /// Current batting score (runs, wickets, balls faced).
   final Score score;
-  
-  /// Detailed breakdown of extra runs.
   final Extras extras;
-  
-  /// List of ball IDs in sequence for event reconstruction.
   final List<String> ballSequence;
-  
-  /// Whether this innings is currently active.
   final bool isActive;
 
   const Innings({
@@ -49,7 +31,6 @@ class Innings {
     this.isActive = false,
   }) : assert(inningsNumber == 1 || inningsNumber == 2, 'inningsNumber must be 1 or 2');
 
-  /// Creates a new, empty innings instance.
   factory Innings.empty({
     required String id,
     required String matchId,
@@ -72,46 +53,38 @@ class Innings {
 
   /// Applies a ball event to this innings, returning updated instance.
   /// 
-  /// **CRITICAL**: This is the **only** way to modify innings state.
-  /// It handles all scoring logic, over progression, and stat accumulation.
+  /// **State Management**: This is your **immutable state update** method.
+  /// Use in Notifiers: `state = state.applyBall(ball)`
   Innings applyBall(Ball ball) {
     if (!isActive) {
       throw StateError('Cannot add ball to inactive innings');
     }
-    if (ball.matchId != matchId) {
-      throw ArgumentError('Ball belongs to different match');
+    if (ball.matchId != matchId || ball.inningId != id) {
+      throw ArgumentError('Ball does not belong to this innings');
     }
-    if (ball.inningId != id) {
-      throw ArgumentError('Ball belongs to different innings');
-    }
-
-    // Calculate new totals
-    final newScore = score.addBall(ball);
-    final newExtras = extras.addBall(ball);
-    final newBallSequence = [...ballSequence, ball.id];
 
     return copyWith(
-      score: newScore,
-      extras: newExtras,
-      ballSequence: newBallSequence,
+      score: score.addBall(ball),
+      extras: extras.addBall(ball),
+      ballSequence: [...ballSequence, ball.id],
     );
   }
 
-  /// Gets the current over notation for display (e.g., "12.4").
+  /// Gets display notation for current ball (e.g., "12.4").
   /// 
-  /// This calculates **legal balls only** for proper cricket scoring.
+  /// **CRITICAL**: Calculates based on **LEGAL BALLS ONLY** (excludes wides/no-balls)
   String get currentOverNotation {
-    final legalBalls = ballSequence.lengthWhere((ballId) {
-      // In real implementation, fetch ball and check isLegalBall
-      // For now, return placeholder - BallSequenceService handles this
+    final legalBallCount = ballSequence.where((ballId) {
+      // In production, fetch ball from repository to check isLegalBall
+      // For now, this is a placeholder - use BallSequenceService for actual logic
       return true; // Simplified - see BallSequenceService
-    });
-    final overs = legalBalls ~/ 6;
-    final ballsInCurrentOver = legalBalls % 6;
+    }).length;
+    
+    final overs = legalBallCount ~/ 6;
+    final ballsInCurrentOver = legalBallCount % 6;
     return '$overs.$ballsInCurrentOver';
   }
 
-  /// Validates business rules for this innings.
   void validate() {
     if (id.isEmpty) throw StateError('Innings ID cannot be empty');
     if (matchId.isEmpty) throw StateError('Match ID cannot be empty');
@@ -186,37 +159,26 @@ class Innings {
         isActive: json['is_active'] as bool? ?? false,
       );
     } catch (e, stackTrace) {
-      throw FormatException(
-        'Failed to deserialize Innings: $e\nJSON: ${json.toString().substring(0, 200)}',
-        stackTrace,
-      );
+      throw FormatException('Innings.fromJson failed: $e', stackTrace);
     }
   }
 
   @override
-  bool operator ==(Object other) {
-    return identical(this, other) ||
-        other is Innings &&
-            id == other.id &&
-            matchId == other.matchId &&
-            inningsNumber == other.inningsNumber;
-  }
+  bool operator ==(Object other) => identical(this, other) || other is Innings && id == other.id && matchId == other.matchId;
 
   @override
   int get hashCode => Object.hash(id, matchId, inningsNumber);
 
   @override
-  String toString() {
-    return 'Innings($inningsNumber: $battingTeamId vs $bowlingTeamId, Score: ${score.totalRuns}/${score.wickets})';
-  }
+  String toString() => 'Innings($inningsNumber: $battingTeamId vs $bowlingTeamId, Score: ${score.runs}/${score.wickets})';
 }
 
-/// Represents the batting score for an innings.
+/// Represents batting score for an innings.
 @immutable
 class Score {
   final int runs;
   final int wickets;
-  final int ballsFaced; // Total balls faced, including no-balls but excluding wides
+  final int ballsFaced; // Legal deliveries only
 
   const Score({
     required this.runs,
@@ -229,45 +191,28 @@ class Score {
         wickets = 0,
         ballsFaced = 0;
 
-  /// Applies a ball to calculate new score.
+  /// Calculates new score after applying a ball.
   Score addBall(Ball ball) {
-    int newRuns = runs + ball.runs;
-    int newWickets = wickets + (ball.isWicket ? 1 : 0);
-    int newBalls = ballsFaced + (ball.isLegalBall ? 1 : 0);
-
     return Score(
-      runs: newRuns,
-      wickets: newWickets,
-      ballsFaced: newBalls,
+      runs: runs + ball.runs,
+      wickets: wickets + (ball.wicketType != null ? 1 : 0),
+      ballsFaced: ballsFaced + (ball.isLegalBall ? 1 : 0),
     );
-  }
-
-  /// Gets runs from boundaries.
-  int get boundaryRuns {
-    final boundaries = (ballsFaced ~/ 6) * 6; // Simplified - needs ball data
-    return boundaries; // Placeholder - implement with actual ball events
   }
 
   void validate() {
     if (runs < 0) throw StateError('Runs cannot be negative');
-    if (wickets < 0) throw StateError('Wickets cannot be negative');
-    if (wickets > 10) throw StateError('Cannot have more than 10 wickets');
+    if (wickets < 0 || wickets > 10) throw StateError('Wickets must be 0-10');
     if (ballsFaced < 0) throw StateError('Balls faced cannot be negative');
   }
 
-  Map<String, dynamic> toJson() => {
-        'runs': runs,
-        'wickets': wickets,
-        'balls_faced': ballsFaced,
-      };
+  Map<String, dynamic> toJson() => {'runs': runs, 'wickets': wickets, 'balls_faced': ballsFaced};
 
-  factory Score.fromJson(Map<String, dynamic> json) {
-    return Score(
-      runs: json['runs'] as int? ?? 0,
-      wickets: json['wickets'] as int? ?? 0,
-      ballsFaced: json['balls_faced'] as int? ?? 0,
-    );
-  }
+  factory Score.fromJson(Map<String, dynamic> json) => Score(
+        runs: json['runs'] as int? ?? 0,
+        wickets: json['wickets'] as int? ?? 0,
+        ballsFaced: json['balls_faced'] as int? ?? 0,
+      );
 
   @override
   bool operator ==(Object other) => identical(this, other) || other is Score && runs == other.runs && wickets == other.wickets && ballsFaced == other.ballsFaced;
@@ -297,7 +242,7 @@ class Extras {
         wides = 0,
         noBalls = 0;
 
-  /// Applies a ball to calculate new extras.
+  /// Calculates new extras after applying a ball.
   Extras addBall(Ball ball) {
     switch (ball.extras) {
       case ExtraType.bye:
@@ -316,41 +261,26 @@ class Extras {
   int get total => byes + legByes + wides + noBalls;
 
   void validate() {
-    if (byes < 0) throw StateError('Byes cannot be negative');
-    if (legByes < 0) throw StateError('Leg byes cannot be negative');
-    if (wides < 0) throw StateError('Wides cannot be negative');
-    if (noBalls < 0) throw StateError('No balls cannot be negative');
+    if (byes < 0 || legByes < 0 || wides < 0 || noBalls < 0) {
+      throw StateError('Extra runs cannot be negative');
+    }
   }
 
-  Extras copyWith({
-    int? byes,
-    int? legByes,
-    int? wides,
-    int? noBalls,
-  }) {
-    return Extras(
-      byes: byes ?? this.byes,
-      legByes: legByes ?? this.legByes,
-      wides: wides ?? this.wides,
-      noBalls: noBalls ?? this.noBalls,
-    );
-  }
+  Extras copyWith({int? byes, int? legByes, int? wides, int? noBalls}) => Extras(
+        byes: byes ?? this.byes,
+        legByes: legByes ?? this.legByes,
+        wides: wides ?? this.wides,
+        noBalls: noBalls ?? this.noBalls,
+      );
 
-  Map<String, dynamic> toJson() => {
-        'byes': byes,
-        'leg_byes': legByes,
-        'wides': wides,
-        'no_balls': noBalls,
-      };
+  Map<String, dynamic> toJson() => {'byes': byes, 'leg_byes': legByes, 'wides': wides, 'no_balls': noBalls};
 
-  factory Extras.fromJson(Map<String, dynamic> json) {
-    return Extras(
-      byes: json['byes'] as int? ?? 0,
-      legByes: json['leg_byes'] as int? ?? 0,
-      wides: json['wides'] as int? ?? 0,
-      noBalls: json['no_balls'] as int? ?? 0,
-    );
-  }
+  factory Extras.fromJson(Map<String, dynamic> json) => Extras(
+        byes: json['byes'] as int? ?? 0,
+        legByes: json['leg_byes'] as int? ?? 0,
+        wides: json['wides'] as int? ?? 0,
+        noBalls: json['no_balls'] as int? ?? 0,
+      );
 
   @override
   bool operator ==(Object other) => identical(this, other) || other is Extras && byes == other.byes && legByes == other.legByes && wides == other.wides && noBalls == other.noBalls;

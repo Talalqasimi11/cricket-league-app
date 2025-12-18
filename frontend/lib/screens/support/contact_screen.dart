@@ -4,71 +4,138 @@ import 'package:url_launcher/url_launcher.dart';
 class ContactScreen extends StatelessWidget {
   const ContactScreen({super.key});
 
+  Future<void> _launchUri(
+    BuildContext context,
+    Uri uri, {
+    LaunchMode mode = LaunchMode.platformDefault,
+  }) async {
+    try {
+      final ok = await launchUrl(uri, mode: mode);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the link.')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to open link: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    // URIs
+    final emailUri = Uri(
+      scheme: 'mailto',
+      path: 'support@cricleague.app',
+    );
+    final phoneUri = Uri(scheme: 'tel', path: '+12345678900');
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Contact Us'),
+        centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.transparent,
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
       ),
       body: Container(
-        color: Theme.of(context).colorScheme.surface,
+        color: colorScheme.surface,
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.all(24.0),
+          child: ListView(
             children: [
-              Text(
-                'Get in Touch',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'We\'d love to hear from you. Reach out to us through any of the channels below.',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 24),
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      _buildContactItem(
-                        context,
-                        icon: Icons.email_outlined,
-                        title: 'Email',
-                        subtitle: 'support@cricleague.app',
-                        onTap: () => launchUrl(
-                            Uri.parse('mailto:support@cricleague.app')),
-                      ),
-                      const Divider(height: 20),
-                      _buildContactItem(
-                        context,
-                        icon: Icons.web_outlined,
-                        title: 'Website',
-                        subtitle: 'https://cricleague.app',
-                        onTap: () =>
-                            launchUrl(Uri.parse('https://cricleague.app')),
-                      ),
-                      const Divider(height: 20),
-                      _buildContactItem(
-                        context,
-                        icon: Icons.phone_outlined,
-                        title: 'Phone',
-                        subtitle: '+1-234-567-8900',
-                        onTap: () =>
-                            launchUrl(Uri.parse('tel:+12345678900')),
-                      ),
-                    ],
+              // Header Icon
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                    shape: BoxShape.circle,
                   ),
+                  child: Icon(
+                    Icons.support_agent_rounded,
+                    size: 64,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              
+              Text(
+                'We\'re here to help',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Have questions? Need support? Reach out to us through any of the channels below.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 40),
+
+              // Contact Options Card
+              Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    _buildContactItem(
+                      context,
+                      icon: Icons.email_outlined,
+                      title: 'Email Support',
+                      subtitle: 'support@cricleague.app',
+                      onTap: () => _launchUri(context, emailUri),
+                    ),
+                    Divider(height: 1, indent: 70, color: colorScheme.outlineVariant),
+                    _buildContactItem(
+                      context,
+                      icon: Icons.phone_outlined,
+                      title: 'Phone',
+                      subtitle: '+1-234-567-8900',
+                      onTap: () => _launchUri(context, phoneUri),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 40),
+              
+              // FAQ / Help Center Link (Optional placeholder)
+              TextButton.icon(
+                onPressed: () {
+                   ScaffoldMessenger.of(context).showSnackBar(
+                     const SnackBar(content: Text('Help Center coming soon!')),
+                   );
+                },
+                icon: const Icon(Icons.help_outline),
+                label: const Text('Visit Help Center'),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -83,30 +150,42 @@ class ContactScreen extends StatelessWidget {
     required IconData icon,
     required String title,
     required String subtitle,
-    required VoidCallback onTap,
+    required Future<void> Function() onTap,
   }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
     return ListTile(
-      leading: Icon(
-        icon,
-        color: Theme.of(context).colorScheme.primary,
-        size: 30,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      leading: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colorScheme.outlineVariant),
+        ),
+        child: Icon(
+          icon,
+          color: colorScheme.primary,
+          size: 24,
+        ),
       ),
       title: Text(
         title,
-        style: const TextStyle(
+        style: theme.textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.bold,
-          fontSize: 16,
+          color: colorScheme.onSurface,
         ),
       ),
       subtitle: Text(
         subtitle,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.secondary,
-          fontSize: 14,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.primary,
+          fontWeight: FontWeight.w500,
         ),
       ),
+      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: colorScheme.onSurfaceVariant),
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8.0),
     );
   }
 }

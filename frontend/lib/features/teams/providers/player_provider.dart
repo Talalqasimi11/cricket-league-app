@@ -12,20 +12,7 @@ class PlayerProvider extends ChangeNotifier {
   String? _error;
   int? _teamFilter;
 
-  // Safe helpers
-  String _safeString(dynamic value, String defaultValue) {
-    if (value == null) return defaultValue;
-    final str = value.toString().trim();
-    return str.isNotEmpty ? str : defaultValue;
-  }
-
-  int _safeInt(dynamic value, int defaultValue) {
-    if (value == null) return defaultValue;
-    if (value is int) return value;
-    if (value is String) return int.tryParse(value) ?? defaultValue;
-    if (value is num) return value.toInt();
-    return defaultValue;
-  }
+  // [Fixed] Removed unused helper methods _safeString and _safeInt
 
   void _safeNotifyListeners() {
     if (!_isDisposed) {

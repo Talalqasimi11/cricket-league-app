@@ -2,11 +2,9 @@ const { db } = require("../config/db");
 
 /**
  * 📊 Get statistics overview for dashboard
- * Returns aggregated statistics across the entire platform
  */
 const getStatsOverview = async (req, res) => {
   try {
-    // Get total counts in parallel for better performance
     const [
       [totalMatches],
       [totalTeams],
@@ -28,42 +26,35 @@ const getStatsOverview = async (req, res) => {
       // Total players
       db.query("SELECT COUNT(*) as count FROM players"),
 
-      // Active tournaments (not completed)
+      // Active tournaments
       db.query("SELECT COUNT(*) as count FROM tournaments WHERE status NOT IN ('completed', 'abandoned')"),
 
-      // Top players by total runs (include all players, even those without stats)
+      // ✅ FIXED: Fetch stats DIRECTLY from players table (User manual edits)
       db.query(`
-        SELECT
-          p.player_name,
-          p.id as player_id,
-          COALESCE(SUM(pms.runs), 0) as runs,
-          CASE
-            WHEN COUNT(pms.runs) > 0 THEN COALESCE(AVG(pms.runs), 0)
-            ELSE 0
-          END as batting_average,
-          COUNT(DISTINCT pms.match_id) as matches_played,
-          CASE
-            WHEN COALESCE(SUM(pms.balls_faced), 0) > 0
-            THEN ROUND((COALESCE(SUM(pms.runs), 0) / SUM(pms.balls_faced)) * 100, 2)
-            ELSE 0
-          END as strike_rate
-        FROM players p
-        LEFT JOIN player_match_stats pms ON p.id = pms.player_id
-        GROUP BY p.id, p.player_name
-        ORDER BY runs DESC, matches_played DESC
+        SELECT 
+          player_name,
+          id as player_id,
+          runs,
+          batting_average,
+          matches_played,
+          strike_rate,
+          player_image_url
+        FROM players 
+        ORDER BY runs DESC, matches_played DESC 
         LIMIT 10
       `),
 
-      // Top teams by matches won
+      // ✅ FIXED: Fetch stats DIRECTLY from teams table
       db.query(`
-        SELECT
+        SELECT 
           team_name,
           id as team_id,
           matches_won,
           matches_played,
-          trophies
-        FROM teams
-        ORDER BY matches_won DESC, trophies DESC
+          trophies,
+          team_logo_url
+        FROM teams 
+        ORDER BY matches_won DESC, trophies DESC 
         LIMIT 10
       `)
     ]);
@@ -84,11 +75,7 @@ const getStatsOverview = async (req, res) => {
 
   } catch (err) {
     console.error("Stats overview error:", err.message);
-    console.error("Full error:", err);
-    res.status(500).json({
-      error: "Failed to retrieve statistics",
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    res.status(500).json({ error: "Failed to retrieve statistics" });
   }
 };
 
@@ -97,43 +84,32 @@ const getStatsOverview = async (req, res) => {
  */
 const getPlayerStats = async (req, res) => {
   try {
+    // ✅ FIXED: Removed JOIN with player_match_stats
+    // Now selects columns directly from 'players' table
     const [players] = await db.query(`
-      SELECT
+      SELECT 
         p.player_name,
         p.id as player_id,
         p.player_role,
         t.team_name,
-        COALESCE(SUM(pms.runs), 0) as total_runs,
-        COALESCE(SUM(pms.balls_faced), 0) as total_balls_faced,
-        COALESCE(AVG(pms.runs), 0) as batting_average,
-        CASE
-          WHEN SUM(pms.balls_faced) > 0 THEN (SUM(pms.runs) / SUM(pms.balls_faced)) * 100
-          ELSE 0
-        END as strike_rate,
-        COALESCE(SUM(pms.balls_bowled), 0) as balls_bowled,
-        COALESCE(SUM(pms.runs_conceded), 0) as runs_conceded,
-        COALESCE(SUM(pms.wickets), 0) as wickets_taken,
-        COUNT(DISTINCT pms.match_id) as matches_played,
-        COALESCE(SUM(pms.fours), 0) as fours,
-        COALESCE(SUM(pms.sixes), 0) as sixes,
-        COALESCE(SUM(pms.catches), 0) as catches,
-        COALESCE(SUM(pms.stumpings), 0) as stumpings
+        p.runs as total_runs,
+        p.matches_played,
+        p.batting_average,
+        p.strike_rate,
+        p.wickets as wickets_taken,
+        p.hundreds,
+        p.fifties,
+        p.player_image_url
       FROM players p
       LEFT JOIN teams t ON p.team_id = t.id
-      LEFT JOIN player_match_stats pms ON p.id = pms.player_id
-      GROUP BY p.id, p.player_name, p.player_role, t.team_name
-      ORDER BY total_runs DESC, wickets_taken DESC
+      ORDER BY p.runs DESC, p.wickets DESC
       LIMIT 50
     `);
 
     res.json({ players });
   } catch (err) {
     console.error("Player stats error:", err.message);
-    console.error("Full error:", err);
-    res.status(500).json({
-      error: "Failed to retrieve player statistics",
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    res.status(500).json({ error: "Failed to retrieve player statistics" });
   }
 };
 
@@ -142,36 +118,29 @@ const getPlayerStats = async (req, res) => {
  */
 const getTeamStats = async (req, res) => {
   try {
+    // ✅ FIXED: Select directly from teams table columns
     const [teams] = await db.query(`
-      SELECT
+      SELECT 
         t.team_name,
         t.id as team_id,
         t.matches_played,
         t.matches_won,
         t.trophies,
-        COUNT(DISTINCT p.id) as total_players,
-        COALESCE(AVG(pms_team.runs), 0) as avg_runs_per_match,
-        COALESCE(SUM(pms_team.wickets), 0) as total_wickets_taken,
-        CASE
-          WHEN t.matches_played > 0 THEN (t.matches_won / t.matches_played) * 100
-          ELSE 0
+        t.team_logo_url,
+        (SELECT COUNT(*) FROM players WHERE team_id = t.id) as total_players,
+        CASE 
+          WHEN t.matches_played > 0 THEN (t.matches_won / t.matches_played) * 100 
+          ELSE 0 
         END as win_percentage
       FROM teams t
-      LEFT JOIN players p ON t.id = p.team_id
-      LEFT JOIN player_match_stats pms_team ON p.id = pms_team.player_id
-      GROUP BY t.id, t.team_name, t.matches_played, t.matches_won, t.trophies
-      ORDER BY win_percentage DESC, matches_won DESC
+      ORDER BY t.matches_won DESC, t.trophies DESC
       LIMIT 50
     `);
 
     res.json({ teams });
   } catch (err) {
     console.error("Team stats error:", err.message);
-    console.error("Full error:", err);
-    res.status(500).json({
-      error: "Failed to retrieve team statistics",
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    res.status(500).json({ error: "Failed to retrieve team statistics" });
   }
 };
 

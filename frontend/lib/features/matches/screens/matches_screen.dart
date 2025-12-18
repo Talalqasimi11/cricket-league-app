@@ -1,14 +1,38 @@
 // lib/features/matches/screens/matches_screen.dart
 import 'package:flutter/material.dart';
-import 'dart:convert';
-import '../../../core/api_client.dart';
-import '../../../core/error_dialog.dart';
+import 'package:provider/provider.dart';
 import '../../../core/icons.dart';
 import '../../../core/theme/theme_config.dart';
 import '../../../widgets/custom_button.dart';
-import '../../../widgets/shared/modern_card.dart';
+import '../models/match_model.dart';
+import '../providers/match_provider.dart';
+import '../../../core/auth_provider.dart'; // [Fixed Path]
 import 'create_match_screen.dart';
 import 'live_match_view_screen.dart';
+import 'live_match_scoring_screen.dart'; // [Added]
+
+enum MatchFilter {
+  all('All'),
+  live('Live'),
+  completed('Finished'),
+  scheduled('Upcoming');
+
+  const MatchFilter(this.label);
+  final String label;
+
+  String get statusKey {
+    switch (this) {
+      case MatchFilter.all:
+        return '';
+      case MatchFilter.live:
+        return 'live';
+      case MatchFilter.completed:
+        return 'completed';
+      case MatchFilter.scheduled:
+        return 'scheduled';
+    }
+  }
+}
 
 class MatchesScreen extends StatefulWidget {
   const MatchesScreen({super.key});
@@ -17,207 +41,597 @@ class MatchesScreen extends StatefulWidget {
   State<MatchesScreen> createState() => _MatchesScreenState();
 }
 
-class _MatchesScreenState extends State<MatchesScreen> {
-  bool _loading = false;
-  List<Map<String, dynamic>> _matches = [];
-  String _filter = 'All'; // All | Live | Finished | Upcoming
+class _MatchesScreenState extends State<MatchesScreen>
+    with AutomaticKeepAliveClientMixin {
+  MatchFilter _selectedFilter = MatchFilter.all;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _fetchMatches();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchMatches());
+  }
+
+  Future<void> _safeCall(Future<void> Function() action) async {
+    try {
+      if (!mounted) return;
+      await action();
+    } catch (e) {
+      debugPrint('SafeCall error: $e');
+    }
   }
 
   Future<void> _fetchMatches() async {
-    setState(() => _loading = true);
-    try {
-      final resp = await ApiClient.instance.get('/api/tournament-matches');
-      if (resp.statusCode == 200) {
-        final rows = List<Map<String, dynamic>>.from(jsonDecode(resp.body));
-        setState(() => _matches = rows);
-      } else {
-        if (mounted) {
-          await ErrorDialog.showApiError(
-            context,
-            response: resp,
-            onRetry: _fetchMatches,
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        await ErrorDialog.showGenericError(
-          context,
-          error: e,
-          onRetry: _fetchMatches,
-          showRetryButton: true,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    if (!mounted) return;
+
+    final provider = context.read<MatchProvider>();
+    return _safeCall(() async {
+      final status = _selectedFilter.statusKey;
+      await provider.fetchMatches(status: status.isEmpty ? null : status);
+    });
+  }
+
+  void _onFilterChanged(MatchFilter filter) {
+    if (_selectedFilter == filter) return;
+
+    setState(() {
+      _selectedFilter = filter;
+    });
+
+    _fetchMatches();
+  }
+
+  Future<void> _handleRetry() async {
+    if (!mounted) return;
+
+    final provider = context.read<MatchProvider>();
+    provider.clearError();
+    await _fetchMatches();
+  }
+
+  void _navigateToCreateMatch() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateMatchScreen()),
+    ).then((created) {
+      if (created == true && mounted) _fetchMatches();
+    });
+  }
+
+  void _navigateToLiveMatch(String matchId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LiveMatchViewScreen(matchId: matchId)),
+    ).then((_) {
+      if (mounted) _fetchMatches();
+    });
+  }
+
+  void _navigateToLiveScoring(MatchModel match) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LiveMatchScoringScreen(
+          matchId: match.id,
+          teamA: match.teamA,
+          teamB: match.teamB,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) _fetchMatches();
+    });
+  }
+
+  void _navigateToScorecard(String matchId) {
+    Navigator.pushNamed(
+      context,
+      '/matches/scorecard',
+      arguments: {'matchId': matchId},
+    ).then((_) {
+      if (mounted) _fetchMatches();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     final theme = Theme.of(context);
+
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
-      appBar: AppBar(
-        backgroundColor: theme.colorScheme.surface,
-        elevation: 0,
-        title: Text(
-          "Matches",
-          style: AppTypographyExtended.headlineSmall.copyWith(
-            color: theme.colorScheme.onSurface,
-            fontWeight: FontWeight.w600,
-          ),
+      appBar: _buildAppBar(theme),
+      body: _buildBody(theme),
+      floatingActionButton: _buildFloatingActionButton(theme),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    return AppBar(
+      backgroundColor: theme.colorScheme.surface,
+      elevation: 0,
+      title: Text(
+        'Matches',
+        style: TextStyle(
+          color: theme.colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+          fontSize: 20,
         ),
-        actions: [
-          IconButton(
-            onPressed: _fetchMatches,
-            icon: AppIcons.refreshIcon(color: theme.colorScheme.onSurface),
-          ),
-        ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _fetchMatches,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // Filter chips
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final f in const [
-                  'All',
-                  'Live',
-                  'Finished',
-                  'Upcoming',
-                ])
-                  ChoiceChip(
-                    label: Text(
-                      f,
-                      style: AppTypographyExtended.bodyMedium.copyWith(
-                        color: _filter == f
-                            ? theme.colorScheme.onPrimary
-                            : theme.colorScheme.onSurface,
-                      ),
-                    ),
-                    selected: _filter == f,
-                    selectedColor: theme.colorScheme.primary,
-                    onSelected: (_) => setState(() => _filter = f),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
+      actions: [
+        Consumer<MatchProvider>(
+          builder: (context, provider, _) {
+            final loading = provider.isLoading;
 
-            // Matches list
-            if (_loading)
-              ...List.generate(3, (index) => Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: const SkeletonCard(),
-              ))
-            else
-              ..._filteredMatches().map((m) {
-                      final teamA = (m['team1_name'] ?? 'TBD').toString();
-                      final teamB = (m['team2_name'] ?? 'TBD').toString();
-                      final status = (m['status'] ?? 'upcoming').toString();
-                      final tName = (m['tournament_name'] ?? '').toString();
-                      final dateRaw = m['match_date'];
-                      final dateStr =
-                          dateRaw == null || dateRaw.toString().isEmpty
-                          ? 'Not scheduled'
-                          : m['match_date'].toString();
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: MatchCard(
-                          teamA: teamA,
-                          teamB: teamB,
-                          dateTime: dateStr,
-                          status: status,
-                          subtitle: tName.isEmpty ? null : tName,
-                          actionButton: Builder(
-                            builder: (context) {
-                              // Navigation buttons based on status and parent match id
-                              final parentId = m['parent_match_id'] as int?;
-                              if (parentId != null && status == 'live') {
-                                return TextButton.icon(
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => LiveMatchViewScreen(
-                                          matchId: parentId.toString(),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: theme.colorScheme.primary,
-                                  ),
-                                  icon: const Icon(Icons.live_tv, size: 16),
-                                  label: const Text('View Live'),
-                                );
-                              } else if (parentId != null && status == 'finished') {
-                                return TextButton.icon(
-                                  onPressed: () {
-                                    Navigator.pushNamed(
-                                      context,
-                                      '/matches/scorecard',
-                                      arguments: {'matchId': parentId.toString()},
-                                    );
-                                  },
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: theme.colorScheme.primary,
-                                  ),
-                                  icon: const Icon(Icons.scoreboard, size: 16),
-                                  label: const Text('Scorecard'),
-                                );
-                              }
-                              return TextButton.icon(
-                                onPressed: null,
-                                style: TextButton.styleFrom(
-                                  foregroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                                ),
-                                icon: const Icon(Icons.remove_red_eye_outlined, size: 16),
-                                label: const Text('Not available'),
-                              );
-                            },
-                          ),
+            return IconButton(
+              onPressed: loading ? null : _fetchMatches,
+              icon: loading
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          theme.colorScheme.onSurface,
                         ),
-                      );
-                    }),
-          ],
-        ),
-      ),
-
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 60), // above navbar
-        child: PrimaryButton(
-          text: "Create Match",
-          onPressed: () {
-            // ✅ Navigate to Create Match Screen
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CreateMatchScreen()),
+                      ),
+                    )
+                  : AppIcons.refreshIcon(color: theme.colorScheme.onSurface),
             );
           },
-          fullWidth: true,
-          size: ButtonSize.large,
-          icon: Icons.add,
+        ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  Widget _buildBody(ThemeData theme) {
+    return Consumer<MatchProvider>(
+      builder: (context, provider, _) {
+        if (provider.hasError && !provider.isLoading) {
+          return _buildErrorState(theme, provider.error);
+        }
+
+        return RefreshIndicator(
+          onRefresh: _fetchMatches,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(child: _buildFilterChips(theme)),
+              if (provider.isLoading && !provider.hasMatches)
+                _buildLoadingState()
+              else if (!provider.hasMatches)
+                _buildEmptyState(theme)
+              else
+                _buildMatchesList(theme, provider),
+              const SliverToBoxAdapter(child: SizedBox(height: 80)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterChips(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: MatchFilter.values.map((filter) {
+            final selected = _selectedFilter == filter;
+
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text(
+                  filter.label,
+                  style: TextStyle(
+                    color: selected
+                        ? theme.colorScheme.onPrimary
+                        : theme.colorScheme.onSurface,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    fontSize: 14,
+                  ),
+                ),
+                selected: selected,
+                selectedColor: theme.colorScheme.primary,
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                onSelected: (_) => _onFilterChanged(filter),
+                elevation: selected ? 2 : 0,
+                pressElevation: 4,
+              ),
+            );
+          }).toList(),
         ),
       ),
     );
   }
 
-  List<Map<String, dynamic>> _filteredMatches() {
-    if (_filter == 'All') return _matches;
-    final key = _filter.toLowerCase();
-    return _matches
-        .where((m) => (m['status'] ?? '').toString().toLowerCase() == key)
-        .toList();
+  Widget _buildLoadingState() {
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _buildSkeletonCard(),
+          ),
+          childCount: 5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonCard() {
+    return Card(
+      elevation: 2,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _shimmerBox(height: 20),
+            const SizedBox(height: 12),
+            _shimmerBox(height: 16, width: 150),
+            const SizedBox(height: 8),
+            _shimmerBox(height: 16, width: 200),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _shimmerBox({required double height, double? width}) {
+    return Container(
+      height: height,
+      width: width,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppBorderRadius.sm),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme) {
+    final text = 'No ${_selectedFilter.label.toLowerCase()} matches';
+
+    return SliverFillRemaining(
+      hasScrollBody: false,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AppIcons.cricketIcon(
+              size: 80,
+              color: theme.colorScheme.onSurface.withAlpha(80),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              text,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                color: theme.colorScheme.onSurface.withAlpha(150),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Check back later or try a different filter',
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.colorScheme.onSurface.withAlpha(110),
+              ),
+            ),
+            const SizedBox(height: 24),
+            CustomButton(
+              text: 'Refresh',
+              onPressed: _fetchMatches,
+              variant: ButtonVariant.outline,
+              icon: Icons.refresh,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(ThemeData theme, String? error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AppIcons.errorIcon(size: 80, color: theme.colorScheme.error),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load matches',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                color: theme.colorScheme.error,
+              ),
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                error,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurface.withAlpha(140),
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            CustomButton(
+              text: 'Retry',
+              onPressed: _handleRetry,
+              variant: ButtonVariant.primary,
+              icon: Icons.refresh,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMatchesList(ThemeData theme, MatchProvider provider) {
+    final matches = _getFilteredMatches(provider);
+
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final match = matches[index];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _buildMatchCard(theme, match),
+          );
+        }, childCount: matches.length),
+      ),
+    );
+  }
+
+  List<MatchModel> _getFilteredMatches(MatchProvider provider) {
+    switch (_selectedFilter) {
+      case MatchFilter.all:
+        return provider.matches;
+      case MatchFilter.live:
+        return provider.getLiveMatches();
+      case MatchFilter.completed:
+        return provider.getCompletedMatches();
+      case MatchFilter.scheduled:
+        return provider.getUpcomingMatches();
+    }
+  }
+
+  Widget _buildMatchCard(ThemeData theme, MatchModel match) {
+    final status = match.status;
+    final isLive = status == MatchStatus.live;
+    final isCompleted = status == MatchStatus.completed;
+    final isScheduled = status == MatchStatus.planned;
+    final matchId = match.id.toString();
+
+    final currentUser = context.read<AuthProvider>().userId;
+    final isCreator = currentUser != null && match.creatorId == currentUser;
+
+    final canResume =
+        isLive &&
+        (isCreator || context.read<AuthProvider>().hasScope('match:modify'));
+    final canStart =
+        isScheduled &&
+        (isCreator || context.read<AuthProvider>().hasScope('match:modify'));
+
+    return Card(
+      elevation: AppElevation.level1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppBorderRadius.md),
+      ),
+      child: InkWell(
+        onTap: () {
+          if (canResume || canStart) {
+            _navigateToLiveScoring(match);
+          } else if (isLive) {
+            _navigateToLiveMatch(matchId);
+          } else if (isCompleted) {
+            _navigateToScorecard(matchId);
+          }
+        },
+        borderRadius: BorderRadius.circular(AppBorderRadius.md),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _buildStatusBadge(theme, status),
+                  const Spacer(),
+                  Text(
+                    _formatMatchDate(match.scheduledAt),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurface.withAlpha(140),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // [Fixed] Use correct property names teamA/teamB
+              _buildTeamRow(theme, match.teamA),
+              const SizedBox(height: 8),
+              _buildTeamRow(theme, match.teamB),
+              const SizedBox(height: 12),
+              CustomButton(
+                text: canResume
+                    ? 'Resume Scoring'
+                    : canStart
+                    ? 'Start Scoring'
+                    : isLive
+                    ? 'View Live'
+                    : isCompleted
+                    ? 'View Scorecard'
+                    : 'Scheduled',
+                onPressed: (canResume || canStart)
+                    ? () => _navigateToLiveScoring(match)
+                    : isLive
+                    ? () => _navigateToLiveMatch(matchId)
+                    : isCompleted
+                    ? () => _navigateToScorecard(matchId)
+                    : null,
+                variant: (canResume || canStart)
+                    ? ButtonVariant.primary
+                    : ButtonVariant.outline, // Highlight resume/start action
+                icon: (canResume || canStart)
+                    ? Icons.edit
+                    : isLive
+                    ? Icons.live_tv
+                    : isCompleted
+                    ? Icons.scoreboard
+                    : Icons.schedule,
+                fullWidth: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(ThemeData theme, MatchStatus status) {
+    Color badgeColor;
+    String badgeText;
+    IconData badgeIcon;
+
+    switch (status) {
+      case MatchStatus.live:
+        badgeColor = AppColors.errorRed;
+        badgeText = 'LIVE';
+        badgeIcon = Icons.circle;
+        break;
+      case MatchStatus.completed:
+        badgeColor = AppColors.secondaryGreen;
+        badgeText = 'FINISHED';
+        badgeIcon = Icons.check_circle;
+        break;
+      default:
+        badgeColor = AppColors.primaryBlue;
+        badgeText = 'UPCOMING';
+        badgeIcon = Icons.schedule;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: badgeColor.withAlpha(30),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: badgeColor, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            badgeIcon,
+            size: status == MatchStatus.live ? 8 : 12,
+            color: badgeColor,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            badgeText,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: badgeColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamRow(ThemeData theme, String teamName) {
+    return Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              teamName.isNotEmpty ? teamName[0].toUpperCase() : '?',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            teamName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatMatchDate(DateTime? date) {
+    if (date == null) return 'Date TBD';
+
+    final now = DateTime.now();
+    final diff = date.difference(now);
+
+    if (diff.inDays == 0 && date.day == now.day) {
+      return 'Today, ${_formatTime(date)}';
+    }
+    if (diff.inDays == 1 || (diff.inDays == 0 && date.day == now.day + 1)) {
+      return 'Tomorrow, ${_formatTime(date)}';
+    }
+    if (diff.inDays == -1 || (diff.inDays == 0 && date.day == now.day - 1)) {
+      return 'Yesterday, ${_formatTime(date)}';
+    }
+
+    if (diff.inDays > 0 && diff.inDays < 7) {
+      return '${_getDayName(date)}, ${_formatTime(date)}';
+    }
+
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  String _formatTime(DateTime dt) {
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _getDayName(DateTime date) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[date.weekday - 1];
+  }
+
+  Widget _buildFloatingActionButton(ThemeData theme) {
+    return Consumer<MatchProvider>(
+      builder: (context, provider, _) {
+        final loading = provider.isLoading;
+
+        return FloatingActionButton.extended(
+          onPressed: loading ? null : _navigateToCreateMatch,
+          backgroundColor: theme.colorScheme.primary,
+          foregroundColor: theme.colorScheme.onPrimary,
+          icon: const Icon(Icons.add),
+          label: const Text('Create Match'),
+        );
+      },
+    );
   }
 }

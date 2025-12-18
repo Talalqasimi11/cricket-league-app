@@ -1,8 +1,35 @@
-
-const db = require("../config/db");
+const { db } = require("../config/db");
 const { logDatabaseError } = require("../utils/safeLogger");
 
-// 📌 Add a team to a tournament (registered OR temporary)
+// ==========================================
+// HELPER: Validate Tournament Access
+// ==========================================
+const validateTournamentAccess = async (tournamentId, userId, requireUpcoming = true) => {
+  const [tournament] = await db.query(
+    "SELECT id, status, created_by FROM tournaments WHERE id = ?",
+    [tournamentId]
+  );
+
+  if (tournament.length === 0) {
+    return { valid: false, status: 404, error: "Tournament not found" };
+  }
+
+  if (tournament[0].created_by !== userId) {
+    return { valid: false, status: 403, error: "Not allowed to modify this tournament" };
+  }
+
+  if (requireUpcoming && tournament[0].status !== "upcoming") {
+    return { valid: false, status: 400, error: `Cannot modify teams. Tournament status is '${tournament[0].status}'` };
+  }
+
+  return { valid: true, tournament: tournament[0] };
+};
+
+// ==========================================
+// CONTROLLER METHODS
+// ==========================================
+
+// 📌 Add a SINGLE team (Registered OR Temporary)
 const addTournamentTeam = async (req, res) => {
   const { tournament_id, team_id, temp_team_name, temp_team_location } = req.body;
 
@@ -14,53 +41,32 @@ const addTournamentTeam = async (req, res) => {
   }
 
   try {
-    // ✅ Check ownership
-    const [tournament] = await db.query(
-      "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
-      [tournament_id, req.user.id]
-    );
-    if (tournament.length === 0) {
-      return res.status(403).json({ success: false, error: "Not allowed to modify this tournament" });
-    }
+    // 1. Validate Access
+    const access = await validateTournamentAccess(tournament_id, req.user.id);
+    if (!access.valid) return res.status(access.status).json({ success: false, error: access.error });
 
-    // ✅ Status restriction
-    if (tournament[0].status !== "upcoming") {
-      return res.status(400).json({ success: false, error: "Cannot add teams once tournament has started" });
-    }
-
-    // ✅ Prevent duplicate registered team and validate team exists
+    // 2. Registered Team Logic
     if (team_id) {
-      // First validate that the team exists
-      const [teamExists] = await db.query(
-        "SELECT id FROM teams WHERE id = ?",
-        [team_id]
-      );
-      if (teamExists.length === 0) {
-        return res.status(404).json({ success: false, error: "Team not found" });
-      }
+      const [teamExists] = await db.query("SELECT id FROM teams WHERE id = ?", [team_id]);
+      if (teamExists.length === 0) return res.status(404).json({ success: false, error: "Team not found" });
 
-      // Then check for duplicates
       const [exists] = await db.query(
         "SELECT id FROM tournament_teams WHERE tournament_id = ? AND team_id = ?",
         [tournament_id, team_id]
       );
-      if (exists.length > 0) {
-        return res.status(400).json({ success: false, error: "This team is already added" });
-      }
+      if (exists.length > 0) return res.status(400).json({ success: false, error: "Team already added" });
     }
 
-    // ✅ Prevent duplicate temporary team (case-insensitive)
+    // 3. Temporary Team Logic
     if (temp_team_name && temp_team_location) {
       const [exists] = await db.query(
         "SELECT id FROM tournament_teams WHERE tournament_id = ? AND LOWER(temp_team_name) = LOWER(?) AND LOWER(temp_team_location) = LOWER(?)",
         [tournament_id, temp_team_name.trim(), temp_team_location.trim()]
       );
-      if (exists.length > 0) {
-        return res.status(400).json({ success: false, error: "This temporary team already exists" });
-      }
+      if (exists.length > 0) return res.status(400).json({ success: false, error: "Temporary team already exists" });
     }
 
-    // ✅ Insert (normalize temp team data)
+    // 4. Insert
     const [result] = await db.query(
       `INSERT INTO tournament_teams (tournament_id, team_id, temp_team_name, temp_team_location) 
        VALUES (?, ?, ?, ?)`,
@@ -72,8 +78,9 @@ const addTournamentTeam = async (req, res) => {
       message: "Team added successfully",
       id: result.insertId,
     });
+
   } catch (err) {
-    logDatabaseError(req.log, "addTournamentTeam", err, { tournamentId: tournament_id, teamId: team_id });
+    logDatabaseError(req.log, "addTournamentTeam", err, { tournamentId: tournament_id });
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
@@ -84,15 +91,13 @@ const getTournamentTeams = async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      `SELECT tt.id, 
-              tt.tournament_id, 
-              t.team_name, 
-              t.team_location, 
-              tt.temp_team_name, 
-              tt.temp_team_location
+      `SELECT tt.id, tt.tournament_id, tt.team_id,
+              t.team_name, t.team_location, t.team_logo_url,
+              tt.temp_team_name, tt.temp_team_location
        FROM tournament_teams tt
        LEFT JOIN teams t ON tt.team_id = t.id
-       WHERE tt.tournament_id = ?`,
+       WHERE tt.tournament_id = ?
+       ORDER BY tt.id ASC`,
       [tournament_id]
     );
 
@@ -103,109 +108,147 @@ const getTournamentTeams = async (req, res) => {
   }
 };
 
-// 📌 Update tournament team (temporary only)
+// 📌 Update tournament team (Temporary teams only)
 const updateTournamentTeam = async (req, res) => {
   const { id, tournament_id, temp_team_name, temp_team_location } = req.body;
 
-  if (!id || !tournament_id) {
-    return res.status(400).json({ success: false, error: "Tournament team id and tournament_id are required" });
-  }
+  if (!id || !tournament_id) return res.status(400).json({ success: false, error: "ID and Tournament ID required" });
 
   try {
-    // ✅ Ownership
-    const [tournament] = await db.query(
-      "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
-      [tournament_id, req.user.id]
-    );
-    if (tournament.length === 0) {
-      return res.status(403).json({ success: false, error: "Not allowed to update this tournament" });
-    }
-    
-    // ✅ Null check for tournament data
-    if (!tournament[0]) {
-      return res.status(500).json({ success: false, error: "Tournament data is invalid" });
-    }
-    
-    if (tournament[0].status !== "upcoming") {
-      return res.status(400).json({ success: false, error: "Cannot update teams once tournament has started" });
-    }
+    const access = await validateTournamentAccess(tournament_id, req.user.id);
+    if (!access.valid) return res.status(access.status).json({ success: false, error: access.error });
 
-    // ✅ Ensure team exists & is temporary
-    const [team] = await db.query(
-      "SELECT * FROM tournament_teams WHERE id = ? AND tournament_id = ?",
-      [id, tournament_id]
-    );
-    if (team.length === 0) {
-      return res.status(404).json({ success: false, error: "Tournament team not found" });
-    }
-    if (team[0].team_id) {
-      return res.status(400).json({ success: false, error: "Registered teams cannot be updated" });
-    }
+    // Check if valid temporary team
+    const [team] = await db.query("SELECT * FROM tournament_teams WHERE id = ? AND tournament_id = ?", [id, tournament_id]);
 
-    // ✅ Prevent duplicates
+    if (team.length === 0) return res.status(404).json({ success: false, error: "Team not found in tournament" });
+    if (team[0].team_id) return res.status(400).json({ success: false, error: "Cannot edit registered teams here" });
+
+    // Check duplicates
     const [exists] = await db.query(
       `SELECT id FROM tournament_teams 
        WHERE tournament_id = ? AND temp_team_name = ? AND temp_team_location = ? AND id != ?`,
       [tournament_id, temp_team_name, temp_team_location, id]
     );
-    if (exists.length > 0) {
-      return res.status(400).json({ success: false, error: "Another temporary team with same name & location exists" });
-    }
+    if (exists.length > 0) return res.status(400).json({ success: false, error: "Duplicate temporary team details" });
 
     await db.query(
       "UPDATE tournament_teams SET temp_team_name = ?, temp_team_location = ? WHERE id = ?",
       [temp_team_name, temp_team_location, id]
     );
 
-    res.json({ success: true, message: "Tournament team updated successfully" });
+    res.json({ success: true, message: "Team updated successfully" });
+
   } catch (err) {
-    logDatabaseError(req.log, "updateTournamentTeam", err, { tournamentId: tournament_id, teamId: id });
+    logDatabaseError(req.log, "updateTournamentTeam", err, { tournamentId: tournament_id });
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
 
-// 📌 Delete a team from tournament
+// 📌 Delete team from tournament
 const deleteTournamentTeam = async (req, res) => {
   const { id, tournament_id } = req.body;
 
-  if (!id || !tournament_id) {
-    return res.status(400).json({ success: false, error: "Tournament team id and tournament_id are required" });
-  }
+  if (!id || !tournament_id) return res.status(400).json({ success: false, error: "Missing required fields" });
 
   try {
-    // ✅ Ownership
-    const [tournament] = await db.query(
-      "SELECT * FROM tournaments WHERE id = ? AND created_by = ?",
-      [tournament_id, req.user.id]
-    );
-    if (tournament.length === 0) {
-      return res.status(403).json({ success: false, error: "Not allowed to delete from this tournament" });
-    }
-    
-    // ✅ Null check for tournament data
-    if (!tournament[0]) {
-      return res.status(500).json({ success: false, error: "Tournament data is invalid" });
-    }
-    
-    if (tournament[0].status !== "upcoming") {
-      return res.status(400).json({ success: false, error: "Cannot delete teams once tournament has started" });
-    }
+    const access = await validateTournamentAccess(tournament_id, req.user.id);
+    if (!access.valid) return res.status(access.status).json({ success: false, error: access.error });
 
-    // ✅ Prevent deletion if team already in tournament matches
+    // Check usage in matches
     const [used] = await db.query(
       "SELECT id FROM tournament_matches WHERE (team1_tt_id = ? OR team2_tt_id = ?) AND tournament_id = ? LIMIT 1",
       [id, id, tournament_id]
     );
-    if (used.length > 0) {
-      return res.status(400).json({ success: false, error: "Cannot delete team, matches already exist" });
-    }
+
+    if (used.length > 0) return res.status(400).json({ success: false, error: "Cannot delete team; matches already scheduled" });
 
     await db.query("DELETE FROM tournament_teams WHERE id = ?", [id]);
 
-    res.json({ success: true, message: "Tournament team deleted successfully" });
+    res.json({ success: true, message: "Team removed from tournament" });
+
   } catch (err) {
-    logDatabaseError(req.log, "deleteTournamentTeam", err, { tournamentId: tournament_id, teamId: id });
+    logDatabaseError(req.log, "deleteTournamentTeam", err, { tournamentId: tournament_id });
     res.status(500).json({ success: false, error: "Server error" });
+  }
+};
+
+// 📌 Bulk Add Teams (Optimized Batch Insert)
+const addBulkTournamentTeams = async (req, res) => {
+  const { tournament_id, team_ids } = req.body;
+
+  if (!tournament_id || !Array.isArray(team_ids) || team_ids.length === 0) {
+    return res.status(400).json({ success: false, error: "Invalid payload" });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 1. Validate Access (Manual check since we are inside transaction)
+    const [tournament] = await conn.query(
+      "SELECT status, created_by FROM tournaments WHERE id = ?",
+      [tournament_id]
+    );
+
+    if (tournament.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ success: false, error: "Tournament not found" });
+    }
+    if (tournament[0].created_by !== req.user.id) {
+      await conn.rollback();
+      return res.status(403).json({ success: false, error: "Permission denied" });
+    }
+    if (tournament[0].status !== "upcoming") {
+      await conn.rollback();
+      return res.status(400).json({ success: false, error: "Tournament already started" });
+    }
+
+    // 2. Filter out existing teams to prevent duplicates
+    const [existing] = await conn.query(
+      "SELECT team_id FROM tournament_teams WHERE tournament_id = ?",
+      [tournament_id]
+    );
+    // Convert to strings for consistent comparison
+    const existingIds = new Set(existing.map(e => String(e.team_id)));
+
+    // 3. Filter invalid team IDs (that don't exist in teams table)
+    const placeholders = team_ids.map(() => '?').join(',');
+    const [validTeams] = await conn.query(`SELECT id FROM teams WHERE id IN (${placeholders})`, team_ids);
+    // Convert to strings for consistent comparison
+    const validIdsSet = new Set(validTeams.map(t => String(t.id)));
+
+    // 4. Prepare Bulk Insert Data
+    const teamstoInsert = [];
+    team_ids.forEach(tid => {
+      const tidStr = String(tid);
+      if (validIdsSet.has(tidStr) && !existingIds.has(tidStr)) {
+        teamstoInsert.push([tournament_id, tid, null, null]); // [tourn_id, team_id, temp_name, temp_loc]
+      }
+    });
+
+    if (teamstoInsert.length > 0) {
+      await conn.query(
+        `INSERT INTO tournament_teams (tournament_id, team_id, temp_team_name, temp_team_location) VALUES ?`,
+        [teamstoInsert]
+      );
+    }
+
+    await conn.commit();
+
+    res.json({
+      success: true,
+      message: `Added ${teamstoInsert.length} teams successfully`,
+      added: teamstoInsert.length,
+      skipped: team_ids.length - teamstoInsert.length
+    });
+
+  } catch (err) {
+    if (conn) await conn.rollback();
+    logDatabaseError(req.log, "addBulkTournamentTeams", err, { tournamentId: tournament_id });
+    res.status(500).json({ success: false, error: "Server error" });
+  } finally {
+    if (conn) conn.release();
   }
 };
 
@@ -214,4 +257,5 @@ module.exports = {
   getTournamentTeams,
   updateTournamentTeam,
   deleteTournamentTeam,
+  addBulkTournamentTeams,
 };

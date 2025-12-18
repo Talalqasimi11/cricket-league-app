@@ -16,7 +16,10 @@ class _SplashScreenState extends State<SplashScreen>
   late final AnimationController _progressController;
   late final Animation<double> _progressAnimation;
   Timer? _navigationTimer;
-  List<ConnectivityResult> _initialConnectivity = [ConnectivityResult.mobile];
+
+  List<ConnectivityResult> _initialConnectivity = const [
+    ConnectivityResult.mobile
+  ];
 
   @override
   void initState() {
@@ -26,38 +29,34 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 3000),
     );
-    _progressAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(_progressController);
+    _progressAnimation =
+        Tween<double>(begin: 0.0, end: 1.0).animate(_progressController);
     _progressController.forward();
 
     _initialize();
   }
 
   Future<void> _initialize() async {
-    // Step 1: Check initial connectivity
     await _checkInitialConnectivity();
 
-    // Step 2: Wait for splash duration
     _navigationTimer = Timer(const Duration(milliseconds: 3200), () async {
       if (!mounted) return;
 
-      // Step 3: Initialize auth
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.initializeAuth();
 
-      // Step 4: Always navigate to home screen (will handle auth state there)
-      if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/home');
-      }
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/home');
     });
   }
 
   Future<void> _checkInitialConnectivity() async {
     try {
-      final connectivity = await Connectivity().checkConnectivity();
-      _initialConnectivity = connectivity;
+      final List<ConnectivityResult> connectivity =
+          await Connectivity().checkConnectivity();
+      _initialConnectivity = connectivity.isEmpty
+          ? [ConnectivityResult.none]
+          : connectivity;
       debugPrint('Initial connectivity: $_initialConnectivity');
     } catch (e) {
       debugPrint('Connectivity check failed: $e');
@@ -152,8 +151,6 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    const primaryGreen = Color(0xFF38E07B);
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -162,21 +159,24 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             children: [
               const Spacer(),
-              const Stack(
-                alignment: Alignment.center,
-                children: [
-                  Icon(Icons.sports_cricket, color: primaryGreen, size: 100),
-                  Positioned(
-                    top: -10,
-                    right: -20,
-                    child: Icon(
-                      Icons.emoji_events,
-                      color: Colors.white,
-                      size: 80,
-                    ),
-                  ),
-                ],
+              
+              // [UPDATED] Replaced Icon Stack with Image Asset
+              // Ensure 'assets/images/app_icon.png' exists in your project
+              Image.asset(
+                'assets/images/app_icon.png', 
+                width: 150, // Adjust size as needed
+                height: 150,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  // Fallback icon if image fails to load
+                  return const Icon(
+                    Icons.sports_cricket, 
+                    size: 100, 
+                    color: Color(0xFF38E07B)
+                  );
+                },
               ),
+              
               const SizedBox(height: 24),
               const Text(
                 'CricLeague',

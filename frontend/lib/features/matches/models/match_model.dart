@@ -1,32 +1,30 @@
 import 'package:flutter/foundation.dart';
 
 /// The status of a cricket match in the lifecycle.
-/// 
-/// **Note**: This enum is backward-compatible with string storage.
-/// Use `MatchStatus.fromString()` when deserializing from Firestore/JSON.
 enum MatchStatus {
-  planned,
+  planned, // Backend calls this 'scheduled'
   live,
   completed,
   cancelled;
 
-  /// Converts a string value to [MatchStatus], defaulting to [planned].
-  static MatchStatus fromString(String value) {
-    return MatchStatus.values.firstWhere(
-      (e) => e.name == value.toLowerCase(),
-      orElse: () => MatchStatus.planned,
-    );
+  static MatchStatus fromBackendValue(String value) {
+    return switch (value.toLowerCase()) {
+      'scheduled' => planned,
+      'live' => live,
+      'completed' => completed,
+      'cancelled' => cancelled,
+      _ => planned,
+    };
   }
+
+  String get backendValue => switch (this) {
+    planned => 'scheduled',
+    live => 'live',
+    completed => 'completed',
+    cancelled => 'cancelled',
+  };
 }
 
-/// {@template match_model}
-/// Represents a cricket match in the scoring system.
-/// 
-/// **⚠️ ARCHITECTURAL LIMITATION**: This model stores scoring data (runs, wickets, overs)
-/// at the match level, which is insufficient for proper cricket scoring where each team
-/// has separate scores per innings. This is a critical limitation for the live scoring
-/// feature and should be refactored to include an [Innings] model.
-/// {@endtemplate}
 @immutable
 class MatchModel {
   final String id;
@@ -35,6 +33,8 @@ class MatchModel {
   final MatchStatus status;
   final DateTime? scheduledAt;
   final String creatorId;
+  final int? tournamentId;
+  final String round; // [ADDED] Required for Brackets
   final int runs;
   final int wickets;
   final double overs;
@@ -46,19 +46,16 @@ class MatchModel {
     required this.status,
     this.scheduledAt,
     required this.creatorId,
+    this.tournamentId,
+    this.round = 'round_1', // [ADDED]
     this.runs = 0,
     this.wickets = 0,
     this.overs = 0.0,
   }) : assert(wickets >= 0 && wickets <= 10, 'Wickets must be 0-10'),
        assert(overs >= 0, 'Overs cannot be negative');
 
-  /// Creates a [MatchModel] from a map (Firestore, JSON, etc.).
-  /// 
-  /// **Error Handling**: If critical fields are missing or invalid, throws
-  /// [FormatException] with detailed context instead of silent failures.
   factory MatchModel.fromMap(Map<String, dynamic> m) {
     try {
-      // Parse scheduled time with fallback chain
       DateTime? scheduled;
       final scheduledValue = m['scheduled_at'];
       if (scheduledValue != null) {
@@ -69,65 +66,131 @@ class MatchModel {
         }
       }
 
-      // Parse status with backward compatibility
       final statusValue = m['status'];
       final MatchStatus status;
       if (statusValue is String) {
-        status = MatchStatus.fromString(statusValue);
-      } else if (statusValue is int && statusValue >= 0 && statusValue < MatchStatus.values.length) {
-        status = MatchStatus.values[statusValue];
+        status = MatchStatus.fromBackendValue(statusValue);
+      } else if (statusValue is int) {
+        status = MatchStatus
+            .values[statusValue.clamp(0, MatchStatus.values.length - 1)];
       } else {
         status = MatchStatus.planned;
       }
 
       return MatchModel(
-        id: (m['id'] as String?)?.trim() ?? '',
-        teamA: (m['team_a'] as String?)?.trim() ?? 'Team A',
-        teamB: (m['team_b'] as String?)?.trim() ?? 'Team B',
+        id: m['id']?.toString() ?? '',
+        teamA: m['team_a']?.toString() ?? 'Team A',
+        teamB: m['team_b']?.toString() ?? 'Team B',
         status: status,
         scheduledAt: scheduled,
-        creatorId: (m['creator_id'] as String?)?.trim() ?? '',
+        creatorId: m['creator_id']?.toString() ?? '',
+        tournamentId: m['tournament_id'] != null
+            ? _parseInt(m['tournament_id'])
+            : null,
+        round: m['round']?.toString() ?? 'round_1', // [ADDED]
         runs: _parseInt(m['runs']),
         wickets: _parseInt(m['wickets']),
         overs: _parseDouble(m['overs']),
       );
     } catch (e, stackTrace) {
       throw FormatException(
-        'Failed to deserialize MatchModel from map. \n'
-        'Error: $e \n'
-        'Input map: ${m.toString().substring(0, m.toString().length.clamp(0, 200))}',
+        'MatchModel.fromMap failed: $e\nMap: $m',
         stackTrace,
       );
     }
   }
 
-  /// Parses a value to int safely.
-  static int _parseInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) {
-      final parsed = int.tryParse(value);
-      return parsed ?? 0;
+  // [ADDED] Factory for tournament matches
+  factory MatchModel.fromTournamentMatch(dynamic data) {
+    Map<String, dynamic> json;
+    if (data is Map<String, dynamic>) {
+      json = data;
+    } else {
+      try {
+        json = (data as dynamic).toJson();
+      } catch (_) {
+        json = {};
+      }
     }
-    return 0;
+
+    return MatchModel(
+      id: json['id']?.toString() ?? '',
+      teamA: json['team1_name']?.toString() ?? 'Team 1',
+      teamB: json['team2_name']?.toString() ?? 'Team 2',
+      status: MatchStatus.fromBackendValue(
+        json['status']?.toString() ?? 'scheduled',
+      ),
+      scheduledAt: json['match_date'] != null
+          ? DateTime.tryParse(json['match_date'].toString())
+          : (json['scheduled_time'] != null
+                ? DateTime.tryParse(json['scheduled_time'].toString())
+                : null),
+      creatorId: '',
+      tournamentId: _parseInt(json['tournament_id']),
+      round: json['round']?.toString() ?? 'round_1',
+      runs: 0,
+      wickets: 0,
+      overs: 20.0,
+    );
   }
 
-  /// Parses a value to double safely.
-  static double _parseDouble(dynamic value) {
-    if (value is double) return value;
-    if (value is num) return value.toDouble();
-    if (value is String) {
-      final parsed = double.tryParse(value);
-      return parsed ?? 0.0;
+  factory MatchModel.fromLegacyMatch(dynamic legacyMatch) {
+    // Handle both Map and Object input safely
+    String? getProp(String key) {
+      if (legacyMatch is Map) return legacyMatch[key]?.toString();
+      try {
+        return (legacyMatch as dynamic).toJson()[key]?.toString();
+      } catch (_) {
+        return null;
+      }
     }
-    return 0.0;
+
+    return MatchModel(
+      id: getProp('id') ?? '',
+      teamA:
+          getProp('teamA') ??
+          getProp('team1Name') ??
+          getProp('team1_name') ??
+          '',
+      teamB:
+          getProp('teamB') ??
+          getProp('team2Name') ??
+          getProp('team2_name') ??
+          '',
+      status: MatchStatus.fromBackendValue(getProp('status') ?? 'scheduled'),
+      scheduledAt: DateTime.tryParse(
+        getProp('scheduledAt') ??
+            getProp('scheduled_time') ??
+            getProp('scheduled_at') ??
+            '',
+      ),
+      creatorId: getProp('creatorId') ?? getProp('creator_id') ?? '',
+      tournamentId: _parseInt(
+        getProp('tournamentId') ?? getProp('tournament_id'),
+      ),
+      round: getProp('round') ?? 'round_1', // [ADDED]
+      runs: _parseInt(getProp('runs')),
+      wickets: _parseInt(getProp('wickets')),
+      overs: _parseDouble(getProp('overs')),
+    );
   }
 
-  /// Creates a copy with optional field overrides.
-  /// 
-  /// **Performance**: This is allocation-heavy. For frequent updates in live scoring,
-  /// consider using a state management solution with mutable state for the scoring
-  /// fields only, while keeping the match metadata immutable.
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'team_a': teamA,
+      'team_b': teamB,
+      'status': status.backendValue,
+      'scheduled_at': scheduledAt?.toIso8601String(),
+      'creator_id': creatorId,
+      'tournament_id': tournamentId,
+      'round': round, // [ADDED]
+      'runs': runs,
+      'wickets': wickets,
+      'overs': overs,
+    };
+  }
+
   MatchModel copyWith({
     String? id,
     String? teamA,
@@ -135,6 +198,8 @@ class MatchModel {
     MatchStatus? status,
     DateTime? scheduledAt,
     String? creatorId,
+    int? tournamentId,
+    String? round, // [ADDED]
     int? runs,
     int? wickets,
     double? overs,
@@ -146,57 +211,35 @@ class MatchModel {
       status: status ?? this.status,
       scheduledAt: scheduledAt ?? this.scheduledAt,
       creatorId: creatorId ?? this.creatorId,
+      tournamentId: tournamentId ?? this.tournamentId,
+      round: round ?? this.round, // [ADDED]
       runs: runs ?? this.runs,
       wickets: wickets ?? this.wickets,
       overs: overs ?? this.overs,
     );
   }
 
-  /// Converts to a map suitable for Firestore/JSON storage.
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'team_a': teamA,
-      'team_b': teamB,
-      'status': status.name, // Store as string for readability
-      'scheduled_at': scheduledAt?.toIso8601String(),
-      'creator_id': creatorId,
-      'runs': runs,
-      'wickets': wickets,
-      'overs': overs,
-    };
+  static int _parseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
-  /// Validates business rules for this match.
-  /// 
-  /// Call this before saving to ensure data integrity.
-  void validate() {
-    if (id.isEmpty) throw StateError('Match ID cannot be empty');
-    if (teamA.isEmpty) throw StateError('Team A ID cannot be empty');
-    if (teamB.isEmpty) throw StateError('Team B ID cannot be empty');
-    if (teamA == teamB) throw StateError('Team A and Team B must be different');
-    if (creatorId.isEmpty) throw StateError('Creator ID cannot be empty');
-    if (wickets < 0 || wickets > 10) throw StateError('Wickets must be between 0-10');
-    if (overs < 0) throw StateError('Overs cannot be negative');
-    if (overs > 0 && overs < 0.1) throw StateError('Overs precision too low (minimum 0.1)');
+  static double _parseDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
   }
 
   @override
-  bool operator ==(Object other) {
-    return identical(this, other) ||
-        other is MatchModel &&
-            id == other.id &&
-            teamA == other.teamA &&
-            teamB == other.teamB &&
-            status == other.status &&
-            scheduledAt == other.scheduledAt;
-  }
+  bool operator ==(Object other) =>
+      identical(this, other) || other is MatchModel && id == other.id;
 
   @override
-  int get hashCode => Object.hash(id, teamA, teamB, status, scheduledAt);
+  int get hashCode => Object.hash(id, teamA, teamB, status);
 
   @override
-  String toString() {
-    return 'MatchModel(id: $id, teamA: $teamA, teamB: $teamB, status: $status, runs: $runs/$wickets, overs: $overs)';
-  }
+  String toString() => 'MatchModel($id: $teamA vs $teamB, Round: $round)';
 }

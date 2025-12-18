@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
+// Use your core input styles if available, otherwise fall back to theme
+import '../../core/theme/app_input_styles.dart'; 
 
 class FeedbackScreen extends StatefulWidget {
   const FeedbackScreen({super.key});
@@ -10,6 +12,7 @@ class FeedbackScreen extends StatefulWidget {
 }
 
 class _FeedbackScreenState extends State<FeedbackScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _messageController = TextEditingController();
   final _contactController = TextEditingController();
   bool _loading = false;
@@ -22,102 +25,166 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   }
 
   Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
     final message = _messageController.text.trim();
     final contact = _contactController.text.trim();
-    if (message.length < 5) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a longer message')),
-      );
-      return;
-    }
+
+    FocusScope.of(context).unfocus();
+
     setState(() => _loading = true);
     try {
-      final response = await ApiClient.instance.post(
-        '/api/feedback',
-        body: {'message': message, 'contact': contact.isEmpty ? null : contact},
-      );
+      final Map<String, dynamic> body = {'message': message};
+      if (contact.isNotEmpty) {
+        body['contact'] = contact;
+      }
+
+      final response = await ApiClient.instance.post('/api/feedback', body: body);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Thanks for your feedback!')),
+          const SnackBar(
+            content: Text('✅ Thanks for your feedback!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
-        // Clear form and navigate back
         _messageController.clear();
         _contactController.clear();
         Navigator.pop(context);
-      } else if (response.statusCode == 400) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Invalid feedback data. Please check your input.')),
-          );
-        }
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Authentication failed. Please log in again.')),
-          );
-        }
-      } else if (response.statusCode >= 500) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Server error. Please try again later.')),
-          );
-        }
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to submit feedback (${response.statusCode})')),
-          );
-        }
+        if (!mounted) return;
+        _showError('Failed to submit feedback (${response.statusCode})');
       }
     } catch (e) {
-      if (mounted) {
-        final errorMessage = e is SocketException
-            ? 'No internet connection. Please check your network and try again.'
-            : 'Failed to submit feedback. Please try again.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
-      }
+      if (!mounted) return;
+      final errorMessage = e is SocketException
+          ? 'No internet connection.'
+          : 'An unexpected error occurred.';
+      _showError(errorMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.error,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Feedback')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _messageController,
-              maxLines: 6,
-              decoration: const InputDecoration(labelText: 'Message'),
+      backgroundColor: theme.colorScheme.surface,
+      appBar: AppBar(
+        title: const Text('Feedback'),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Header Icon
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.chat_bubble_outline,
+                      size: 48,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                
+                Text(
+                  'We value your input!',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Share your thoughts, report bugs, or suggest features to help us improve.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+
+                // Message Input
+                TextFormField(
+                  controller: _messageController,
+                  maxLines: 5,
+                  maxLength: 1000,
+                  validator: (val) {
+                    if ((val?.trim() ?? '').length < 5) {
+                      return 'Please enter at least 5 characters';
+                    }
+                    return null;
+                  },
+                  decoration: AppInputStyles.textFieldDecoration(
+                    context: context,
+                    hintText: 'Your message...',
+                    prefixIcon: Icons.edit,
+                  ).copyWith(
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Contact Input
+                TextFormField(
+                  controller: _contactController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: AppInputStyles.textFieldDecoration(
+                    context: context,
+                    hintText: 'Email or phone (optional)',
+                    prefixIcon: Icons.contact_mail,
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                // Buttons
+                FilledButton.icon(
+                  onPressed: _loading ? null : _submit,
+                  icon: _loading 
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.send),
+                  label: Text(_loading ? 'Sending...' : 'Submit Feedback'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _loading ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _contactController,
-              decoration: const InputDecoration(
-                labelText: 'Contact (optional)',
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loading ? null : _submit,
-              child: _loading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Send'),
-            ),
-          ],
+          ),
         ),
       ),
     );

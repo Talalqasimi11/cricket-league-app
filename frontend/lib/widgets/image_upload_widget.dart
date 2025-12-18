@@ -7,6 +7,8 @@ import '../core/offline/offline_manager.dart';
 class ImageUploadWidget extends StatefulWidget {
   final String label;
   final String? currentImageUrl;
+  // ✅ ADDED: Callback to handle the actual API upload
+  final Future<String?> Function(File)? onUpload; 
   final Function(String?)? onImageUploaded;
   final Function()? onImageRemoved;
   final double size;
@@ -16,6 +18,7 @@ class ImageUploadWidget extends StatefulWidget {
     super.key,
     required this.label,
     this.currentImageUrl,
+    this.onUpload,
     this.onImageUploaded,
     this.onImageRemoved,
     this.size = 120,
@@ -82,20 +85,28 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
     setState(() => _isUploading = true);
 
     try {
-      // This will be implemented when we integrate with specific upload endpoints
-      // For now, just simulate upload
-      await Future.delayed(const Duration(seconds: 2));
+      // ✅ FIXED: Use the onUpload callback if provided
+      String? uploadedUrl;
+      
+      if (widget.onUpload != null) {
+        uploadedUrl = await widget.onUpload!(imageFile);
+      } else {
+        // Fallback simulation
+        await Future.delayed(const Duration(seconds: 2));
+        uploadedUrl = 'uploaded_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      }
 
-      // Simulate successful upload
-      final uploadedUrl = 'uploaded_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      setState(() => _uploadedImageUrl = uploadedUrl);
+      if (uploadedUrl != null) {
+        setState(() => _uploadedImageUrl = uploadedUrl);
+        widget.onImageUploaded?.call(uploadedUrl);
 
-      widget.onImageUploaded?.call(uploadedUrl);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Image uploaded successfully')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('✅ Image uploaded successfully')),
+          );
+        }
+      } else {
+        throw Exception('Upload returned null');
       }
     } catch (e) {
       if (mounted) {

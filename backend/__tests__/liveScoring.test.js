@@ -1,29 +1,49 @@
 const request = require('supertest');
-const app = require('../index');
-const db = require('../config/db');
+const { app } = require('../index');
+const { db } = require('../config/db');
+
+const fs = require('fs');
 
 describe('Live Scoring API', () => {
+  try {
+    const debugInfo = {
+      isDbDefined: !!db,
+      dbKeys: db ? Object.keys(db) : [],
+      dbProto: db ? Object.getPrototypeOf(db) : null,
+      queryType: db ? typeof db.query : 'undefined',
+      executeType: db ? typeof db.execute : 'undefined'
+    };
+    fs.writeFileSync('debug_db_dump.txt', JSON.stringify(debugInfo, null, 2));
+  } catch (e) {
+    fs.writeFileSync('debug_db_dump.txt', 'Error inspecting db: ' + e.message);
+  }
+
   let testUser, testTeam1, testTeam2, testMatch, testPlayer1, testPlayer2;
   let authToken;
 
   beforeAll(async () => {
-    // Clean up any existing test data
-    await db.query('DELETE FROM ball_by_ball WHERE match_id IN (SELECT id FROM matches WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%"))');
-    await db.query('DELETE FROM match_innings WHERE match_id IN (SELECT id FROM matches WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%"))');
-    await db.query('DELETE FROM player_match_stats WHERE match_id IN (SELECT id FROM matches WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%"))');
-    await db.query('DELETE FROM matches WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%")');
-    await db.query('DELETE FROM tournament_teams WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%")');
-    await db.query('DELETE FROM tournaments WHERE tournament_name LIKE "Test%"');
-    await db.query('DELETE FROM players WHERE team_id IN (SELECT id FROM teams WHERE team_name LIKE "Test%")');
-    await db.query('DELETE FROM teams WHERE team_name LIKE "Test%"');
-    await db.query('DELETE FROM users WHERE phone_number LIKE "test%"');
+    try {
+      // Clean up any existing test data
+      await db.query('DELETE FROM ball_by_ball WHERE match_id IN (SELECT id FROM matches WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%"))');
+      await db.query('DELETE FROM match_innings WHERE match_id IN (SELECT id FROM matches WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%"))');
+      await db.query('DELETE FROM player_match_stats WHERE match_id IN (SELECT id FROM matches WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%"))');
+      await db.query('DELETE FROM matches WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%")');
+      await db.query('DELETE FROM tournament_teams WHERE tournament_id IN (SELECT id FROM tournaments WHERE tournament_name LIKE "Test%")');
+      await db.query('DELETE FROM tournaments WHERE tournament_name LIKE "Test%"');
+      await db.query('DELETE FROM players WHERE team_id IN (SELECT id FROM teams WHERE team_name LIKE "Test%")');
+      await db.query('DELETE FROM teams WHERE team_name LIKE "Test%"');
+      await db.query('DELETE FROM users WHERE phone_number LIKE "test%"');
 
-    // Create test user
-    const [userResult] = await db.query(
-      'INSERT INTO users (phone_number, password_hash) VALUES (?, ?)',
-      ['test1234567890', 'hashed_password']
-    );
-    testUser = { id: userResult.insertId, phone_number: 'test1234567890' };
+      // Create test user
+      const [userResult] = await db.query(
+        'INSERT INTO users (phone_number, password_hash) VALUES (?, ?)',
+        ['test1234567890', 'hashed_password']
+      );
+      testUser = { id: userResult.insertId, phone_number: 'test1234567890' };
+    } catch (e) {
+      fs.writeFileSync('error_dump.txt', 'Error in beforeAll: ' + e.message + '\n' + e.stack);
+      throw e;
+    }
 
     // Create test teams
     const [team1Result] = await db.query(
@@ -69,9 +89,17 @@ describe('Live Scoring API', () => {
     const jwt = require('jsonwebtoken');
     const JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret';
     authToken = jwt.sign(
-      { id: testUser.id, phone_number: testUser.phone_number },
+      {
+        sub: testUser.id,
+        phone_number: testUser.phone_number,
+        typ: 'access'
+      },
       JWT_SECRET,
-      { expiresIn: '1h' }
+      {
+        expiresIn: '1h',
+        audience: process.env.JWT_AUD,
+        issuer: process.env.JWT_ISS
+      }
     );
   });
 

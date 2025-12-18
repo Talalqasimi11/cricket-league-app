@@ -1,12 +1,10 @@
-// lib/features/matches/screens/live_match_scoring_screen.dart
-// ignore_for_file: prefer_const_constructors
-
 import 'package:flutter/material.dart';
 import 'dart:convert';
-import 'dart:io';
 import '../../../core/api_client.dart';
 import '../../../core/websocket_service.dart';
-import 'post_match_screen.dart';
+import '../../../core/error_handler.dart';
+import '../models/ball_model.dart';
+import '../services/ball_sequence_service.dart';
 
 class LiveMatchScoringScreen extends StatefulWidget {
   final String teamA;
@@ -29,35 +27,45 @@ class LiveMatchScoringScreen extends StatefulWidget {
 }
 
 class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
+  // Scoreboard State
   String score = "0/0";
   String overs = "0.0";
   String crr = "0.00";
   String? currentInningId;
   bool isLoading = false;
+
   int? teamAId;
   int? teamBId;
-  int? currentBatsmanId;
+
+  // Active Players
+  int? strikerId;
+  int? nonStrikerId;
   int? currentBowlerId;
 
-  // Real data from API
+  // Data Stores
   List<Map<String, dynamic>> teamAPlayers = [];
   List<Map<String, dynamic>> teamBPlayers = [];
   Map<String, dynamic>? currentInning;
   List<Map<String, dynamic>> playerStats = [];
+  List<Map<String, String>> ballByBall = [];
 
-  // Over/ball state is now authoritative from server
-
-  final List<Map<String, String>> ballByBall = [];
+  // Logic Service
+  final BallSequenceService _ballService = BallSequenceService();
 
   @override
   void initState() {
     super.initState();
-    // Initialize team IDs from widget parameters
     teamAId = widget.teamAId;
     teamBId = widget.teamBId;
     _setupWebSocket();
-    _loadMatchData();
-    _loadPlayers();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _loadMatchData();
+    if (teamAId != null && teamBId != null) {
+      await _loadPlayers();
+    }
   }
 
   @override
@@ -66,229 +74,151 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
     super.dispose();
   }
 
+  // ---------------------------------------------------------------------------
+  // WebSocket & Data Management
+  // ---------------------------------------------------------------------------
+
   void _setupWebSocket() {
-    // Set up WebSocket callbacks
     WebSocketService.instance.onScoreUpdate = (data) {
       if (mounted) {
         _handleLiveUpdate(data);
+        WidgetsBinding.instance.addPostFrameCallback((_) => _checkEndOfOver());
       }
     };
 
     WebSocketService.instance.onInningsEnded = (data) {
-      if (mounted) {
-        _handleInningsEnded(data);
-      }
+      if (mounted) _handleInningsEnded(data);
     };
 
-    WebSocketService.instance.onConnected = () {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Connected to live scoring'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    };
-
-    WebSocketService.instance.onDisconnected = () {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Disconnected from live scoring'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    };
-
-    WebSocketService.instance.onError = (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('WebSocket error: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    };
-
-    // Connect to WebSocket
     WebSocketService.instance.connect(widget.matchId);
   }
 
   void _handleLiveUpdate(Map<String, dynamic> data) {
     try {
-      // Update innings data
+      String? nextInningId = currentInningId;
+      String? nextScore = score;
+      Map<String, dynamic>? nextInning = currentInning;
+      List<Map<String, dynamic>> nextPlayerStats = List.of(playerStats);
+
+      int? nextStriker = data['current_striker_id'] as int? ?? strikerId;
+      int? nextNonStriker =
+          data['current_non_striker_id'] as int? ?? nonStrikerId;
+      int? nextBowler = data['current_bowler_id'] as int? ?? currentBowlerId;
+
       if (data['inning'] != null) {
         final inning = data['inning'] as Map<String, dynamic>;
-        final runs = (inning['runs'] ?? 0).toString();
-        final wkts = (inning['wickets'] ?? 0).toString();
-        final ov = (inning['overs'] ?? 0).toString();
+        final runs = (inning['runs'] ?? 0) as int;
+        final wkts = (inning['wickets'] ?? 0) as int;
+        nextScore = '$runs/$wkts';
+        nextInningId = inning['id']?.toString() ?? nextInningId;
+        nextInning = inning;
+      } else if (data['innings'] != null &&
+          (data['innings'] as List).isNotEmpty) {
+        final inningsList = data['innings'] as List;
+        final active =
+            inningsList.firstWhere(
+                  (i) => i['status'] == 'in_progress',
+                  orElse: () => inningsList.last,
+                )
+                as Map<String, dynamic>;
 
-        setState(() {
-          score = '$runs/$wkts';
-          overs = ov;
-          // Compute CRR from runs and overs
-          final runsInt = int.tryParse(runs) ?? 0;
-          final oversDecimal = double.tryParse(ov) ?? 0.0;
-          crr = oversDecimal > 0
-              ? (runsInt / oversDecimal).toStringAsFixed(2)
-              : '0.00';
-        });
+        final runs = (active['runs'] ?? 0) as int;
+        final wkts = (active['wickets'] ?? 0) as int;
+        nextScore = '$runs/$wkts';
+        nextInningId = active['id']?.toString();
+        nextInning = active;
       }
 
-      // Update ball-by-ball data
-      if (data['allBalls'] != null) {
-        final balls = data['allBalls'] as List?;
-        if (balls != null) {
-        final mapped = balls.map<Map<String, String>>((b) {
-          final m = b as Map<String, dynamic>?;
-          if (m == null) return {};
-          final overNo = (m['over_number'] ?? '').toString();
-          final ballNo = (m['ball_number'] ?? '').toString();
-          final runs = (m['runs'] ?? '').toString();
-          final wicketType = (m['wicket_type'] ?? '').toString();
-          final extras = (m['extras'] as String?) ?? '';
+      if (data['player_stats'] != null && data['player_stats'] is List) {
+        nextPlayerStats = (data['player_stats'] as List)
+            .whereType<Map<String, dynamic>>()
+            .toList();
+      }
 
-            // Build display over with extras suffix
-            String overDisplay = '$overNo.$ballNo';
-            if (extras == 'wide') {
-              overDisplay += 'wd';
-            } else if (extras == 'no-ball') {
-              overDisplay += 'nb';
-            } else if (extras == 'bye') {
-              overDisplay += 'b';
-            } else if (extras == 'leg-bye') {
-              overDisplay += 'lb';
-            }
+      if (data['allBalls'] != null && data['allBalls'] is List) {
+        _syncBallService((data['allBalls'] as List));
+      }
 
-            final result = wicketType.isNotEmpty ? 'W' : runs;
-            final bowler = (m['bowler_name'] ?? '').toString();
-            final batsman = (m['batsman_name'] ?? '').toString();
+      final currentRuns = int.tryParse(nextScore.split('/').first ?? '0') ?? 0;
+      final serviceOvers = _ballService.getCurrentOverNotation();
 
-            String commentary;
-            if (wicketType.isNotEmpty) {
-              commentary = 'Wicket: $wicketType';
-            } else if (extras == 'wide') {
-              commentary = 'Wide + $runs runs';
-            } else if (extras == 'no-ball') {
-              commentary = 'No ball + $runs runs';
-            } else if (extras == 'bye') {
-              commentary = 'Byes: $runs';
-            } else if (extras == 'leg-bye') {
-              commentary = 'Leg byes: $runs';
-            } else {
-              commentary = 'Runs: $runs';
-            }
+      setState(() {
+        currentInningId = nextInningId;
+        currentInning = nextInning;
+        score = nextScore ?? score;
+        overs = serviceOvers;
+        crr = _crrFrom(currentRuns, serviceOvers);
+        playerStats = nextPlayerStats;
 
-            return {
-              'over': overDisplay,
-              'bowler': bowler,
-              'batsman': batsman,
-              'commentary': commentary,
-              'result': result,
-              'extras': extras,
-            };
-          }).toList();
-
-          setState(() {
-            ballByBall.clear();
-            ballByBall.addAll(mapped);
-          });
+        // Only update local pointers if we aren't currently loading a manual action
+        if (!isLoading) {
+          strikerId = nextStriker;
+          nonStrikerId = nextNonStriker;
+          currentBowlerId = nextBowler;
         }
-      }
+      });
     } catch (e) {
       debugPrint('Error handling live update: $e');
     }
   }
 
-  void _handleInningsEnded(Map<String, dynamic> data) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Innings ended'),
-        duration: Duration(seconds: 3),
-      ),
-    );
-    _loadMatchData(); // Refresh all data
-  }
+  void _syncBallService(List<dynamic> rawBalls) {
+    _ballService.clear();
+    final displayList = <Map<String, String>>[];
 
-  Future<void> _loadPlayers() async {
-    if (teamAId == null || teamBId == null) return;
+    for (var b in rawBalls) {
+      try {
+        final ball = Ball.fromJson(b);
+        _ballService.addBall(ball);
 
-    try {
-      // Load team A players
-      final teamAResponse = await ApiClient.instance.get('/api/teams/$teamAId');
-      if (teamAResponse.statusCode == 200) {
-        final teamAData = jsonDecode(teamAResponse.body);
-        // Assuming the response has a players array
-        setState(() {
-          teamAPlayers =
-              (teamAData['players'] as List?)
-                  ?.map((p) => p as Map<String, dynamic>)
-                  .toList() ??
-              [];
+        final m = b as Map<String, dynamic>;
+        final overNo = m['over_number']?.toString() ?? '';
+        final ballNo = m['ball_number']?.toString() ?? '';
+        final runs = m['runs']?.toString() ?? '0';
+        final wicketType = m['wicket_type']?.toString() ?? '';
+        final extras = m['extras']?.toString() ?? '';
+        final bowler = m['bowler_name']?.toString() ?? '';
+        final batsman = m['batsman_name']?.toString() ?? '';
+
+        final result = wicketType.isNotEmpty ? 'W' : runs;
+        String commentary;
+
+        if (wicketType.isNotEmpty) {
+          commentary = 'Wicket: $wicketType';
+        } else if (extras == 'wide') {
+          commentary = 'Wide + $runs';
+        } else if (extras == 'no-ball') {
+          commentary = 'No ball + $runs';
+        } else if (extras.isNotEmpty) {
+          commentary = '$extras: $runs';
+        } else {
+          commentary = 'Runs: $runs';
+        }
+
+        displayList.add({
+          'over': '$overNo.$ballNo',
+          'bowler': bowler,
+          'batsman': batsman,
+          'commentary': commentary,
+          'result': result,
+          'extras': extras,
         });
-      } else if (teamAResponse.statusCode == 401 || teamAResponse.statusCode == 403) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Authentication failed. Please log in again.')),
-          );
-        }
-      } else if (teamAResponse.statusCode == 404) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Team A not found.')),
-          );
-        }
-      } else if (teamAResponse.statusCode >= 500) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Server error loading team A.')),
-          );
-        }
-      }
-
-      // Load team B players
-      final teamBResponse = await ApiClient.instance.get('/api/teams/$teamBId');
-      if (teamBResponse.statusCode == 200) {
-        final teamBData = jsonDecode(teamBResponse.body);
-        setState(() {
-          teamBPlayers =
-              (teamBData['players'] as List?)
-                  ?.map((p) => p as Map<String, dynamic>)
-                  .toList() ??
-              [];
-        });
-      } else if (teamBResponse.statusCode == 401 || teamBResponse.statusCode == 403) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Authentication failed. Please log in again.')),
-          );
-        }
-      } else if (teamBResponse.statusCode == 404) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Team B not found.')),
-          );
-        }
-      } else if (teamBResponse.statusCode >= 500) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Server error loading team B.')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        final errorMessage = e is SocketException
-            ? 'No internet connection. Please check your network and try again.'
-            : 'Failed to load team players. Please try again.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
+      } catch (e) {
+        // Skip invalid
       }
     }
+
+    setState(() {
+      ballByBall = displayList.reversed.toList();
+    });
+  }
+
+  void _handleInningsEnded(Map<String, dynamic> data) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Innings ended')));
+    _loadMatchData();
   }
 
   Future<void> _loadMatchData() async {
@@ -300,77 +230,71 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
-        // Extract team IDs from match data if not already set
         if (teamAId == null && data['team1_id'] != null) {
-          teamAId = data['team1_id'] as int;
+          teamAId = data['team1_id'] as int?;
         }
         if (teamBId == null && data['team2_id'] != null) {
-          teamBId = data['team2_id'] as int;
+          teamBId = data['team2_id'] as int?;
         }
 
-        final innings = data['innings'] as List?;
-        if (innings != null && innings.isNotEmpty) {
-          final lastInning = innings.last as Map<String, dynamic>;
-          setState(() {
-            currentInningId = lastInning['id'].toString();
-            currentInning = lastInning;
-            score = '${lastInning['runs']}/${lastInning['wickets']}';
-            overs = lastInning['overs'].toString();
-          });
+        // If players aren't loaded yet, load them
+        if (teamAPlayers.isEmpty || teamBPlayers.isEmpty) {
+          await _loadPlayers();
         }
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Authentication failed. Please log in again.')),
+
+        _handleLiveUpdate(data);
+      }
+    } catch (e) {
+      debugPrint('Error loading match data: $e');
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _loadPlayers() async {
+    if (teamAId == null || teamBId == null) return;
+    try {
+      final results = await Future.wait([
+        ApiClient.instance.get('/api/teams/$teamAId'),
+        ApiClient.instance.get('/api/teams/$teamBId'),
+      ]);
+
+      if (mounted) {
+        if (results[0].statusCode == 200) {
+          final tA = jsonDecode(results[0].body);
+          setState(
+            () => teamAPlayers = List<Map<String, dynamic>>.from(
+              tA['players'] ?? [],
+            ),
           );
         }
-      } else if (response.statusCode == 404) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Match not found.')),
-          );
-        }
-      } else if (response.statusCode >= 500) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Server error. Please try again later.')),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to load match data (${response.statusCode})')),
+        if (results[1].statusCode == 200) {
+          final tB = jsonDecode(results[1].body);
+          setState(
+            () => teamBPlayers = List<Map<String, dynamic>>.from(
+              tB['players'] ?? [],
+            ),
           );
         }
       }
     } catch (e) {
-      if (mounted) {
-        final errorMessage = e is SocketException
-            ? 'No internet connection. Please check your network and try again.'
-            : 'Failed to load match data. Please try again.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
-      }
-    } finally {
-      setState(() => isLoading = false);
+      debugPrint('Error loading players: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Action Logic
+  // ---------------------------------------------------------------------------
+
+  void _checkEndOfOver() {
+    if (isLoading) return;
+    if (_ballService.isOverComplete()) {
+      _showEndOverDialog();
     }
   }
 
   Future<void> _startInnings() async {
-    if (currentInningId != null) return; // Innings already started
-
-    // Validate team IDs are available
-    if (teamAId == null || teamBId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Team information not available. Please refresh and try again.',
-          ),
-        ),
-      );
-      return;
-    }
+    if (teamAId == null || teamBId == null) return;
 
     setState(() => isLoading = true);
     try {
@@ -378,7 +302,7 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
         '/api/live/start-innings',
         body: {
           'match_id': widget.matchId,
-          'batting_team_id': teamAId,
+          'batting_team_id': teamAId, // Logic: Assume Team A bats first for now
           'bowling_team_id': teamBId,
           'inning_number': 1,
         },
@@ -386,61 +310,38 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        setState(() {
-          currentInningId = data['inning_id']?.toString();
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Innings started successfully')),
-        );
-      } else if (response.statusCode == 400) {
-        final data = jsonDecode(response.body);
+        setState(() => currentInningId = data['inning_id']?.toString());
+        _showSnack('Innings started successfully', isError: false);
+        await _loadMatchData();
+      } else {
+        _showSnack('Failed to start innings (Status: ${response.statusCode})');
+      }
+    } on ApiHttpException catch (e) {
+      if (e.statusCode == 403) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['error'] ?? 'Invalid innings data')),
-          );
-        }
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Authentication failed. Please log in again.')),
-          );
-        }
-      } else if (response.statusCode == 404) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Match not found.')),
-          );
-        }
-      } else if (response.statusCode == 409) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Innings already started for this match.')),
-          );
-        }
-      } else if (response.statusCode >= 500) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Server error. Please try again later.')),
+          await showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Access Denied'),
+              content: const Text(
+                'You do not have permission to start this match. Only the match creator or an admin can start scoring.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
           );
         }
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to start innings (${response.statusCode})')),
-          );
-        }
+        _showSnack('Error starting innings: ${e.message}');
       }
     } catch (e) {
-      if (mounted) {
-        final errorMessage = e is SocketException
-            ? 'No internet connection. Please check your network and try again.'
-            : 'Failed to start innings. Please try again.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
-      }
+      _showSnack('Error starting innings: $e');
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -450,495 +351,658 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
     String? wicketType,
     int? outPlayerId,
   }) async {
-    if (currentInningId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please start innings first')),
-      );
-      return;
+    // Validation
+    if (currentInningId == null) return _showSnack('Start innings first');
+    if (strikerId == null || currentBowlerId == null) {
+      return _showSnack('Select batter and bowler first');
     }
 
-    if (currentBatsmanId == null || currentBowlerId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select batsman and bowler before scoring'),
-        ),
-      );
-      return;
-    }
+    final int facingBatsmanId = strikerId!;
+    final int? originalStriker = strikerId;
+    final int? originalNonStriker = nonStrikerId;
+    final bool isOddRuns = runs % 2 != 0;
 
-    setState(() => isLoading = true);
+    // Optimistic Update
+    final oldScore = score;
+    final oldBallByBall = List<Map<String, String>>.from(ballByBall);
+
+    setState(() {
+      final parts = score.split('/');
+      int currentRuns = int.tryParse(parts[0]) ?? 0;
+      int currentWickets = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+      currentRuns += runs;
+      if (wicketType != null) currentWickets += 1;
+      score = '$currentRuns/$currentWickets';
+
+      ballByBall.insert(0, {
+        'over': _ballService.getCurrentOverNotation(),
+        'bowler': '...',
+        'batsman': '...',
+        'commentary': 'Sending...',
+        'result': wicketType != null ? 'W' : runs.toString(),
+        'extras': extras ?? '',
+      });
+
+      // Simple strike rotation simulation
+      if (isOddRuns && wicketType == null) {
+        strikerId = originalNonStriker;
+        nonStrikerId = originalStriker;
+      }
+    });
+
     try {
+      final nextIndices = _ballService.getNextDeliveryIndices();
+
       final response = await ApiClient.instance.post(
         '/api/live/ball',
         body: {
           'match_id': widget.matchId,
           'inning_id': currentInningId,
-          'batsman_id': currentBatsmanId,
+          'batsman_id': facingBatsmanId,
           'bowler_id': currentBowlerId,
           'runs': runs,
           'extras': extras,
           'wicket_type': wicketType,
           'out_player_id': outPlayerId,
+          'over_number': nextIndices['over_number'],
+          'ball_number': nextIndices['ball_number'],
         },
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        await _loadMatchData(); // Refresh data to get updated over/ball from server
-      } else if (response.statusCode == 400) {
-        final data = jsonDecode(response.body);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['error'] ?? 'Invalid ball data')),
-          );
-        }
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Authentication failed. Please log in again.')),
-          );
-        }
-      } else if (response.statusCode == 404) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Match or innings not found.')),
-          );
-        }
-      } else if (response.statusCode == 409) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Innings already ended or invalid state.')),
-          );
-        }
-      } else if (response.statusCode >= 500) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Server error. Please try again later.')),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to add ball (${response.statusCode})')),
-          );
-        }
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception('API Error ${response.statusCode}');
       }
     } catch (e) {
+      // Rollback
       if (mounted) {
-        final errorMessage = e is SocketException
-            ? 'No internet connection. Please check your network and try again.'
-            : 'Failed to add ball. Please try again.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
+        setState(() {
+          score = oldScore;
+          ballByBall = oldBallByBall;
+          strikerId = originalStriker;
+          nonStrikerId = originalNonStriker;
+        });
+        _showSnack('Failed to record ball');
       }
-    } finally {
-      setState(() => isLoading = false);
     }
   }
 
-  Future<void> _endInnings() async {
+  Future<void> _handleUndo() async {
     if (currentInningId == null) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Undo Last Ball?'),
+        content: const Text('This will delete the last ball and revert stats.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Undo', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
 
     setState(() => isLoading = true);
     try {
       final response = await ApiClient.instance.post(
-        '/api/live/end-innings',
-        body: {'inning_id': currentInningId},
+        '/api/live/undo',
+        body: {'match_id': widget.matchId, 'inning_id': currentInningId},
       );
-
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Innings ended successfully')),
-        );
-        setState(() {
-          currentInningId = null;
-        });
-      } else if (response.statusCode == 400) {
-        final data = jsonDecode(response.body);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(data['error'] ?? 'Invalid innings data')),
-          );
-        }
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Authentication failed. Please log in again.')),
-          );
-        }
-      } else if (response.statusCode == 404) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Innings not found.')),
-          );
-        }
-      } else if (response.statusCode == 409) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Innings already ended.')),
-          );
-        }
-      } else if (response.statusCode >= 500) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Server error. Please try again later.')),
-          );
-        }
+        _showSnack('Undo successful', isError: false);
+        await _loadMatchData();
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to end innings (${response.statusCode})')),
-          );
-        }
+        _showSnack('Undo failed');
       }
     } catch (e) {
-      if (mounted) {
-        final errorMessage = e is SocketException
-            ? 'No internet connection. Please check your network and try again.'
-            : 'Failed to end innings. Please try again.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
-      }
+      _showSnack('Network error during undo');
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        backgroundColor: Colors.green[700],
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          "${widget.teamA} vs ${widget.teamB}",
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        centerTitle: true,
-      ),
+  // ---------------------------------------------------------------------------
+  // Dialogs & Popups
+  // ---------------------------------------------------------------------------
 
-      body: Column(
-        children: [
-          // 🔹 Score Summary
-          Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A2C22),
-              borderRadius: BorderRadius.circular(12),
+  void _showEndOverDialog() {
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: const Color(0xFF122118),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Over Complete!",
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "$score ($overs)",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      "CRR: $crr",
-                      style: const TextStyle(color: Colors.grey, fontSize: 14),
-                    ),
-                  ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _selectNextBowler();
+                },
+                child: const Text(
+                  "Select Next Bowler",
+                  style: TextStyle(color: Colors.white),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: const [
-                    Text(
-                      "Partnership",
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                    Text(
-                      "45 (23)",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
-          ),
-
-          // 🔹 Batters + Bowler + Ball by Ball
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                _battersCard(),
-                const SizedBox(height: 12),
-                _bowlerCard(),
-                const SizedBox(height: 12),
-                _ballByBallFeed(),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-
-      // 🔹 Bottom Controls
-      bottomNavigationBar: _bottomControls(),
     );
   }
 
-  Widget _battersCard() {
-    // Find current batsmen from player stats
-    final currentBatsmen = playerStats
-        .where(
-          (p) =>
-              p['player_id'] == currentBatsmanId ||
-              (currentBatsmanId != null &&
-                  p['player_id'] != currentBatsmanId), // Show top 2 batsmen
-        )
-        .take(2)
-        .toList();
+  void _selectNextBowler() async {
+    // Ensure players are loaded
+    if (teamAPlayers.isEmpty || teamBPlayers.isEmpty) {
+      await _loadPlayers();
+    }
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A2C22),
-        borderRadius: BorderRadius.circular(12),
+    final bowlingTeamId = currentInning?['bowling_team_id'];
+
+    // Improved Team Selection Logic: Handle String/Int mismatch safely
+    List<Map<String, dynamic>> bowlingTeamPlayers = [];
+    if (bowlingTeamId.toString() == teamAId.toString()) {
+      bowlingTeamPlayers = teamAPlayers;
+    } else if (bowlingTeamId.toString() == teamBId.toString()) {
+      bowlingTeamPlayers = teamBPlayers;
+    } else {
+      // Fallback: If logic fails (shouldn't), try to guess by eliminating batting team
+      final battingId = currentInning?['batting_team_id'];
+      if (battingId != null) {
+        if (battingId.toString() == teamAId.toString())
+          bowlingTeamPlayers = teamBPlayers;
+        else
+          bowlingTeamPlayers = teamAPlayers;
+      }
+    }
+
+    final excludeIds = <int>{};
+    if (currentBowlerId != null) excludeIds.add(currentBowlerId!);
+
+    final newBowlerId = await showPlayerSelectPopup(
+      context,
+      bowlingTeamPlayers,
+      excludeIds,
+      bowlingTeamId ?? 0,
+      title: "Select Bowler",
+    );
+
+    if (newBowlerId != null) {
+      // Check if this is a new player (not in our current list)
+      // If so, reload data to get their name
+      bool isKnown = bowlingTeamPlayers.any((p) => p['id'] == newBowlerId);
+      if (!isKnown) {
+        await _loadPlayers();
+      }
+
+      setState(() {
+        currentBowlerId = newBowlerId;
+        // Swap batsmen at end of over
+        final temp = strikerId;
+        strikerId = nonStrikerId;
+        nonStrikerId = temp;
+      });
+    }
+  }
+
+  void _manageBatters() async {
+    // Ensure players are loaded
+    if (teamAPlayers.isEmpty || teamBPlayers.isEmpty) {
+      await _loadPlayers();
+    }
+
+    final battingTeamId = currentInning?['batting_team_id'];
+
+    // Improved Team Selection Logic
+    List<Map<String, dynamic>> battingTeamPlayers = [];
+    if (battingTeamId.toString() == teamAId.toString()) {
+      battingTeamPlayers = teamAPlayers;
+    } else if (battingTeamId.toString() == teamBId.toString()) {
+      battingTeamPlayers = teamBPlayers;
+    } else {
+      // Fallback
+      if (battingTeamId != null) {
+        debugPrint(
+          "Warning: Batting Team ID $battingTeamId matches neither A:$teamAId nor B:$teamBId",
+        );
+        // Attempt generous fallback
+        if (teamAPlayers.isNotEmpty)
+          battingTeamPlayers = teamAPlayers;
+        else if (teamBPlayers.isNotEmpty)
+          battingTeamPlayers = teamBPlayers;
+      }
+    }
+
+    // Determine who needs selection
+    String? selectionMode;
+    if (strikerId == null && nonStrikerId == null) {
+      selectionMode = 'both';
+    } else if (strikerId == null) {
+      selectionMode = 'striker';
+    } else if (nonStrikerId == null) {
+      selectionMode = 'nonStriker';
+    } else {
+      // Both exist, ask user who to change
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('Change Batter'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, 'striker'),
+              child: Text('Striker: ${_getPlayerName(strikerId)}'),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, 'nonStriker'),
+              child: Text('Non-Striker: ${_getPlayerName(nonStrikerId)}'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null) return;
+      selectionMode = choice;
+    }
+
+    final excludeIds = {strikerId, nonStrikerId}.whereType<int>().toSet();
+
+    if (selectionMode == 'both' || selectionMode == 'striker') {
+      final sId = await showPlayerSelectPopup(
+        context,
+        battingTeamPlayers,
+        excludeIds,
+        battingTeamId ?? 0,
+        title: "Select Striker",
+      );
+
+      if (sId != null) {
+        // Reload if new
+        if (!battingTeamPlayers.any((p) => p['id'] == sId)) {
+          await _loadPlayers();
+        }
+        setState(() => strikerId = sId);
+        excludeIds.add(sId);
+      }
+    }
+
+    if (selectionMode == 'both' || selectionMode == 'nonStriker') {
+      final nsId = await showPlayerSelectPopup(
+        context,
+        battingTeamPlayers,
+        excludeIds,
+        battingTeamId ?? 0,
+        title: "Select Non-Striker",
+      );
+      if (nsId != null) {
+        // Reload if new
+        if (!battingTeamPlayers.any((p) => p['id'] == nsId)) {
+          await _loadPlayers();
+        }
+        setState(() => nonStrikerId = nsId);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI Builders
+  // ---------------------------------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: Text("${widget.teamA} vs ${widget.teamB}"),
+        backgroundColor: Colors.green[800],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.undo),
+            onPressed: (!isLoading && currentInningId != null)
+                ? _handleUndo
+                : null,
+          ),
+        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
         children: [
+          _buildScoreHeader(),
+          Expanded(
+            child: currentInningId == null
+                ? _buildStartMatchView()
+                : _buildMatchView(),
+          ),
+        ],
+      ),
+      bottomNavigationBar: currentInningId != null
+          ? _buildScoringControls()
+          : null,
+    );
+  }
+
+  Widget _buildStartMatchView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.sports_cricket, size: 80, color: Colors.green),
+          const SizedBox(height: 20),
           const Text(
-            "Batters",
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+            "Match Ready to Start",
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green[700],
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            ),
+            onPressed: isLoading ? null : _startInnings,
+            icon: isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(Icons.play_arrow),
+            label: const Text("START INNINGS", style: TextStyle(fontSize: 18)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMatchView() {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        _buildBattersCard(),
+        const SizedBox(height: 12),
+        _buildBowlerCard(),
+        const SizedBox(height: 12),
+        _buildBallFeed(),
+      ],
+    );
+  }
+
+  Widget _buildScoreHeader() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      color: const Color(0xFF1A2C22),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "$score ($overs)",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Text(
+                  "CRR: $crr",
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          if (currentBatsmen.isEmpty)
-            const Text(
-              "No batsman data available",
-              style: TextStyle(color: Colors.grey, fontSize: 14),
-            )
-          else
-            ...currentBatsmen.map((batter) {
-              final name = (batter['player_name'] as String?) ?? 'Unknown';
-              final isOnStrike = batter['player_id'] == currentBatsmanId;
-              final displayName = isOnStrike ? '$name*' : name;
-              final runs = (batter['runs'] ?? 0).toString();
-              final balls = (batter['balls_faced'] ?? 0).toString();
-              // Calculate fours and sixes from runs (simplified)
-              final fours = ((batter['runs'] ?? 0) ~/ 4).toString();
-              final sixes = ((batter['runs'] ?? 0) ~/ 6).toString();
-              return _batterRow(displayName, runs, balls, fours, sixes);
-            }),
+          if (currentInningId != null) const SizedBox(width: 8),
+          if (currentInningId != null)
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              onPressed: () => _showEndInningsDialog(),
+              child: const Text("End Innings", style: TextStyle(fontSize: 12)),
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBattersCard() {
+    bool missingBatters = strikerId == null || nonStrikerId == null;
+
+    if (missingBatters) {
+      return Card(
+        color: const Color(0xFF1A2C22),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              const Text(
+                "Batters not selected",
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.person_add),
+                label: const Text("Select Batters"),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                onPressed: _manageBatters,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final s1 = playerStats.firstWhere(
+      (p) => p['player_id'] == strikerId,
+      orElse: () => {},
+    );
+    final s2 = playerStats.firstWhere(
+      (p) => p['player_id'] == nonStrikerId,
+      orElse: () => {},
+    );
+
+    return Card(
+      color: const Color(0xFF1A2C22),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  "Batters",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 18, color: Colors.white70),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: _manageBatters,
+                ),
+              ],
+            ),
+            const Divider(color: Colors.white24),
+            _batterRow(strikerId, s1, isStriker: true),
+            const SizedBox(height: 8),
+            _batterRow(nonStrikerId, s2, isStriker: false),
+          ],
+        ),
       ),
     );
   }
 
   Widget _batterRow(
-    String name,
-    String runs,
-    String balls,
-    String fours,
-    String sixes,
-  ) {
+    int? playerId,
+    Map<String, dynamic> stats, {
+    required bool isStriker,
+  }) {
+    final name = _getPlayerName(playerId);
+    final runs = stats['runs'] ?? 0;
+    final balls = stats['balls_faced'] ?? 0;
+    final fours = stats['fours'] ?? 0;
+    final sixes = stats['sixes'] ?? 0;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(name, style: const TextStyle(color: Colors.white)),
         Row(
           children: [
-            Text("$runs ($balls)", style: const TextStyle(color: Colors.white)),
-            const SizedBox(width: 8),
-            Text("4s: $fours", style: const TextStyle(color: Colors.white70)),
-            const SizedBox(width: 8),
-            Text("6s: $sixes", style: const TextStyle(color: Colors.white70)),
+            if (isStriker)
+              const Icon(Icons.play_arrow, color: Colors.green, size: 16),
+            const SizedBox(width: 4),
+            Text(
+              name,
+              style: TextStyle(
+                color: isStriker ? Colors.white : Colors.white70,
+                fontWeight: isStriker ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
           ],
+        ),
+        Text(
+          "$runs ($balls)  4s:$fours 6s:$sixes",
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
         ),
       ],
     );
   }
 
-  Widget _bowlerCard() {
-    // Find current bowler from player stats
-    final currentBowler = playerStats.firstWhere(
-      (p) => p['player_id'] == currentBowlerId,
-      orElse: () => <String, dynamic>{},
-    );
-
-    final bowlerName =
-        (currentBowler['player_name'] as String?) ?? 'Unknown Bowler';
-    final overs = (currentBowler['balls_bowled'] ?? 0) / 6.0;
-    const maidens = '0'; // Not tracked in current schema
-    final runs = (currentBowler['runs_conceded'] ?? 0).toString();
-    final wickets = (currentBowler['wickets'] ?? 0).toString();
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+  Widget _buildBowlerCard() {
+    if (currentBowlerId == null) {
+      return Card(
         color: const Color(0xFF1A2C22),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            bowlerName,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w500,
-            ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              const Text(
+                "Bowler not selected",
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.sports_baseball),
+                label: const Text("Select Bowler"),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                onPressed: _selectNextBowler,
+              ),
+            ],
           ),
-          Text(
-            "O: ${overs.toStringAsFixed(1)}  M: $maidens  R: $runs  W: $wickets",
-            style: const TextStyle(color: Colors.white70),
+        ),
+      );
+    }
+
+    final bowler = playerStats.firstWhere(
+      (p) => p['player_id'] == currentBowlerId,
+      orElse: () => {},
+    );
+    final name = _getPlayerName(currentBowlerId);
+    final balls = (bowler['balls_bowled'] as num?) ?? 0;
+    final o = (balls / 6).toStringAsFixed(1);
+    final r = bowler['runs_conceded'] ?? 0;
+    final w = bowler['wickets'] ?? 0;
+
+    return Card(
+      color: const Color(0xFF1A2C22),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        title: Text(
+          name,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
           ),
-        ],
+        ),
+        subtitle: const Text(
+          "Bowling now",
+          style: TextStyle(color: Colors.greenAccent, fontSize: 12),
+        ),
+        trailing: Text(
+          "O:$o R:$r W:$w",
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+        ),
+        onTap: _selectNextBowler, // Allow changing bowler mid-over if needed
       ),
     );
   }
 
-  Widget _ballByBallFeed() {
+  Widget _buildBallFeed() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          "Ball by Ball",
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
+          "Recent Deliveries",
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
-        ...ballByBall.map((ball) {
-          final overStr = ball["over"] ?? "";
-          final hasWide = overStr.contains('wd');
-          final hasNoBall = overStr.contains('nb');
-          final hasBye = overStr.contains('b') && !overStr.contains('nb');
-          final hasLegBye = overStr.contains('lb');
-          final hasExtras = hasWide || hasNoBall || hasBye || hasLegBye;
-
+        if (ballByBall.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              "No balls bowled yet.",
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        ...ballByBall.take(6).map((b) {
+          final res = b['result'] ?? '';
+          final isWicket = res == 'W';
+          final isBoundary = res == '4' || res == '6';
           return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A2C22),
-              borderRadius: BorderRadius.circular(12),
-              // Add border for extras
-              border: hasExtras
-                  ? Border.all(
-                      color: Colors.orange.withValues(alpha: 0.5),
-                      width: 1.5,
-                    )
-                  : null,
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!),
             ),
             child: Row(
               children: [
                 CircleAvatar(
-                  radius: 18,
-                  backgroundColor: ball["result"] == "W"
-                      ? Colors.red.withValues(alpha: 0.2)
-                      : hasExtras
-                      ? Colors.orange.withValues(alpha: 0.2)
-                      : const Color(0xFF264532),
+                  radius: 14,
+                  backgroundColor: isWicket
+                      ? Colors.red
+                      : (isBoundary ? Colors.green : Colors.grey[700]),
                   child: Text(
-                    ball["over"]!,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: ball["result"] == "W"
-                          ? Colors.red
-                          : hasExtras
-                          ? Colors.orange
-                          : Colors.green,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    b['result'] ?? '',
+                    style: const TextStyle(fontSize: 10, color: Colors.white),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              ball["commentary"] ?? "Ball",
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                          ),
-                          // Extras badge
-                          if (hasWide)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'WD',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          if (hasNoBall)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'NB',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: ball["result"] == "W" ? Colors.red : Colors.green,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
                   child: Text(
-                    ball["result"]!,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    "${b['over']} - ${b['commentary']} (${b['bowler']} to ${b['batsman']})",
+                    style: const TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -949,260 +1013,67 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
     );
   }
 
-  Widget _bottomControls() {
+  Widget _buildScoringControls() {
+    final bool canScore =
+        strikerId != null && nonStrikerId != null && currentBowlerId != null;
+    final bool isOverDone = _ballService.isOverComplete();
+
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: const BoxDecoration(
-        color: Color(0xFF122118),
-        border: Border(top: BorderSide(color: Color(0xFF264532))),
-      ),
+      color: Colors.white,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Runs buttons
           GridView.count(
             shrinkWrap: true,
             crossAxisCount: 4,
-            childAspectRatio: 2.5,
+            childAspectRatio: 1.3,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
             physics: const NeverScrollableScrollPhysics(),
-            children: ["0", "1", "2", "3", "4", "5", "6", "W"]
-                .map(
-                  (val) => ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: val == "W"
-                          ? Colors.red
-                          : Colors.green[700],
-                    ),
-                    onPressed: isLoading
-                        ? null
-                        : () async {
-                            if (val == "W") {
-                              // ignore: use_build_context_synchronously
-                              final ctx = context;
-                              _showWicketDialog(ctx);
-                              // Use batting team players for wicket replacement
-                              final battingTeamId =
-                                  currentInning?['batting_team_id'];
-                              final battingTeamPlayers =
-                                  battingTeamId == teamAId
-                                  ? teamAPlayers
-                                  : teamBPlayers;
-                              final batsman = await showNewBatsmanPopup(
-                                ctx, // ignore: use_build_context_synchronously
-                                battingTeamPlayers,
-                              );
-                              if (batsman != null) {
-                                setState(() => currentBatsmanId = batsman);
-                                await _addBall(runs: 0, wicketType: "bowled");
-                              }
-                            } else {
-                              await _addBall(runs: int.parse(val));
-                            }
-                          },
-                    child: Text(
-                      val,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    ),
+            children: ["0", "1", "2", "3", "4", "5", "6", "W"].map((val) {
+              return ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: val == "W"
+                      ? Colors.red
+                      : const Color(0xFF1A2C22),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                )
-                .toList(),
+                ),
+                onPressed: (isLoading || isOverDone || !canScore)
+                    ? null
+                    : () => _handleScoringInput(val),
+                child: Text(
+                  val,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+            }).toList(),
           ),
           const SizedBox(height: 12),
-
-          // Extras + Overthrow
           Row(
             children: [
               Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue[600],
-                  ),
-                  onPressed: () => _showExtrasBottomSheet(context),
-                  child: const Text(
-                    "Extras",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                child: OutlinedButton(
+                  onPressed: (isLoading || isOverDone || !canScore)
+                      ? null
+                      : _showExtrasBottomSheet,
+                  child: const Text("Extras (Wide/NB)"),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: TextField(
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: "Overthrow",
-                    hintStyle: const TextStyle(color: Colors.white70),
-                    filled: true,
-                    fillColor: Colors.blue[800],
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.orange[800],
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Start Innings button if not started
-          if (currentInningId == null)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                onPressed: isLoading ? null : _startInnings,
-                child: const Text(
-                  "Start Innings",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-
-          // Bottom Actions
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _actionButton("Undo"),
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                    ),
-                    onPressed: isLoading
-                        ? null
-                        : () async {
-                            // Use current bowling team players for next bowler
-                            final bowlingTeamId =
-                                currentInning?['bowling_team_id'];
-                            final bowlingTeamPlayers = bowlingTeamId == teamAId
-                                ? teamAPlayers
-                                : teamBPlayers;
-                            final ctx = context; // ignore: use_build_context_synchronously
-                            final nextBowler = await showEndOverPopup(
-                              ctx, // ignore: use_build_context_synchronously
-                              bowlingTeamPlayers,
-                            );
-                            if (nextBowler != null) {
-                              setState(() => currentBowlerId = nextBowler);
-                              // Over transition is handled by backend when balls are added
-                            }
-                          },
-                    child: const Text(
-                      "End Over",
-                      style: TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ),
-                ),
-              ),
-              _actionButton("End Innings", onPressed: _endInnings),
-
-              // end match button
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed: () {
-                  // ✅ Collect stats (replace these with your real data from scoring logic)
-                  final teamABatting = [
-                    {
-                      "name": "Player A1",
-                      "runs": 45,
-                      "balls": 30,
-                      "fours": 6,
-                      "sixes": 2,
-                      "sr": 150.0,
-                    },
-                    {
-                      "name": "Player A2",
-                      "runs": 10,
-                      "balls": 15,
-                      "fours": 1,
-                      "sixes": 0,
-                      "sr": 66.7,
-                    },
-                  ];
-                  final teamABowling = [
-                    {
-                      "name": "Player A3",
-                      "overs": 4,
-                      "maidens": 0,
-                      "runs": 25,
-                      "wickets": 2,
-                      "econ": 6.25,
-                    },
-                  ];
-                  final teamBBatting = [
-                    {
-                      "name": "Player B1",
-                      "runs": 60,
-                      "balls": 40,
-                      "fours": 8,
-                      "sixes": 1,
-                      "sr": 150.0,
-                    },
-                  ];
-                  final teamBBowling = [
-                    {
-                      "name": "Player B2",
-                      "overs": 4,
-                      "maidens": 1,
-                      "runs": 20,
-                      "wickets": 3,
-                      "econ": 5.0,
-                    },
-                  ];
-
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PostMatchScreen(
-                        teamA: widget.teamA,
-                        teamB: widget.teamB,
-                        teamABatting: teamABatting,
-                        teamABowling: teamABowling,
-                        teamBBatting: teamBBatting,
-                        teamBBowling: teamBBowling,
-
-                        // 🔹 later these will come from user login/session
-                        isCaptain: true,
-                        isRegisteredTeam: true,
-                      ),
-                    ),
-                  );
-                },
-                child: const Text(
-                  "End Match",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  onPressed: (isOverDone && !isLoading) ? _handleEndOver : null,
+                  child: const Text("End Over"),
                 ),
               ),
             ],
@@ -1212,522 +1083,367 @@ class _LiveMatchScoringScreenState extends State<LiveMatchScoringScreen> {
     );
   }
 
-  Widget _actionButton(
-    String text, {
-    bool isDanger = false,
-    VoidCallback? onPressed,
-  }) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: isDanger
-                ? Colors.red[800]
-                : const Color(0xFF1A2C22),
-          ),
-          onPressed:
-              onPressed ??
-              () {
-                debugPrint("Action: $text");
-              },
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
+  // ---------------------------------------------------------------------------
+  // Scoring Input Handlers
+  // ---------------------------------------------------------------------------
+
+  Future<void> _handleScoringInput(String val) async {
+    if (val == "W") {
+      await _handleWicket();
+    } else {
+      await _addBall(runs: int.parse(val));
+    }
   }
 
-  /// Show extras selection bottom sheet
-  void _showExtrasBottomSheet(BuildContext context) {
+  Future<void> _handleWicket() async {
+    final type = await _showSimpleDialog('Wicket Type', [
+      'Bowled',
+      'Caught',
+      'LBW',
+      'Run Out',
+      'Stumped',
+      'Hit Wicket',
+    ]);
+    if (type == null) return;
+
+    int runOutRuns = 0;
+    if (type == 'Run Out') {
+      final r = await _showSimpleDialog('Runs taken?', ['0', '1', '2', '3']);
+      runOutRuns = int.parse(r ?? '0');
+    }
+
+    final outId = await _showWhoIsOutDialog();
+    if (outId == null) return;
+
+    await _addBall(
+      runs: runOutRuns,
+      wicketType: type.toLowerCase().replaceAll(' ', '-'),
+      outPlayerId: outId,
+    );
+
+    if (!mounted) return;
+
+    // Auto prompt for new batsman
+    final battingTeamId = currentInning?['batting_team_id'];
+    final battingTeamPlayers = battingTeamId == teamAId
+        ? teamAPlayers
+        : teamBPlayers;
+    final excludeIds = {
+      strikerId,
+      nonStrikerId,
+      outId,
+    }.whereType<int>().toSet();
+
+    final newBatsmanId = await showPlayerSelectPopup(
+      context,
+      battingTeamPlayers,
+      excludeIds,
+      battingTeamId ?? 0,
+      title: "Who is the new batsman?",
+    );
+
+    if (newBatsmanId != null) {
+      setState(() {
+        if (outId == strikerId) {
+          strikerId = newBatsmanId;
+        } else {
+          nonStrikerId = newBatsmanId;
+        }
+      });
+    }
+  }
+
+  Future<void> _handleEndOver() async {
+    _showEndOverDialog();
+  }
+
+  void _showExtrasBottomSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(title: const Text('Wide'), onTap: () => _addExtra('wide')),
+          ListTile(
+            title: const Text('No Ball'),
+            onTap: () => _addExtra('no-ball'),
+          ),
+          ListTile(title: const Text('Bye'), onTap: () => _addExtra('bye')),
+          ListTile(
+            title: const Text('Leg Bye'),
+            onTap: () => _addExtra('leg-bye'),
+          ),
+        ],
       ),
-      builder: (_) {
-        String? selectedExtra;
-        final TextEditingController runsController = TextEditingController(
-          text: '1',
-        );
+    );
+  }
 
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "Extras",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close, color: Colors.white),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  GridView.count(
-                    shrinkWrap: true,
-                    crossAxisCount: 2,
-                    childAspectRatio: 2.5,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    children: [
-                      _extraButton("wide", "Wide", selectedExtra == "wide", () {
-                        setState(() => selectedExtra = "wide");
-                      }),
-                      _extraButton(
-                        "no-ball",
-                        "No Ball",
-                        selectedExtra == "no-ball",
-                        () {
-                          setState(() => selectedExtra = "no-ball");
-                        },
-                      ),
-                      _extraButton("bye", "Bye", selectedExtra == "bye", () {
-                        setState(() => selectedExtra = "bye");
-                      }),
-                      _extraButton(
-                        "leg-bye",
-                        "Leg Bye",
-                        selectedExtra == "leg-bye",
-                        () {
-                          setState(() => selectedExtra = "leg-bye");
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF264532),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          "Extra Runs",
-                          style: TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                        SizedBox(
-                          width: 60,
-                          child: TextField(
-                            controller: runsController,
-                            style: const TextStyle(color: Colors.white),
-                            textAlign: TextAlign.center,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              hintText: "1",
-                              hintStyle: TextStyle(color: Colors.white54),
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: selectedExtra != null
-                          ? Colors.green
-                          : Colors.grey,
-                      minimumSize: const Size(double.infinity, 50),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: selectedExtra != null
-                        ? () async {
-                            final runs = int.tryParse(runsController.text) ?? 1;
-                            Navigator.pop(context);
-                            await _addBall(runs: runs, extras: selectedExtra);
-                          }
-                        : null,
-                    child: const Text(
-                      "Add Extra",
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                    ),
-                  ),
-                ],
+  Future<void> _addExtra(String type) async {
+    Navigator.pop(context);
+    int runs = 1;
+    if (type == 'bye' || type == 'leg-bye') {
+      final r = await _showSimpleDialog('How many runs?', ['1', '2', '3', '4']);
+      runs = int.parse(r ?? '1');
+    }
+    await _addBall(runs: runs, extras: type);
+  }
+
+  void _showEndInningsDialog() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('End Innings?'),
+        content: const Text('Are you sure? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('End'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    setState(() => isLoading = true);
+    try {
+      await ApiClient.instance.post(
+        '/api/live/end-innings',
+        body: {'inning_id': currentInningId},
+      );
+      setState(() => currentInningId = null);
+      _showSnack('Innings Ended', isError: false);
+    } catch (e) {
+      _showSnack('Error ending innings');
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  String _getPlayerName(int? id) {
+    if (id == null) return 'None';
+
+    // 1. Try Player Stats (Most active)
+    final statPlayer = playerStats.firstWhere(
+      (p) => p['player_id'] == id,
+      orElse: () => {},
+    );
+    if (statPlayer.isNotEmpty && statPlayer['player_name'] != null) {
+      return statPlayer['player_name'];
+    }
+
+    // 2. Try Team A
+    final teamAPlayer = teamAPlayers.firstWhere(
+      (p) => p['id'] == id,
+      orElse: () => {},
+    );
+    if (teamAPlayer.isNotEmpty && teamAPlayer['player_name'] != null) {
+      return teamAPlayer['player_name'];
+    }
+
+    // 3. Try Team B
+    final teamBPlayer = teamBPlayers.firstWhere(
+      (p) => p['id'] == id,
+      orElse: () => {},
+    );
+    if (teamBPlayer.isNotEmpty && teamBPlayer['player_name'] != null) {
+      return teamBPlayer['player_name'];
+    }
+
+    return 'Unknown';
+  }
+
+  String _crrFrom(int runs, String overs) {
+    if (overs == "0.0") return "0.00";
+    final parts = overs.split('.');
+    final totalBalls = (int.parse(parts[0]) * 6) + int.parse(parts[1]);
+    if (totalBalls == 0) return "0.00";
+    return ((runs / totalBalls) * 6).toStringAsFixed(2);
+  }
+
+  void _showSnack(String msg, {bool isError = true}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<String?> _showSimpleDialog(String title, List<String> options) {
+    return showDialog<String>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: Text(title),
+        children: options
+            .map(
+              (o) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, o),
+                child: Text(o),
               ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _extraButton(
-    String value,
-    String text,
-    bool isSelected,
-    VoidCallback onTap,
-  ) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: isSelected ? Colors.orange : Colors.blue,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            )
+            .toList(),
       ),
-      onPressed: onTap,
-      child: Text(text, style: const TextStyle(color: Colors.white)),
+    );
+  }
+
+  Future<int?> _showWhoIsOutDialog() {
+    return showDialog<int>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Who is out?'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, strikerId),
+            child: Text('Striker: ${_getPlayerName(strikerId)}'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, nonStrikerId),
+            child: Text('Non-Striker: ${_getPlayerName(nonStrikerId)}'),
+          ),
+        ],
+      ),
     );
   }
 }
 
-// ✅ Updated to use real player data and return player ID
-Future<int?> showNewBatsmanPopup(
-  BuildContext context,
-  List<Map<String, dynamic>> teamPlayers,
-) async {
-  int? selectedPlayerId;
+// -----------------------------------------------------------------------------
+// Shared Popup Widget
+// -----------------------------------------------------------------------------
 
-  return await showModalBottomSheet<int>(
+Future<int?> showPlayerSelectPopup(
+  BuildContext context,
+  List<Map<String, dynamic>> players,
+  Set<int> excludeIds,
+  int teamId, {
+  required String title,
+}) {
+  final available = players
+      .where((p) => !excludeIds.contains(p['id']))
+      .toList();
+
+  return showModalBottomSheet<int>(
     context: context,
     backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  "Select New Batsman",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                if (teamPlayers.isEmpty)
-                  const Text(
-                    "No players available",
-                    style: TextStyle(color: Colors.grey),
-                  )
-                else
-                  GridView.builder(
-                    shrinkWrap: true,
-                    itemCount: teamPlayers.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          childAspectRatio: 3,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                        ),
-                    itemBuilder: (context, index) {
-                      final player = teamPlayers[index];
-                      final playerId = player['id'] as int;
-                      final playerName =
-                          player['player_name'] as String? ?? 'Unknown Player';
-
-                      return ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: selectedPlayerId == playerId
-                              ? Colors.green
-                              : const Color(0xFF264532),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: () =>
-                            setState(() => selectedPlayerId = playerId),
-                        child: Text(
-                          playerName,
-                          style: const TextStyle(color: Colors.white),
-                          textAlign: TextAlign.center,
-                        ),
-                      );
-                    },
-                  ),
-
-                const SizedBox(height: 16),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text(
-                          "Cancel",
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: selectedPlayerId != null
-                            ? () => Navigator.pop(context, selectedPlayerId)
-                            : null,
-                        child: const Text(
-                          "Confirm",
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    },
-  );
-}
-
-// ✅ Updated to use real player data and return player ID
-Future<int?> showEndOverPopup(
-  BuildContext context,
-  List<Map<String, dynamic>> bowlers,
-) async {
-  int? selectedBowlerId;
-  bool confirm = false;
-
-  return await showModalBottomSheet<int>(
-    context: context,
-    backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    builder: (ctx) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ),
+        ListTile(
+          leading: const CircleAvatar(
+            backgroundColor: Colors.green,
+            child: Icon(Icons.add, color: Colors.white),
+          ),
+          title: const Text(
+            'Add New Player',
+            style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+          ),
+          onTap: () async {
+            // Do not close the bottom sheet immediately.
+            // Wait for the dialog to complete, then close the bottom sheet with the result.
+            final newId = await _showAddPlayerDialog(context, teamId);
+            if (newId != null && context.mounted) {
+              Navigator.pop(ctx, newId);
+            }
+          },
+        ),
+        const Divider(),
+        Expanded(
+          child: ListView.builder(
+            itemCount: available.length,
+            itemBuilder: (ctx, i) {
+              final p = available[i];
+              return ListTile(
+                leading: const Icon(Icons.person),
+                title: Text(p['player_name'] ?? 'Unknown'),
+                onTap: () => Navigator.pop(ctx, p['id']),
+              );
+            },
+          ),
+        ),
+      ],
     ),
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      "End Over",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.grey),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                if (bowlers.isEmpty)
-                  const Text(
-                    "No bowlers available",
-                    style: TextStyle(color: Colors.grey),
-                  )
-                else
-                  DropdownButtonFormField<int>(
-                    dropdownColor: const Color(0xFF264532),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: "Select Next Bowler",
-                      labelStyle: TextStyle(color: Colors.grey),
-                      filled: true,
-                      fillColor: Color(0xFF264532),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(12)),
-                      ),
-                    ),
-                    initialValue: selectedBowlerId,
-                    items: bowlers.map((bowler) {
-                      final bowlerId = bowler['id'] as int;
-                      final bowlerName =
-                          bowler['player_name'] as String? ?? 'Unknown Bowler';
-                      return DropdownMenuItem<int>(
-                        value: bowlerId,
-                        child: Text(
-                          bowlerName,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (val) => setState(() => selectedBowlerId = val),
-                  ),
-
-                const SizedBox(height: 12),
-
-                Row(
-                  children: [
-                    Checkbox(
-                      value: confirm,
-                      activeColor: Colors.green,
-                      onChanged: (val) =>
-                          setState(() => confirm = val ?? false),
-                    ),
-                    const Text(
-                      "Confirm end of over",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text(
-                          "Cancel",
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: confirm && selectedBowlerId != null
-                            ? () => Navigator.pop(context, selectedBowlerId)
-                            : null,
-                        child: const Text(
-                          "Confirm",
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    },
   );
 }
 
-// ✅ Keep wicket + extras dialogs same as you had
+Future<int?> _showAddPlayerDialog(BuildContext context, int teamId) async {
+  final nameController = TextEditingController();
+  String role = 'Batsman';
 
-// wicket popup
-void _showWicketDialog(BuildContext context) {
-  showDialog(
+  return showDialog<int>(
     context: context,
-    barrierDismissible: false,
-    builder: (_) => Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+    builder: (ctx) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: const Text('Add New Player'),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              "Wicket Options",
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Player Name'),
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _wicketOption("Bowled"),
-                _wicketOption("Caught"),
-                _wicketOption("LBW"),
-                _wicketOption("Run Out"),
-                _wicketOption("Stumped"),
-                _wicketOption("Hit Wicket"),
-                _wicketOption("Retired Hurt", fullWidth: true),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
+            DropdownButton<String>(
+              value: role,
+              isExpanded: true,
+              items: [
+                'Batsman',
+                'Bowler',
+                'All-rounder',
+                'Wicket-keeper',
+              ].map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+              onChanged: (val) => setState(() => role = val!),
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.trim().isEmpty) return;
+              try {
+                final response = await ApiClient.instance.post(
+                  '/api/players',
+                  body: {
+                    'player_name': nameController.text.trim(),
+                    'player_role': role,
+                    'team_id': teamId,
+                    'is_temporary': true,
+                  },
+                );
+                if (response.statusCode == 201) {
+                  final data = jsonDecode(response.body);
+                  if (context.mounted) Navigator.pop(ctx, data['id']);
+                }
+              } catch (e) {
+                debugPrint('Error adding player: $e');
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
       ),
     ),
   );
 }
-
-Widget _wicketOption(String text, {bool fullWidth = false}) {
-  return SizedBox(
-    width: fullWidth ? double.infinity : 120,
-    child: ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.green[100],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      onPressed: () {
-        // ✅ handle wicket type selection
-      },
-      child: Text(text, style: const TextStyle(color: Colors.white)),
-    ),
-  );
-}
-
-// end over popup

@@ -1,3 +1,4 @@
+// lib/features/tournaments/providers/tournament_team_registration_provider.dart
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -5,10 +6,10 @@ import '../../../core/api_client.dart';
 import '../../../core/retry_policy.dart';
 import '../../../models/team.dart';
 
-/// State for tournament team registration
-class TournamentTeamRegistrationState extends ChangeNotifier {
-  final String tournamentId;
-  
+class TournamentTeamRegistrationProvider extends ChangeNotifier {
+  // [Fixed] Made optional in constructor to allow Provider creation before ID is known
+  String? tournamentId;
+
   final List<Team> _teams = [];
   final Set<String> _selectedTeamIds = {};
   bool _isLoading = false;
@@ -17,20 +18,20 @@ class TournamentTeamRegistrationState extends ChangeNotifier {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   bool _isDisposed = false;
-  
-  Future<void>? _fetchTeamsFuture;
-  
-  TournamentTeamRegistrationState(this.tournamentId) {
-    if (tournamentId.isEmpty) {
-      _error = 'Invalid tournament ID';
-      debugPrint('TournamentTeamRegistrationState created with empty tournament ID');
-    }
-    
+
+  // Constructor
+  TournamentTeamRegistrationProvider() {
     _searchController.addListener(_onSearchChanged);
   }
-  
-  /// Initialize the provider (call this after construction)
-  Future<void> initialize() async {
+
+  // [Added] Method to set ID and init
+  Future<void> init(String id) async {
+    tournamentId = id;
+    if (id.isEmpty) {
+      _error = 'Invalid tournament ID';
+      notifyListeners();
+      return;
+    }
     await fetchTeams();
   }
 
@@ -42,7 +43,6 @@ class TournamentTeamRegistrationState extends ChangeNotifier {
       return jsonDecode(body);
     } on FormatException catch (e) {
       debugPrint('JSON decode error: $e');
-      debugPrint('Response body: $body');
       throw FormatException('Invalid JSON response: ${e.message}');
     } catch (e) {
       debugPrint('Unexpected decode error: $e');
@@ -59,18 +59,25 @@ class TournamentTeamRegistrationState extends ChangeNotifier {
       }
     }
   }
-  
+
   List<Team> get teams => List.unmodifiable(_teams);
-  
+
   List<Team> get filteredTeams {
     try {
       if (_searchQuery.isEmpty) {
-        return List.from(_teams);
+        return _teams
+            .where((team) => !_registeredTeamIds.contains(team.id.toString()))
+            .toList();
       }
-      
+
       final query = _searchQuery.toLowerCase().trim();
       return _teams.where((team) {
         try {
+          // [Added] Filter out already registered teams
+          if (_registeredTeamIds.contains(team.id.toString())) {
+            return false;
+          }
+
           final teamName = team.teamName.toLowerCase();
           final location = team.location?.toLowerCase() ?? '';
           return teamName.contains(query) || location.contains(query);
@@ -84,184 +91,185 @@ class TournamentTeamRegistrationState extends ChangeNotifier {
       return List.from(_teams);
     }
   }
-  
+
   Set<Team> get selectedTeams {
     try {
-      return _teams.where((team) => _selectedTeamIds.contains(team.id.toString())).toSet();
+      return _teams
+          .where((team) => _selectedTeamIds.contains(team.id.toString()))
+          .toSet();
     } catch (e) {
       debugPrint('Error getting selected teams: $e');
       return {};
     }
   }
-  
+
   bool get isLoading => _isLoading;
   bool get isAddingTeam => _isAddingTeam;
   String? get error => _error;
   TextEditingController get searchController => _searchController;
-  Future<void>? get fetchTeamsFuture => _fetchTeamsFuture;
   String get searchQuery => _searchQuery;
-  
+
+  final Set<String> _registeredTeamIds = {};
+
   Future<void> fetchTeams() async {
     if (_isLoading || _isDisposed) return;
-    
+
     _setLoading(true);
     _error = null;
-    
+
     try {
-      final response = await RetryPolicy.execute(
+      // 1. Fetch ALL teams
+      debugPrint("🔍 Fetching teams from /api/teams...");
+      final allTeamsResponse = await RetryPolicy.execute(
         apiCall: () => ApiClient.instance.get('/api/teams'),
       );
-      
+
+      // 2. Fetch REGISTERED teams for this tournament
+      debugPrint(
+        "🔍 Fetching registered teams for tournament $tournamentId...",
+      );
+      final registeredTeamsResponse = await RetryPolicy.execute(
+        apiCall: () => ApiClient.instance.get(
+          '/api/tournament-teams?tournament_id=$tournamentId',
+        ),
+      );
+
       if (_isDisposed) return;
-      
-      if (response.statusCode == 200) {
-        final decoded = _safeJsonDecode(response.body);
-        
+
+      // Process Registered Teams
+      _registeredTeamIds.clear();
+      if (registeredTeamsResponse.statusCode == 200) {
+        final decoded = _safeJsonDecode(registeredTeamsResponse.body);
         List<dynamic> data = [];
-        
+        if (decoded is List) {
+          data = decoded;
+        } else if (decoded is Map && decoded['data'] is List) {
+          data = decoded['data'];
+        }
+
+        for (final item in data) {
+          if (item is Map && item['team_id'] != null) {
+            _registeredTeamIds.add(item['team_id'].toString());
+          }
+        }
+      }
+
+      // Process All Teams
+      if (allTeamsResponse.statusCode == 200) {
+        final decoded = _safeJsonDecode(allTeamsResponse.body);
+        List<dynamic> data = [];
+
         if (decoded is Map<String, dynamic>) {
-          if (decoded.containsKey('data')) {
-            final dataValue = decoded['data'];
-            if (dataValue is List) {
-              data = dataValue;
-            } else {
-              debugPrint('Expected List in "data" but got: ${dataValue.runtimeType}');
-            }
+          if (decoded.containsKey('data') && decoded['data'] is List) {
+            data = decoded['data'];
+          } else if (decoded.containsKey('teams') && decoded['teams'] is List) {
+            data = decoded['teams'];
+          } else if (decoded.containsKey('results') &&
+              decoded['results'] is List) {
+            data = decoded['results'];
           }
         } else if (decoded is List) {
           data = decoded;
-        } else {
-          debugPrint('Unexpected response format: ${decoded.runtimeType}');
         }
-        
+
         _teams.clear();
-        
         for (final item in data) {
           try {
             if (item is Map<String, dynamic>) {
               final team = Team.fromJson(item);
-              if (team.id.isNotEmpty && team.teamName.isNotEmpty) {
+              if (team.id.toString().isNotEmpty) {
                 _teams.add(team);
               }
-            } else {
-              debugPrint('Invalid team data type: ${item.runtimeType}');
             }
           } catch (e) {
-            debugPrint('Error parsing individual team: $e');
+            debugPrint('❌ Error parsing individual team: $e');
           }
         }
-        
-        debugPrint('Successfully loaded ${_teams.length} teams');
-      } else if (response.statusCode >= 500) {
-        _error = 'Server error. Please try again later.';
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        _error = 'Authentication failed. Please log in again.';
       } else {
-        _error = 'Failed to load teams. Please try again.';
+        _error = 'Failed to load teams (${allTeamsResponse.statusCode})';
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       if (_isDisposed) return;
-      
-      if (e is SocketException) {
-        _error = 'No internet connection. Please check your network and try again.';
-      } else {
-        _error = 'Failed to load teams. Please try again.';
-      }
-      debugPrint('Error fetching teams: $e');
-      debugPrint('Stack trace: $stackTrace');
+      _error = e is SocketException
+          ? 'No internet connection.'
+          : 'Failed to load teams.';
+      debugPrint('❌ Exception in fetchTeams: $e');
     } finally {
       if (!_isDisposed) {
         _setLoading(false);
       }
     }
   }
-  
+
   void toggleTeamSelection(Team team) {
     if (_isDisposed) return;
-    
+
     try {
-      if (team.id.isEmpty) {
-        debugPrint('Cannot select team with empty ID');
-        return;
-      }
-      
+      if (team.id.isEmpty) return;
+
       if (_selectedTeamIds.contains(team.id.toString())) {
         _selectedTeamIds.remove(team.id.toString());
       } else {
         _selectedTeamIds.add(team.id.toString());
       }
-      
+
       _safeNotifyListeners();
     } catch (e) {
       debugPrint('Error toggling team selection: $e');
     }
   }
-  
+
   Future<bool> addSelectedTeams() async {
     if (_selectedTeamIds.isEmpty || _isLoading || _isDisposed) return false;
-    
-    if (tournamentId.isEmpty) {
+
+    if (tournamentId == null || tournamentId!.isEmpty) {
       _error = 'Invalid tournament ID';
       _safeNotifyListeners();
       return false;
     }
-    
+
     _setLoading(true);
     _error = null;
-    
+
     try {
       final teamIds = List<String>.from(_selectedTeamIds);
-      
-      if (teamIds.isEmpty) {
-        _error = 'No teams selected';
-        return false;
-      }
-      
+
       final response = await RetryPolicy.execute(
         apiCall: () => ApiClient.instance.post(
           '/api/tournaments/$tournamentId/teams',
           body: {'team_ids': teamIds},
         ),
       );
-      
+
       if (_isDisposed) return false;
-      
+
       if (response.statusCode == 201 || response.statusCode == 200) {
         _selectedTeamIds.clear();
-        debugPrint('Successfully added ${teamIds.length} teams to tournament');
         return true;
       }
-      
+
       try {
         final data = _safeJsonDecode(response.body);
-        
         if (response.statusCode == 400) {
           _error = data is Map<String, dynamic>
               ? (data['error']?.toString() ?? 'Invalid team data')
               : 'Invalid team data';
-        } else if (response.statusCode == 401 || response.statusCode == 403) {
-          _error = 'Authentication failed. Please log in again.';
-        } else if (response.statusCode >= 500) {
-          _error = 'Server error. Please try again later.';
+        } else if (response.statusCode == 401) {
+          _error = 'Session expired. Please login again.';
         } else {
           _error = 'Failed to add teams (${response.statusCode})';
         }
       } catch (e) {
-        debugPrint('Error parsing error response: $e');
         _error = 'Failed to add teams (${response.statusCode})';
       }
-      
+
       return false;
-    } catch (e, stackTrace) {
+    } catch (e) {
       if (_isDisposed) return false;
-      
-      if (e is SocketException) {
-        _error = 'No internet connection. Please check your network and try again.';
-      } else {
-        _error = 'Failed to add teams. Please try again.';
-      }
-      debugPrint('Error adding teams to tournament: $e');
-      debugPrint('Stack trace: $stackTrace');
+      _error = e is SocketException
+          ? 'No internet connection.'
+          : 'Failed to add teams.';
+      debugPrint('Error adding teams: $e');
       return false;
     } finally {
       if (!_isDisposed) {
@@ -269,28 +277,22 @@ class TournamentTeamRegistrationState extends ChangeNotifier {
       }
     }
   }
-  
+
   Future<bool> addUnregisteredTeam(String name, String location) async {
     if (_isAddingTeam || _isDisposed) return false;
-    
+
     final teamName = name.trim();
     final teamLocation = location.trim();
-    
+
     if (teamName.isEmpty) {
       _error = 'Team name is required';
       _safeNotifyListeners();
       return false;
     }
-    
-    if (teamName.length < 2) {
-      _error = 'Team name must be at least 2 characters';
-      _safeNotifyListeners();
-      return false;
-    }
-    
+
     _setAddingTeam(true);
     _error = null;
-    
+
     try {
       final response = await RetryPolicy.execute(
         apiCall: () => ApiClient.instance.post(
@@ -302,47 +304,19 @@ class TournamentTeamRegistrationState extends ChangeNotifier {
           },
         ),
       );
-      
+
       if (_isDisposed) return false;
-      
+
       if (response.statusCode == 201 || response.statusCode == 200) {
         await fetchTeams();
-        debugPrint('Successfully created temporary team: $teamName');
         return true;
       }
-      
-      try {
-        final data = _safeJsonDecode(response.body);
-        
-        if (response.statusCode == 400) {
-          _error = data is Map<String, dynamic>
-              ? (data['error']?.toString() ?? 'Invalid team data')
-              : 'Invalid team data';
-        } else if (response.statusCode == 401 || response.statusCode == 403) {
-          _error = 'Authentication failed. Please log in again.';
-        } else if (response.statusCode == 409) {
-          _error = 'A team with this name already exists';
-        } else if (response.statusCode >= 500) {
-          _error = 'Server error. Please try again later.';
-        } else {
-          _error = 'Failed to create team (${response.statusCode})';
-        }
-      } catch (e) {
-        debugPrint('Error parsing error response: $e');
-        _error = 'Failed to create team (${response.statusCode})';
-      }
-      
+
+      _error = 'Failed to create team (${response.statusCode})';
       return false;
-    } catch (e, stackTrace) {
+    } catch (e) {
       if (_isDisposed) return false;
-      
-      if (e is SocketException) {
-        _error = 'No internet connection. Please check your network and try again.';
-      } else {
-        _error = 'Failed to create team. Please try again.';
-      }
-      debugPrint('Error creating team: $e');
-      debugPrint('Stack trace: $stackTrace');
+      _error = 'Failed to create team.';
       return false;
     } finally {
       if (!_isDisposed) {
@@ -350,151 +324,63 @@ class TournamentTeamRegistrationState extends ChangeNotifier {
       }
     }
   }
-  
+
   void clearError() {
     if (_isDisposed) return;
-    
-    try {
-      if (_error != null) {
-        _error = null;
-        _safeNotifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error clearing error: $e');
+    if (_error != null) {
+      _error = null;
+      _safeNotifyListeners();
     }
   }
-  
+
   void _onSearchChanged() {
     if (_isDisposed) return;
-    
-    try {
-      final newQuery = _searchController.text.trim();
-      if (_searchQuery != newQuery) {
-        _searchQuery = newQuery;
-        _safeNotifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error handling search change: $e');
+    final newQuery = _searchController.text.trim();
+    if (_searchQuery != newQuery) {
+      _searchQuery = newQuery;
+      _safeNotifyListeners();
     }
   }
-  
+
   void _setLoading(bool loading) {
     if (_isDisposed) return;
-    
-    try {
-      if (_isLoading != loading) {
-        _isLoading = loading;
-        _safeNotifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error setting loading state: $e');
+    if (_isLoading != loading) {
+      _isLoading = loading;
+      _safeNotifyListeners();
     }
   }
-  
+
   void _setAddingTeam(bool adding) {
     if (_isDisposed) return;
-    
-    try {
-      if (_isAddingTeam != adding) {
-        _isAddingTeam = adding;
-        _safeNotifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error setting adding team state: $e');
-    }
-  }
-  
-  void clearSearch() {
-    if (_isDisposed) return;
-    
-    try {
-      _searchController.clear();
-      _searchQuery = '';
+    if (_isAddingTeam != adding) {
+      _isAddingTeam = adding;
       _safeNotifyListeners();
-    } catch (e) {
-      debugPrint('Error clearing search: $e');
     }
   }
-  
-  void selectAllTeams() {
-    if (_isDisposed) return;
-    
-    try {
-      _selectedTeamIds.clear();
-      for (final team in _teams) {
-        if (team.id.isNotEmpty) {
-          _selectedTeamIds.add(team.id.toString());
-        }
-      }
-      _safeNotifyListeners();
-    } catch (e) {
-      debugPrint('Error selecting all teams: $e');
-    }
-  }
-  
+
   void clearSelection() {
     if (_isDisposed) return;
-    
-    try {
-      if (_selectedTeamIds.isNotEmpty) {
-        _selectedTeamIds.clear();
-        _safeNotifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error clearing selection: $e');
+    if (_selectedTeamIds.isNotEmpty) {
+      _selectedTeamIds.clear();
+      _safeNotifyListeners();
     }
   }
-  
-  int get teamCount {
-    try {
-      return _teams.length;
-    } catch (e) {
-      debugPrint('Error getting team count: $e');
-      return 0;
-    }
-  }
-  
-  int get selectedTeamCount {
-    try {
-      return _selectedTeamIds.length;
-    } catch (e) {
-      debugPrint('Error getting selected team count: $e');
-      return 0;
-    }
-  }
-  
+
+  int get teamCount => _teams.length;
+  int get selectedTeamCount => _selectedTeamIds.length;
+
   bool isTeamSelected(Team team) {
-    try {
-      if (team.id.isEmpty) return false;
-      return _selectedTeamIds.contains(team.id.toString());
-    } catch (e) {
-      debugPrint('Error checking if team is selected: $e');
-      return false;
-    }
+    if (team.id.isEmpty) return false;
+    return _selectedTeamIds.contains(team.id.toString());
   }
-  
-  Future<void> refresh() async {
-    await fetchTeams();
-  }
-  
+
   @override
   void dispose() {
     _isDisposed = true;
-    
-    try {
-      _searchController.removeListener(_onSearchChanged);
-      _searchController.dispose();
-    } catch (e) {
-      debugPrint('Error disposing search controller: $e');
-    }
-    
-    try {
-      _teams.clear();
-      _selectedTeamIds.clear();
-    } catch (e) {
-      debugPrint('Error clearing data on dispose: $e');
-    }
-    
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _teams.clear();
+    _selectedTeamIds.clear();
     super.dispose();
   }
 }

@@ -1,25 +1,28 @@
-import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:frontend/core/offline/conflict_resolver.dart';
 
-/// Simple notification-only SyncQueue that integrates with conflict resolution
-/// This provides the interface expected by ConflictResolver without complex dependencies
-class SyncQueue {
+/// Simple notification-only SyncQueue that integrates with conflict resolution.
+/// This avoids circular imports by implementing the listener interface.
+class SyncQueue implements ConflictResolutionListener {
   static SyncQueue? _instance;
   static SyncQueue get instance => _instance ??= SyncQueue._();
 
-  SyncQueue._();
+  SyncQueue._() {
+    // Register as the listener so ConflictResolver can notify us
+    ConflictResolver.setResolutionListener(this);
+  }
 
-  /// Notify that a conflict has been resolved
-  /// This allows the sync queue to proceed with the resolved data
-  Future<void> notifyConflictResolved(
+  /// Called by ConflictResolver when a conflict has been resolved
+  @override
+  Future<void> onConflictResolved(
     String operationId,
     ConflictResolution resolution,
   ) async {
     try {
       debugPrint('[SyncQueue] Conflict resolved for operation: $operationId');
-      debugPrint('[SyncQueue] Resolution strategy: ${resolution.appliedStrategy.name}');
-      debugPrint('[SyncQueue] Sync queue notified - resolved data ready for processing');
+      debugPrint('[SyncQueue] Strategy: ${resolution.appliedStrategy.name}');
+      debugPrint(
+          '[SyncQueue] Resolved data is ready for any post-processing in the queue');
     } catch (e) {
       debugPrint('[SyncQueue] Error processing conflict resolution: $e');
     }

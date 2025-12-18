@@ -1,70 +1,137 @@
-const db = require("../config/db");
+const { db } = require("../config/db");
 
-// Configurable profanity filter list - load from environment or use sanitized default
-const PROFANITY_LIST = process.env.PROFANITY_FILTER 
-  ? process.env.PROFANITY_FILTER.split(',').map(w => w.trim().toLowerCase())
-  : [
-      // Sanitized default list - generic categories only
-      'spam', 'scam', 'fake', 'bot'
-    ];
+// ==========================================
+// ⚙️ CONFIGURATION & CONSTANTS
+// ==========================================
 
-// If no profanity filter is configured, disable the feature
-const PROFANITY_FILTER_ENABLED = process.env.PROFANITY_FILTER_ENABLED === 'true' || 
-                                  process.env.PROFANITY_FILTER !== undefined;
+const CONFIG = {
+  MIN_LENGTH: 5,
+  MAX_LENGTH: 1000,
+  // Simple rate limit: Max 3 feedback submissions per hour per user/IP
+  RATE_LIMIT: {
+    WINDOW_SECONDS: 3600, // 1 hour
+    MAX_REQUESTS: 3
+  }
+};
 
-const MAX_FEEDBACK_LENGTH = 1000;
-const MIN_FEEDBACK_LENGTH = 5;
+// Initialize Profanity Filter (Pre-compiled for performance)
+// Instead of looping through arrays on every request, we use one optimized Regex.
+const PROFANITY_FILTER_ENABLED = process.env.PROFANITY_FILTER_ENABLED === 'true';
+
+let profanityRegex = null;
+
+if (PROFANITY_FILTER_ENABLED) {
+  const rawList = process.env.PROFANITY_FILTER 
+    ? process.env.PROFANITY_FILTER.split(',') 
+    : ['spam', 'scam', 'fake', 'bot']; // Default sanitized list
+
+  // Clean list and escape special regex characters just in case
+  const cleanedList = rawList
+    .map(w => w.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .filter(w => w.length > 0);
+
+  if (cleanedList.length > 0) {
+    // Creates a single regex like: /\b(spam|scam|fake|bot)\b/i
+    profanityRegex = new RegExp(`\\b(${cleanedList.join('|')})\\b`, 'i');
+  }
+}
+
+// ==========================================
+// 🛡️ HELPER FUNCTIONS
+// ==========================================
+
+/**
+ * Checks if the user/IP is spamming feedback
+ */
+const checkRateLimit = async (userId, ipAddress) => {
+  try {
+    // Logic: If user is logged in, throttle by User ID. If not, throttle by IP.
+    const query = userId 
+      ? "SELECT COUNT(*) as count FROM feedback WHERE user_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL ? SECOND)"
+      : "SELECT COUNT(*) as count FROM feedback WHERE user_id IS NULL AND created_at > DATE_SUB(NOW(), INTERVAL ? SECOND)"; // Note: You'd need an IP column in DB to throttle anons effectively, assuming User ID for now.
+    
+    // Note: For production without an IP column in the feedback table, 
+    // we strictly rate limit authenticated users. For anonymous, we might skip DB check or assume 0.
+    const params = userId ? [userId, CONFIG.RATE_LIMIT.WINDOW_SECONDS] : null;
+
+    if (!params) return true; // Skip check for anonymous if no IP tracking in DB
+
+    const [[{ count }]] = await db.query(query, params);
+    return Number(count) < CONFIG.RATE_LIMIT.MAX_REQUESTS;
+  } catch (e) {
+    // Fail open (allow request) if rate limit DB check fails to avoid blocking legitimate traffic on DB hiccup
+    console.warn("Rate limit check failed:", e.message);
+    return true;
+  }
+};
+
+/**
+ * Validates and sanitizes input payload
+ */
+const validateInput = (message) => {
+  if (!message) return { valid: false, error: "Message is required" };
+
+  // Normalize: Collapse multiple spaces to single space, trim
+  const normalized = String(message).trim().replace(/\s+/g, ' ');
+
+  if (normalized.length < CONFIG.MIN_LENGTH) {
+    return { valid: false, error: `Message must be at least ${CONFIG.MIN_LENGTH} characters` };
+  }
+
+  if (normalized.length > CONFIG.MAX_LENGTH) {
+    return { valid: false, error: `Message cannot exceed ${CONFIG.MAX_LENGTH} characters` };
+  }
+
+  if (profanityRegex && profanityRegex.test(normalized)) {
+    return { valid: false, error: "Inappropriate content detected. Please use respectful language." };
+  }
+
+  return { valid: true, value: normalized };
+};
+
+// ==========================================
+// 🎮 CONTROLLER
+// ==========================================
 
 const createFeedback = async (req, res) => {
   const userId = req.user?.id || null;
   const { message, contact } = req.body || {};
   
-  // Validate message presence and normalize
-  if (!message) {
-    return res.status(400).json({ error: "Message is required" });
-  }
-  
-  const normalized = String(message).trim().replace(/\s+/g, ' '); // normalize whitespace
-  
-  // Length validation
-  if (normalized.length < MIN_FEEDBACK_LENGTH) {
-    return res.status(400).json({ error: `Message must be at least ${MIN_FEEDBACK_LENGTH} characters` });
-  }
-  
-  if (normalized.length > MAX_FEEDBACK_LENGTH) {
-    return res.status(400).json({ error: `Message cannot exceed ${MAX_FEEDBACK_LENGTH} characters` });
-  }
-  
-  // Profanity filter with word boundary checks to reduce false positives
-  if (PROFANITY_FILTER_ENABLED) {
-    const lowered = normalized.toLowerCase();
-    const foundBadWord = PROFANITY_LIST.find((word) => {
-      // Use word boundaries to avoid false positives (e.g., "assignment" shouldn't trigger "ass")
-      const regex = new RegExp(`\\b${word}\\b`, 'i');
-      return regex.test(lowered);
-    });
-    
-    if (foundBadWord) {
-      // Log for abuse monitoring without revealing specific word
-      const ipAddress = req.ip || req.socket?.remoteAddress || null;
-      console.warn(`⚠️  Profanity detected in feedback from IP ${ipAddress}, user ${userId}`);
-      return res.status(400).json({ error: "Inappropriate content detected. Please use respectful language." });
+  // 1. Validation
+  const validation = validateInput(message);
+  if (!validation.valid) {
+    // If profanity detected, log it internally for abuse monitoring
+    if (validation.error.includes("Inappropriate")) {
+      console.warn(`⚠️ Profanity detected. User: ${userId || 'Anon'}, IP: ${req.ip}`);
     }
+    return res.status(400).json({ error: validation.error });
   }
-  
+
   try {
-    // Optional: check for spam/abuse by rate limiting per IP or user
-    const ipAddress = req.ip || req.socket?.remoteAddress || null;
-    const userAgent = req.headers['user-agent'] || null;
-    
+    // 2. Rate Limiting (Prevent Spam)
+    const isAllowed = await checkRateLimit(userId, req.ip);
+    if (!isAllowed) {
+      return res.status(429).json({ error: "You are sending feedback too quickly. Please try again later." });
+    }
+
+    // 3. Sanitization of optional fields
+    const sanitizedContact = contact ? String(contact).trim().substring(0, 100) : null; // Cap contact length
+
+    // 4. Database Insertion
     await db.query(
       "INSERT INTO feedback (user_id, message, contact) VALUES (?, ?, ?)",
-      [userId, normalized, contact ? String(contact).trim() : null]
+      [userId, validation.value, sanitizedContact]
     );
     
     return res.status(201).json({ message: "Feedback received. Thank you!" });
+
   } catch (err) {
-    req.log?.error("createFeedback: Database error", { error: err.message, code: err.code, userId, ipAddress: req.ip });
+    console.error("createFeedback: Database error", { 
+      message: err.message, 
+      code: err.code, 
+      userId,
+      // Don't log full message payload to avoid polluting logs with potentially huge strings
+    });
     return res.status(500).json({ error: "Server error" });
   }
 };

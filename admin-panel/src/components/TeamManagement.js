@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { adminAPI } from '../services/api';
-import Pagination from './Pagination';
-import Icon from './Icon';
 
 const TeamManagement = ({ onToast }) => {
   const [teams, setTeams] = useState([]);
@@ -9,10 +7,17 @@ const TeamManagement = ({ onToast }) => {
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // Modals
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  
   const [actionLoading, setActionLoading] = useState(false);
+  
+  // Progress Bar State (For Rate Limiting)
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('name');
   const [editForm, setEditForm] = useState({
@@ -31,67 +36,96 @@ const TeamManagement = ({ onToast }) => {
 
   useEffect(() => {
     fetchTeams();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Reset pagination when search/sort changes
   useEffect(() => {
+    setCurrentPage(1); 
     applyFiltersAndSort();
-  }, [teams, searchTerm, sortBy]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, sortBy, teams]);
 
   const fetchTeams = async () => {
     try {
       setLoading(true);
       setError('');
       const response = await adminAPI.getAllTeams();
-      setTeams(response.data);
-      onToast?.('Teams loaded successfully', 'success');
+      console.log('Teams API Response:', response.data);
+
+      // Smart Unwrap Logic
+      let teamsData = [];
+      if (Array.isArray(response.data)) {
+        teamsData = response.data;
+      } else if (response.data && Array.isArray(response.data.teams)) {
+        teamsData = response.data.teams;
+      } else if (response.data && Array.isArray(response.data.data)) {
+        teamsData = response.data.data;
+      }
+
+      setTeams(teamsData);
     } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Failed to load teams';
+      console.error('Fetch Teams Error:', err);
+      const errorMsg = err.userMessage || 'Failed to load teams';
       setError(errorMsg);
-      onToast?.(errorMsg, 'error');
+      if (onToast) onToast(errorMsg, 'error');
     } finally {
       setLoading(false);
     }
   };
 
   const applyFiltersAndSort = () => {
+    if (!teams) return;
     let filtered = [...teams];
 
     // Apply search
     if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
       filtered = filtered.filter(team =>
-        team.team_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        team.team_location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        team.owner_phone.includes(searchTerm)
+        (team.team_name && team.team_name.toLowerCase().includes(lowerTerm)) ||
+        (team.team_location && team.team_location.toLowerCase().includes(lowerTerm)) ||
+        (team.owner_phone && team.owner_phone.includes(lowerTerm))
       );
     }
 
     // Apply sorting
     switch (sortBy) {
       case 'wins':
-        filtered.sort((a, b) => b.matches_won - a.matches_won);
+        filtered.sort((a, b) => (b.matches_won || 0) - (a.matches_won || 0));
         break;
       case 'trophies':
-        filtered.sort((a, b) => b.trophies - a.trophies);
+        filtered.sort((a, b) => (b.trophies || 0) - (a.trophies || 0));
         break;
       case 'players':
-        filtered.sort((a, b) => b.player_count - a.player_count);
+        filtered.sort((a, b) => (b.player_count || 0) - (a.player_count || 0));
         break;
       default: // 'name'
-        filtered.sort((a, b) => a.team_name.localeCompare(b.team_name));
+        filtered.sort((a, b) => (a.team_name || '').localeCompare(b.team_name || ''));
     }
 
     setFilteredTeams(filtered);
   };
 
+  // --- SAFETY HELPER: Slow down requests ---
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // --- Actions ---
+
   const handleViewDetails = async (team) => {
     try {
       setActionLoading(true);
-      const response = await adminAPI.getTeamDetails(team.id);
-      setSelectedTeam(response.data);
+      // Try to fetch detailed data, fallback to list data if fail
+      let detailedTeam = team;
+      try {
+          const response = await adminAPI.getTeamDetails(team.id);
+          // Unwrap detail response if necessary
+          detailedTeam = response.data.team || response.data.data || response.data || team;
+      } catch (e) {
+          console.warn('Could not fetch extra details, showing basic info', e);
+      }
+      
+      setSelectedTeam(detailedTeam);
       setShowDetailsModal(true);
-    } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Failed to load team details';
-      onToast?.(errorMsg, 'error');
     } finally {
       setActionLoading(false);
     }
@@ -99,8 +133,8 @@ const TeamManagement = ({ onToast }) => {
 
   const handleEditTeam = (team) => {
     setEditForm({
-      team_name: team.team_name,
-      team_location: team.team_location,
+      team_name: team.team_name || '',
+      team_location: team.team_location || '',
       team_logo_url: team.team_logo_url || ''
     });
     setSelectedTeam(team);
@@ -109,13 +143,15 @@ const TeamManagement = ({ onToast }) => {
 
   const handleUpdateTeam = async () => {
     if (!selectedTeam || !editForm.team_name || !editForm.team_location) {
-      onToast?.('Please fill in all required fields', 'error');
+      if (onToast) onToast('Please fill in Name and Location', 'error');
       return;
     }
 
     try {
       setActionLoading(true);
       await adminAPI.updateTeam(selectedTeam.id, editForm);
+      
+      // Update local state
       setTeams(teams.map(team =>
         team.id === selectedTeam.id
           ? { ...team, ...editForm }
@@ -123,10 +159,9 @@ const TeamManagement = ({ onToast }) => {
       ));
       setShowEditModal(false);
       setSelectedTeam(null);
-      onToast?.('Team updated successfully', 'success');
+      if (onToast) onToast('Team updated successfully', 'success');
     } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Failed to update team';
-      onToast?.(errorMsg, 'error');
+      if (onToast) onToast(err.userMessage || 'Failed to update team', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -138,19 +173,20 @@ const TeamManagement = ({ onToast }) => {
     try {
       setActionLoading(true);
       await adminAPI.deleteTeam(selectedTeam.id);
-      setTeams(teams.filter(team => team.id !== selectedTeam.id));
+      
+      setTeams(prev => prev.filter(team => team.id !== selectedTeam.id));
       setShowDeleteModal(false);
       setSelectedTeam(null);
-      onToast?.('Team deleted successfully', 'success');
+      if (onToast) onToast('Team deleted successfully', 'success');
     } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Failed to delete team';
-      onToast?.(errorMsg, 'error');
+      if (onToast) onToast(err.userMessage || 'Failed to delete team', 'error');
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Bulk actions handlers
+  // --- Bulk Actions (FIXED FOR RATE LIMITS) ---
+
   const handleSelectTeam = (teamId) => {
     setSelectedTeams(prev =>
       prev.includes(teamId)
@@ -171,18 +207,45 @@ const TeamManagement = ({ onToast }) => {
   const handleBulkDelete = async () => {
     if (selectedTeams.length === 0) return;
 
-    try {
-      setActionLoading(true);
-      await Promise.all(selectedTeams.map(teamId => adminAPI.deleteTeam(teamId)));
-      setTeams(teams.filter(team => !selectedTeams.includes(team.id)));
-      setSelectedTeams([]);
-      setSelectAll(false);
-      onToast?.(`${selectedTeams.length} teams deleted successfully`, 'success');
-    } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Failed to delete teams';
-      onToast?.(errorMsg, 'error');
-    } finally {
-      setActionLoading(false);
+    if (!window.confirm(`Are you sure you want to delete ${selectedTeams.length} teams? This cannot be undone.`)) {
+      return;
+    }
+
+    setActionLoading(true);
+    // Initialize Progress
+    setProgress({ current: 0, total: selectedTeams.length });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Execute sequentially with DELAY to avoid server rate limits
+    for (let i = 0; i < selectedTeams.length; i++) {
+        const teamId = selectedTeams[i];
+        try {
+          await adminAPI.deleteTeam(teamId);
+          successCount++;
+        } catch (e) {
+          console.error(`Failed to delete team ${teamId}:`, e);
+          failCount++;
+        }
+
+        // Update progress bar
+        setProgress({ current: i + 1, total: selectedTeams.length });
+
+        // WAIT 800ms before the next request (prevents Rate Limit Exceeded)
+        await delay(800); 
+    }
+
+    setTeams(prev => prev.filter(team => !selectedTeams.includes(team.id)));
+    setSelectedTeams([]);
+    setSelectAll(false);
+    setActionLoading(false);
+    setProgress({ current: 0, total: 0 });
+    
+    if (failCount > 0) {
+      if (onToast) onToast(`Deleted ${successCount} teams. Failed: ${failCount}`, 'warning');
+    } else {
+      if (onToast) onToast(`${successCount} teams deleted successfully`, 'success');
     }
   };
 
@@ -193,74 +256,75 @@ const TeamManagement = ({ onToast }) => {
   const endIndex = startIndex + itemsPerPage;
   const paginatedTeams = filteredTeams.slice(startIndex, endIndex);
 
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-    setSelectedTeams([]); // Clear selections when changing pages
-    setSelectAll(false);
-  };
-
-  const handleItemsPerPageChange = (newItemsPerPage) => {
-    setItemsPerPage(newItemsPerPage);
-    setCurrentPage(1); // Reset to first page
-    setSelectedTeams([]);
-    setSelectAll(false);
-  };
-
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-          <p className="text-gray-700">Loading teams...</p>
-        </div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Team Management</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          View and manage all teams in the system (Total: {teams.length})
-        </p>
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Team Management</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Total Teams: {teams.length}
+          </p>
+        </div>
       </div>
 
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg flex justify-between items-center">
           <span>{error}</span>
-          <button
-            onClick={fetchTeams}
-            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm"
-          >
+          <button onClick={fetchTeams} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm">
             Retry
           </button>
         </div>
       )}
 
+      {/* Progress Bar for Bulk Actions */}
+      {actionLoading && progress.total > 0 && (
+        <div className="mb-4 bg-blue-50 border border-blue-100 rounded-lg p-4">
+            <div className="flex justify-between mb-1">
+                <span className="text-sm font-medium text-blue-700">Processing deletion...</span>
+                <span className="text-sm font-medium text-blue-700">{progress.current}/{progress.total}</span>
+            </div>
+            <div className="w-full bg-blue-200 rounded-full h-2.5">
+                <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${(progress.current / progress.total) * 100}%` }}></div>
+            </div>
+        </div>
+      )}
+
       {/* Search and Sort */}
-      <div className="mb-6 bg-white p-4 rounded-lg shadow space-y-4">
+      <div className="mb-6 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
               Search teams
             </label>
-            <input
-              type="text"
-              placeholder="Search by name, location, or owner..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-            />
+            <div className="relative rounded-md shadow-sm">
+                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                 </div>
+                 <input
+                  type="text"
+                  placeholder="Name, location, owner..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2 border"
+                 />
+            </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
               Sort by
             </label>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+              className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md border"
             >
               <option value="name">Team Name</option>
               <option value="wins">Matches Won</option>
@@ -272,61 +336,58 @@ const TeamManagement = ({ onToast }) => {
       </div>
 
       {/* Bulk Actions Bar */}
-      {selectedTeams.length > 0 && (
-        <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+      {selectedTeams.length > 0 && !actionLoading && (
+        <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-4 transition-all duration-300">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <span className="text-sm font-medium text-indigo-800">
-                {selectedTeams.length} team{selectedTeams.length !== 1 ? 's' : ''} selected
+                {selectedTeams.length} selected
               </span>
               <button
                 onClick={() => setSelectedTeams([])}
                 className="text-sm text-indigo-600 hover:text-indigo-800 underline"
               >
-                Clear selection
+                Clear
               </button>
             </div>
-            <div className="flex space-x-2">
-              <button
-                onClick={handleBulkDelete}
-                disabled={actionLoading}
-                className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50 flex items-center space-x-2"
-              >
-                <Icon name="trash2" size={16} />
-                <span>{actionLoading ? 'Deleting...' : 'Delete Selected'}</span>
-              </button>
-            </div>
+            <button
+              onClick={handleBulkDelete}
+              disabled={actionLoading}
+              className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50 flex items-center space-x-2 shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+              <span>Delete Selected</span>
+            </button>
           </div>
         </div>
       )}
 
       {/* Teams List */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
+      <div className="bg-white shadow overflow-hidden sm:rounded-md border border-gray-200">
         {filteredTeams.length === 0 ? (
-          <div className="p-8 text-center">
-            <p className="text-gray-500">No teams found matching your criteria</p>
+          <div className="p-10 text-center">
+            <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            <p className="mt-2 text-sm text-gray-500">No teams found matching your search.</p>
           </div>
         ) : (
           <>
-            {/* Table Header with Select All */}
-            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-              <div className="flex items-center">
+            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center">
                 <input
                   type="checkbox"
                   checked={selectAll}
                   onChange={handleSelectAll}
+                  disabled={actionLoading}
                   className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                 />
-                <span className="ml-3 text-sm font-medium text-gray-900">
-                  Select All ({paginatedTeams.length} teams on this page)
+                <span className="ml-3 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Select All
                 </span>
-              </div>
             </div>
 
             <ul className="divide-y divide-gray-200">
               {paginatedTeams.map((team) => (
-                <li key={team.id}>
-                  <div className="px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <li key={team.id} className="hover:bg-gray-50 transition-colors duration-150">
+                  <div className="px-4 py-4 flex items-center justify-between">
                     <div className="flex items-center flex-1 min-w-0">
                       {/* Checkbox */}
                       <div className="flex-shrink-0 mr-4">
@@ -334,6 +395,7 @@ const TeamManagement = ({ onToast }) => {
                           type="checkbox"
                           checked={selectedTeams.includes(team.id)}
                           onChange={() => handleSelectTeam(team.id)}
+                          disabled={actionLoading}
                           className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                         />
                       </div>
@@ -342,14 +404,14 @@ const TeamManagement = ({ onToast }) => {
                       <div className="flex-shrink-0 mr-4">
                         {team.team_logo_url ? (
                           <img
-                            className="h-12 w-12 rounded-full object-cover"
+                            className="h-12 w-12 rounded-full object-cover border border-gray-200"
                             src={team.team_logo_url}
                             alt={team.team_name}
-                            onError={(e) => e.target.style.display = 'none'}
+                            onError={(e) => { e.target.onerror = null; e.target.src = "https://via.placeholder.com/150?text=" + team.team_name.charAt(0); }}
                           />
                         ) : (
-                          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center text-white font-bold">
-                            {team.team_name.charAt(0)}
+                          <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold border border-indigo-200">
+                            {team.team_name ? team.team_name.charAt(0).toUpperCase() : 'T'}
                           </div>
                         )}
                       </div>
@@ -359,195 +421,164 @@ const TeamManagement = ({ onToast }) => {
                         <div className="text-sm font-bold text-gray-900 truncate">
                           {team.team_name}
                         </div>
-                        <div className="text-sm text-gray-500">
-                          {team.team_location} • {team.player_count} players
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          Owner: {team.owner_phone} {team.owner_is_admin && '(Admin)'}
+                        <div className="text-sm text-gray-500 flex items-center">
+                           <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                           {team.team_location || 'No Location'} • {team.player_count || 0} players
                         </div>
                       </div>
                     </div>
 
-                    {/* Stats and Actions */}
+                    {/* Actions */}
                     <div className="flex items-center space-x-2 ml-4 flex-shrink-0">
-                      <div className="text-right hidden sm:block">
-                        <div className="text-sm font-semibold text-gray-900">
-                          {team.matches_played} matches
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {team.matches_won}W • {team.trophies} trophies
-                        </div>
+                      <div className="text-right hidden sm:block mr-4">
+                        <div className="text-sm font-semibold text-gray-900">{team.matches_played || 0} matches</div>
+                        <div className="text-xs text-gray-500">{team.matches_won || 0} wins</div>
                       </div>
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleViewDetails(team)}
-                          disabled={actionLoading}
-                          className="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
-                        >
-                          View
-                        </button>
-                        <button
-                          onClick={() => handleEditTeam(team)}
-                          className="bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-md text-sm font-medium transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedTeam(team);
-                            setShowDeleteModal(true);
-                          }}
-                          className="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1 rounded-md text-sm font-medium transition-colors"
-                        >
-                          Delete
-                        </button>
-                      </div>
+                      
+                      <button onClick={() => handleViewDetails(team)} disabled={actionLoading} className="text-indigo-600 hover:text-indigo-900 p-2">
+                         <span className="sr-only">View</span>
+                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                      </button>
+                      <button onClick={() => handleEditTeam(team)} disabled={actionLoading} className="text-green-600 hover:text-green-900 p-2">
+                         <span className="sr-only">Edit</span>
+                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                      </button>
+                      <button onClick={() => { setSelectedTeam(team); setShowDeleteModal(true); }} disabled={actionLoading} className="text-red-600 hover:text-red-900 p-2">
+                         <span className="sr-only">Delete</span>
+                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                      </button>
                     </div>
                   </div>
                 </li>
               ))}
             </ul>
 
-            {/* Pagination */}
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              totalItems={totalItems}
-              itemsPerPage={itemsPerPage}
-              onPageChange={handlePageChange}
-              onItemsPerPageChange={handleItemsPerPageChange}
-            />
+            {/* Pagination Controls */}
+            {filteredTeams.length > 0 && (
+              <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+                <div className="flex-1 flex justify-between sm:hidden">
+                  <button
+                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                    className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                    className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm text-gray-700">
+                      Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(endIndex, totalItems)}</span> of <span className="font-medium">{totalItems}</span> results
+                    </p>
+                  </div>
+                  <div>
+                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                      <button
+                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1}
+                        className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${currentPage === 1 ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-50'}`}
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage === totalPages}
+                        className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${currentPage === totalPages ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-50'}`}
+                      >
+                        Next
+                      </button>
+                    </nav>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
 
-      {/* Team Details Modal */}
+      {/* Details Modal */}
       {showDetailsModal && selectedTeam && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
-          <div className="relative w-full max-w-md shadow-lg rounded-md bg-white">
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-lg shadow-xl rounded-lg bg-white overflow-hidden">
+            <div className="bg-gray-50 px-6 py-4 border-b flex justify-between items-center">
+                 <h3 className="text-lg font-bold text-gray-900">Team Details</h3>
+                 <button onClick={() => setShowDetailsModal(false)} className="text-gray-400 hover:text-gray-600">
+                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                 </button>
+            </div>
             <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
-                Team Details
-              </h3>
-              <div className="space-y-3">
-                <div className="border-b pb-2">
-                  <p className="text-sm text-gray-600"><strong>Name:</strong></p>
-                  <p className="text-gray-900">{selectedTeam.team_name}</p>
-                </div>
-                <div className="border-b pb-2">
-                  <p className="text-sm text-gray-600"><strong>Location:</strong></p>
-                  <p className="text-gray-900">{selectedTeam.team_location}</p>
-                </div>
-                <div className="border-b pb-2">
-                  <p className="text-sm text-gray-600"><strong>Owner:</strong></p>
-                  <p className="text-gray-900">{selectedTeam.owner_phone}</p>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="text-center p-2 bg-blue-50 rounded">
-                    <div className="text-lg font-bold text-blue-600">{selectedTeam.matches_played || 0}</div>
-                    <div className="text-xs text-gray-600">Matches</div>
-                  </div>
-                  <div className="text-center p-2 bg-green-50 rounded">
-                    <div className="text-lg font-bold text-green-600">{selectedTeam.matches_won || 0}</div>
-                    <div className="text-xs text-gray-600">Wins</div>
-                  </div>
-                  <div className="text-center p-2 bg-yellow-50 rounded">
-                    <div className="text-lg font-bold text-yellow-600">{selectedTeam.trophies || 0}</div>
-                    <div className="text-xs text-gray-600">Trophies</div>
-                  </div>
-                </div>
+              <div className="flex items-center mb-6">
+                   {selectedTeam.team_logo_url ? (
+                      <img src={selectedTeam.team_logo_url} alt="" className="h-16 w-16 rounded-full border border-gray-200 mr-4 object-cover" />
+                   ) : (
+                      <div className="h-16 w-16 rounded-full bg-indigo-100 flex items-center justify-center text-2xl text-indigo-700 font-bold mr-4 border border-indigo-200">
+                          {selectedTeam.team_name ? selectedTeam.team_name.charAt(0) : 'T'}
+                      </div>
+                   )}
+                   <div>
+                       <h2 className="text-xl font-bold text-gray-900">{selectedTeam.team_name}</h2>
+                       <p className="text-gray-500">{selectedTeam.team_location}</p>
+                   </div>
               </div>
-              {selectedTeam.players && selectedTeam.players.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="font-bold text-gray-900 mb-2">Players ({selectedTeam.players.length}):</h4>
-                  <div className="bg-gray-50 rounded p-2 max-h-40 overflow-y-auto">
-                    <ul className="space-y-1">
-                      {selectedTeam.players.map((player) => (
-                        <li key={player.id} className="text-sm text-gray-700">
-                          <span className="font-medium">{player.player_name}</span> <span className="text-gray-500">({player.player_role})</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
-              <div className="flex justify-end mt-6">
-                <button
-                  onClick={() => {
-                    setShowDetailsModal(false);
-                    setSelectedTeam(null);
-                  }}
-                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-400"
-                >
-                  Close
-                </button>
+
+              <div className="grid grid-cols-3 gap-4 mb-6 text-center">
+                 <div className="bg-blue-50 p-3 rounded-lg">
+                     <div className="text-2xl font-bold text-blue-700">{selectedTeam.matches_played || 0}</div>
+                     <div className="text-xs text-blue-600 uppercase font-semibold">Matches</div>
+                 </div>
+                 <div className="bg-green-50 p-3 rounded-lg">
+                     <div className="text-2xl font-bold text-green-700">{selectedTeam.matches_won || 0}</div>
+                     <div className="text-xs text-green-600 uppercase font-semibold">Wins</div>
+                 </div>
+                 <div className="bg-yellow-50 p-3 rounded-lg">
+                     <div className="text-2xl font-bold text-yellow-700">{selectedTeam.trophies || 0}</div>
+                     <div className="text-xs text-yellow-600 uppercase font-semibold">Trophies</div>
+                 </div>
+              </div>
+
+              <div className="border-t pt-4">
+                 <h4 className="font-semibold text-gray-800 mb-2">Owner Info</h4>
+                 <p className="text-sm text-gray-600">
+                     Phone: {selectedTeam.owner_phone || 'N/A'} 
+                     {selectedTeam.owner_is_admin && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-2 py-0.5 rounded-full">Admin</span>}
+                 </p>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Edit Team Modal */}
+      {/* Edit Modal */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
-          <div className="relative w-full max-w-md shadow-lg rounded-md bg-white">
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-md shadow-xl rounded-lg bg-white">
             <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
-                Edit Team
-              </h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Edit Team</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Team Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.team_name}
-                    onChange={(e) => setEditForm({...editForm, team_name: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
+                  <input type="text" value={editForm.team_name} onChange={(e) => setEditForm({...editForm, team_name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Team Location *
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.team_location}
-                    onChange={(e) => setEditForm({...editForm, team_location: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                  <input type="text" value={editForm.team_location} onChange={(e) => setEditForm({...editForm, team_location: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Team Logo URL
-                  </label>
-                  <input
-                    type="url"
-                    value={editForm.team_logo_url}
-                    onChange={(e) => setEditForm({...editForm, team_logo_url: e.target.value})}
-                    placeholder="https://example.com/logo.png"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL (Optional)</label>
+                  <input type="url" value={editForm.team_logo_url} onChange={(e) => setEditForm({...editForm, team_logo_url: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
               </div>
               <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setSelectedTeam(null);
-                  }}
-                  disabled={actionLoading}
-                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-400 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUpdateTeam}
-                  disabled={actionLoading}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {actionLoading ? 'Updating...' : 'Update'}
+                <button onClick={() => setShowEditModal(false)} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-200">Cancel</button>
+                <button onClick={handleUpdateTeam} disabled={actionLoading} className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">
+                    {actionLoading ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>
@@ -555,40 +586,23 @@ const TeamManagement = ({ onToast }) => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
-          <div className="relative w-full max-w-md shadow-lg rounded-md bg-white">
-            <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
-                Delete Team
-              </h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Are you sure you want to delete team <strong>{selectedTeam?.team_name}</strong>?
-              </p>
-              <p className="text-sm text-red-600 mb-4 bg-red-50 p-3 rounded">
-                ⚠️ This action cannot be undone and will delete all associated players and data.
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setSelectedTeam(null);
-                  }}
-                  disabled={actionLoading}
-                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-400 disabled:opacity-50"
-                >
-                  Cancel
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-md shadow-xl rounded-lg bg-white p-6">
+             <div className="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>
+             </div>
+             <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Delete Team?</h3>
+             <p className="text-sm text-gray-500 text-center mb-6">
+                Are you sure you want to delete <strong>{selectedTeam?.team_name}</strong>? This will also delete all associated players. This action cannot be undone.
+             </p>
+             <div className="flex justify-end space-x-3">
+                <button onClick={() => setShowDeleteModal(false)} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-200">Cancel</button>
+                <button onClick={handleDeleteTeam} disabled={actionLoading} className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700">
+                    {actionLoading ? 'Deleting...' : 'Delete Team'}
                 </button>
-                <button
-                  onClick={handleDeleteTeam}
-                  disabled={actionLoading}
-                  className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50"
-                >
-                  {actionLoading ? 'Deleting...' : 'Delete'}
-                </button>
-              </div>
-            </div>
+             </div>
           </div>
         </div>
       )}

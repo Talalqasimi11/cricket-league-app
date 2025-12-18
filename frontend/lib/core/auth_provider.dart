@@ -15,6 +15,7 @@ class AuthProvider extends ChangeNotifier {
   Timer? _tokenRefreshTimer;
   DateTime? _tokenExpiry;
   String? _lastError;
+  StreamSubscription? _authFailureSubscription;
 
   // Getters
   bool get isAuthenticated => _isAuthenticated;
@@ -100,6 +101,15 @@ class AuthProvider extends ChangeNotifier {
   // Initialize auth state from stored token
   Future<void> initializeAuth() async {
     _setLoading(true);
+
+    // Listen for global auth failures (e.g. 401 from API)
+    _authFailureSubscription?.cancel();
+    _authFailureSubscription = ApiClient.instance.onAuthFailure.listen((_) {
+      debugPrint('Auth failure detected, logging out...');
+      _clearAuth();
+      _setAuthenticated(false);
+    });
+
     try {
       final token = await ApiClient.instance.token;
       if (token != null && token.isNotEmpty) {
@@ -116,8 +126,11 @@ class AuthProvider extends ChangeNotifier {
 
         // Try to verify token with server, but don't fail if offline
         try {
-          final response = await ApiClient.instance.get('/api/teams/my-team')
-              .timeout(const Duration(seconds: 5)); // Short timeout for offline detection
+          final response = await ApiClient.instance
+              .get('/api/teams/my-team')
+              .timeout(
+                const Duration(seconds: 5),
+              ); // Short timeout for offline detection
 
           if (response.statusCode == 200) {
             _setAuthenticated(true);
@@ -128,12 +141,16 @@ class AuthProvider extends ChangeNotifier {
             _setAuthenticated(false);
           } else {
             // Other server errors, but keep the token for offline use
-            debugPrint('Token verification failed (${response.statusCode}), keeping for offline use');
+            debugPrint(
+              'Token verification failed (${response.statusCode}), keeping for offline use',
+            );
             _setAuthenticated(true);
           }
         } catch (e) {
           // Network error - assume token is valid for offline use
-          debugPrint('Network error during token verification, assuming valid for offline use: $e');
+          debugPrint(
+            'Network error during token verification, assuming valid for offline use: $e',
+          );
           _setAuthenticated(true);
         }
       } else {
@@ -201,7 +218,9 @@ class AuthProvider extends ChangeNotifier {
       await ApiClient.instance.logout().timeout(
         const Duration(seconds: 3),
         onTimeout: () {
-          debugPrint('Logout API call timed out, clearing local auth state only');
+          debugPrint(
+            'Logout API call timed out, clearing local auth state only',
+          );
         },
       );
     } catch (e) {
@@ -232,7 +251,7 @@ class AuthProvider extends ChangeNotifier {
   // Refresh access token using refresh token (delegates to ApiClient)
   Future<void> _refreshToken() async {
     try {
-      final success = await ApiClient.instance.refreshTokensExplicitly();
+      final success = await ApiClient.instance.refreshTokens();
       if (success) {
         // Extract updated user info from the new token
         final newToken = await ApiClient.instance.token;
@@ -310,6 +329,7 @@ class AuthProvider extends ChangeNotifier {
   @override
   void dispose() {
     _tokenRefreshTimer?.cancel();
+    _authFailureSubscription?.cancel();
     super.dispose();
   }
 }

@@ -10,13 +10,18 @@ enum ExtraType {
   /// Parses API string value to [ExtraType].
   static ExtraType? fromApiString(String? value) {
     if (value == null || value.trim().isEmpty) return null;
-    return switch (value.toLowerCase().trim()) {
-      'wide' => ExtraType.wide,
-      'no-ball' => ExtraType.noBall,
-      'bye' => ExtraType.bye,
-      'leg-bye' => ExtraType.legBye,
-      _ => throw FormatException('Invalid extra type: $value'),
-    };
+    switch (value.toLowerCase().trim()) {
+      case 'wide':
+        return ExtraType.wide;
+      case 'no-ball':
+        return ExtraType.noBall;
+      case 'bye':
+        return ExtraType.bye;
+      case 'leg-bye':
+        return ExtraType.legBye;
+      default:
+        return null; // Return null gracefully for unknown types
+    }
   }
 
   /// Converts to API-compatible string format.
@@ -28,27 +33,39 @@ enum ExtraType {
       };
 }
 
-/// The method by which a batsman is dismissed.
+/// The method by which a batter is dismissed.
 enum WicketType {
   bowled,
   caught,
   lbw,
   runOut,
   stumped,
-  hitWicket;
+  hitWicket,
+  retiredHurt;
 
   /// Parses API string value to [WicketType].
   static WicketType? fromApiString(String? value) {
     if (value == null || value.trim().isEmpty) return null;
-    return switch (value.toLowerCase().trim()) {
-      'bowled' => WicketType.bowled,
-      'caught' => WicketType.caught,
-      'lbw' => WicketType.lbw,
-      'run-out' => WicketType.runOut,
-      'stumped' => WicketType.stumped,
-      'hit-wicket' => WicketType.hitWicket,
-      _ => throw FormatException('Invalid wicket type: $value'),
-    };
+    switch (value.toLowerCase().trim()) {
+      case 'bowled':
+        return WicketType.bowled;
+      case 'caught':
+        return WicketType.caught;
+      case 'lbw':
+        return WicketType.lbw;
+      case 'run-out':
+      case 'run out': // Handle potential space variation
+        return WicketType.runOut;
+      case 'stumped':
+        return WicketType.stumped;
+      case 'hit-wicket':
+      case 'hit wicket': // Handle potential space variation
+        return WicketType.hitWicket;
+      case 'retired-hurt':
+        return WicketType.retiredHurt;
+      default:
+        return null;
+    }
   }
 
   /// Converts to API-compatible string format.
@@ -59,44 +76,50 @@ enum WicketType {
         WicketType.runOut => 'run-out',
         WicketType.stumped => 'stumped',
         WicketType.hitWicket => 'hit-wicket',
+        WicketType.retiredHurt => 'retired-hurt',
       };
 }
 
-/// {@template ball_model}
 /// Represents a single ball delivery in cricket.
-/// 
-/// **CRITICAL FIX**: `ballNumber` is NO LONGER constrained to 1-6.
-/// After wides/no-balls, ballNumber increments beyond 6 (e.g., 6, 7, 8...).
-/// Use `BallSequenceService` to calculate actual over notation for display.
-/// 
-/// **New Fields**:
-/// - `sequenceNumber`: Absolute order (0,1,2,3...) for event sourcing
-/// - `isLegitBall`: Whether this counts toward the 6-ball over
-/// {@endtemplate}
+///
+/// IMPORTANT
+/// - ballNumber is NOT constrained to 1–6. After wides/no-balls, ballNumber may
+///   exceed 6 (e.g., 6, 7, 8...). Use [BallSequenceService] to compute display
+///   over notation based on legal deliveries.
+/// - sequenceNumber is the absolute event order within the innings (0-based).
 @immutable
 class Ball {
   final String id; // UUID for idempotency
   final String matchId;
   final String inningId;
-  
+
   /// Absolute sequence number (0 = first ball of innings).
   final int sequenceNumber;
-  
-  /// Display ball number (1,2,3... increases beyond 6 after wides/no-balls).
+
+  /// Over number (0-based).
+  final int overNumber;
+
+  /// Display ball number (1,2,3... may exceed 6 for extra deliveries).
   final int ballNumber;
-  
-  final int overNumber; // 0-based
-  
+
   final int batsmanId;
   final String? batsmanName;
   final int bowlerId;
   final String? bowlerName;
+
+  /// Runs recorded on this event (batter runs or extra runs depending on [extras]).
   final int runs;
+
+  /// Extra type, if any.
   final ExtraType? extras;
+
+  /// Wicket type, if any.
   final WicketType? wicketType;
+
+  /// Dismissed player's ID and name (required when [wicketType] is non-null).
   final int? outPlayerId;
   final String? outPlayerName;
-  
+
   /// Whether this ball counts as a legal delivery (false for wides/no-balls).
   final bool isLegalBall;
 
@@ -116,17 +139,20 @@ class Ball {
     this.wicketType,
     this.outPlayerId,
     this.outPlayerName,
-  }) : isLegalBall = extras == null || (extras != ExtraType.wide && extras != ExtraType.noBall),
-       assert(sequenceNumber >= 0, 'sequenceNumber must be >= 0'),
-       assert(overNumber >= 0, 'overNumber must be >= 0'),
-       assert(ballNumber >= 1, 'ballNumber must be >= 1'),
-       assert(runs >= 0, 'runs cannot be negative');
+  }) : isLegalBall = extras == null ||
+            (extras != ExtraType.wide && extras != ExtraType.noBall),
+        assert(sequenceNumber >= 0, 'sequenceNumber must be >= 0'),
+        assert(overNumber >= 0, 'overNumber must be >= 0'),
+        assert(ballNumber >= 1, 'ballNumber must be >= 1'),
+        assert(runs >= 0, 'runs cannot be negative');
 
-  /// Gets display notation (e.g., "12.3" for 12 overs, 3 balls).
-  /// 
-  /// **WARNING**: This is APPROXIMATE. Use `BallSequenceService.getCurrentOverNotation()`
-  /// for precise calculation that handles wides/no-balls correctly.
+  /// Approximate display notation "$overNumber.$ballNumber".
+  ///
+  /// WARNING: This does not account for legal-ball counting. Use
+  /// [BallSequenceService] for exact display that handles wides/no-balls correctly.
   String get displayOverNotation => '$overNumber.$ballNumber';
+
+  static const _sentinel = Object();
 
   /// Creates a copy with optional field overrides.
   Ball copyWith({
@@ -141,11 +167,21 @@ class Ball {
     int? bowlerId,
     String? bowlerName,
     int? runs,
-    ExtraType? extras,
-    WicketType? wicketType,
-    int? outPlayerId,
-    String? outPlayerName,
+    Object? extras = _sentinel, // ExtraType? or null
+    Object? wicketType = _sentinel, // WicketType? or null
+    Object? outPlayerId = _sentinel, // int? or null
+    Object? outPlayerName = _sentinel, // String? or null
   }) {
+    final newExtras =
+        extras == _sentinel ? this.extras : extras as ExtraType?;
+    final newWicket =
+        wicketType == _sentinel ? this.wicketType : wicketType as WicketType?;
+    final newOutPlayerId =
+        outPlayerId == _sentinel ? this.outPlayerId : outPlayerId as int?;
+    final newOutPlayerName = outPlayerName == _sentinel
+        ? this.outPlayerName
+        : outPlayerName as String?;
+
     return Ball(
       id: id ?? this.id,
       matchId: matchId ?? this.matchId,
@@ -158,48 +194,55 @@ class Ball {
       bowlerId: bowlerId ?? this.bowlerId,
       bowlerName: bowlerName ?? this.bowlerName,
       runs: runs ?? this.runs,
-      extras: extras ?? this.extras,
-      wicketType: wicketType ?? this.wicketType,
-      outPlayerId: outPlayerId ?? this.outPlayerId,
-      outPlayerName: outPlayerName ?? this.outPlayerName,
+      extras: newExtras,
+      wicketType: newWicket,
+      outPlayerId: newOutPlayerId,
+      outPlayerName: newOutPlayerName,
     );
   }
 
   /// Deserializes from JSON/Map with strict validation.
   factory Ball.fromJson(Map<String, dynamic> json) {
+    int _i(dynamic v, [int def = 0]) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      if (v is String) return int.tryParse(v) ?? def;
+      return def;
+    }
+
+    String? _s(dynamic v) => v?.toString();
+
     try {
-      final extrasValue = ExtraType.fromApiString(json['extras'] as String?);
-      final wicketValue = WicketType.fromApiString(json['wicket_type'] as String?);
-      
+      final extrasValue = ExtraType.fromApiString(_s(json['extras']));
+      final wicketValue = WicketType.fromApiString(_s(json['wicket_type']));
+
       return Ball(
-        id: json['id'] as String? ?? '',
-        matchId: json['match_id'] as String? ?? '',
-        inningId: json['inning_id'] as String? ?? '',
-        sequenceNumber: json['sequence_number'] as int? ?? 0,
-        overNumber: json['over_number'] as int? ?? 0,
-        ballNumber: json['ball_number'] as int? ?? 1,
-        batsmanId: json['batsman_id'] as int? ?? 0,
-        batsmanName: json['batsman_name'] as String?,
-        bowlerId: json['bowler_id'] as int? ?? 0,
-        bowlerName: json['bowler_name'] as String?,
-        runs: json['runs'] as int? ?? 0,
+        id: _s(json['id']) ?? '',
+        matchId: _s(json['match_id']) ?? '',
+        inningId: _s(json['inning_id']) ?? '',
+        sequenceNumber: _i(json['sequence_number']),
+        overNumber: _i(json['over_number']),
+        ballNumber: _i(json['ball_number'], 1),
+        batsmanId: _i(json['batsman_id']),
+        batsmanName: _s(json['batsman_name']),
+        bowlerId: _i(json['bowler_id']),
+        bowlerName: _s(json['bowler_name']),
+        runs: _i(json['runs']),
         extras: extrasValue,
         wicketType: wicketValue,
-        outPlayerId: json['out_player_id'] as int?,
-        outPlayerName: json['out_player_name'] as String?,
+        outPlayerId: json['out_player_id'] == null ? null : _i(json['out_player_id']),
+        outPlayerName: _s(json['out_player_name']),
       );
     } catch (e, stackTrace) {
-      throw FormatException(
-        'Ball.fromJson failed: $e\nJSON: ${json.toString().substring(0, 200)}',
-        stackTrace,
-      );
+      final raw = json.toString();
+      final safe = raw.length <= 200 ? raw : raw.substring(0, 200);
+      throw FormatException('Ball.fromJson failed: $e\nJSON: $safe', stackTrace);
     }
   }
 
   /// Serializes to JSON for API submission with validation.
   Map<String, dynamic> toJson() {
     validate();
-    
     return {
       'id': id,
       'match_id': matchId,
@@ -223,24 +266,34 @@ class Ball {
     if (id.isEmpty) throw StateError('Ball ID cannot be empty');
     if (matchId.isEmpty) throw StateError('Match ID cannot be empty');
     if (inningId.isEmpty) throw StateError('Inning ID cannot be empty');
-    if (sequenceNumber < 0) throw StateError('sequenceNumber must be >= 0');
-    if (overNumber < 0) throw StateError('Over number cannot be negative');
-    if (ballNumber < 1) throw StateError('Ball number must be >= 1');
-    if (batsmanId <= 0) throw StateError('Batsman ID must be positive');
-    if (bowlerId <= 0) throw StateError('Bowler ID must be positive');
+    if (sequenceNumber < 0) {
+      throw StateError('sequenceNumber must be >= 0');
+    }
+    if (overNumber < 0) {
+      throw StateError('Over number cannot be negative');
+    }
+    if (ballNumber < 1) {
+      throw StateError('Ball number must be >= 1');
+    }
+    if (batsmanId <= 0) {
+      throw StateError('Batsman ID must be positive');
+    }
+    if (bowlerId <= 0) {
+      throw StateError('Bowler ID must be positive');
+    }
+    if (runs < 0) {
+      throw StateError('Runs cannot be negative');
+    }
 
-    // Scoring rules
-    if (runs < 0) throw StateError('Runs cannot be negative');
-    
-    // Extras validation (enforces API contract)
+    // Extras validation
     if (extras != null) {
       if ((extras == ExtraType.bye || extras == ExtraType.legBye) && runs < 1) {
         throw StateError('Byes/leg-byes must have at least 1 run');
       }
-      // No-ball/wide CAN be 0 (penalty runs only) or positive
     } else {
-      // Legal ball must be 0-6 runs
-      if (runs > 6) throw StateError('Legal ball cannot exceed 6 runs');
+      if (runs > 6) {
+        throw StateError('Legal ball cannot exceed 6 runs');
+      }
     }
 
     // Wicket validation
@@ -259,16 +312,21 @@ class Ball {
   }
 
   @override
-  bool operator ==(Object other) => identical(this, other) || other is Ball && id == other.id && sequenceNumber == other.sequenceNumber;
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Ball &&
+          id == other.id &&
+          sequenceNumber == other.sequenceNumber);
 
   @override
   int get hashCode => Object.hash(id, sequenceNumber);
 
   @override
   String toString() {
-    final sb = StringBuffer('Ball(seq:$sequenceNumber $overNumber.$ballNumber: $runs');
-    if (extras != null) sb.write(' $extras');
-    if (wicketType != null) sb.write(' $wicketType');
+    final sb = StringBuffer(
+        'Ball(seq:$sequenceNumber $overNumber.$ballNumber: $runs');
+    if (extras != null) sb.write(' ${extras!.apiValue}');
+    if (wicketType != null) sb.write(' ${wicketType!.apiValue}');
     sb.write(')');
     return sb.toString();
   }

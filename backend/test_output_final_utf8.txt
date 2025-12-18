@@ -1,0 +1,42 @@
+﻿1. Registering user...
+Register status: 201
+2. Creating friendly match...
+Create Match Status: 201
+   Match created with ID: 17, Status: not_started
+3. Starting innings (should auto-start match)...
+   Start Innings Response: { message: 'Innings 1 started' }
+4. Verifying match status...
+node : Γ¥î Test 
+Failed: TypeError: 
+Cannot read 
+properties of 
+undefined (reading 
+'status')
+At line:1 char:1
++ node test_fix_start
+_innings.js > test_ou
+tput_final.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (Γ¥î Tes   
+ t Failed...ading    
+ 'status'):Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+    at testFix (C:\Us
+ers\Administrator\Des
+ktop\final project\cr
+icket-league-app\back
+end\test_fix_start_in
+nings.js:135:46)
+    at process.proces
+sTicksAndRejections (
+node:internal/process
+/task_queues:105:5)

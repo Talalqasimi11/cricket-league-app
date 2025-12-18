@@ -34,13 +34,13 @@ class PlayerRepository extends BaseRepository<Player> {
 
   /// Get players by role
   List<Player> getByRole(String role) {
-    return filter((player) => player.playerRole == role);
+    return filter((player) => player.role == role);
   }
 
   /// Search players by name
   List<Player> searchByName(String query) {
     return filter((player) =>
-        player.playerName.toLowerCase().contains(query.toLowerCase()));
+        player.name.toLowerCase().contains(query.toLowerCase()));
   }
 
   /// Get players with runs above threshold
@@ -134,7 +134,7 @@ class PlayerRepository extends BaseRepository<Player> {
   /// Sync player from server (merge/update existing)
   Future<void> syncFromServer(Player serverPlayer) async {
     try {
-      final existing = getById(serverPlayer.id);
+      final existing = findFirst((p) => p.id == serverPlayer.id);
       if (existing != null) {
         // Always update player stats as they change frequently
         final key = keys.firstWhere((k) => getByKey(k)?.id == serverPlayer.id);
@@ -163,13 +163,13 @@ class PlayerRepository extends BaseRepository<Player> {
     final roles = <String, int>{};
 
     for (final player in all) {
-      roles[player.playerRole] = (roles[player.playerRole] ?? 0) + 1;
+      roles[player.role] = (roles[player.role] ?? 0) + 1;
     }
 
     return {
       'total': all.length,
       'roles': roles,
-      'withImage': all.where((p) => p.playerImageUrl != null).length,
+      'withImage': all.where((p) => p.imageUrl != null).length,
     };
   }
 }

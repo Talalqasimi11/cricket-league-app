@@ -11,12 +11,13 @@ class TeamRepository extends BaseRepository<Team> {
   /// Get all teams sorted by creation date (newest first)
   @override
   List<Team> getAll() {
-    final teams = super.getAll();
+    final teams = List<Team>.of(super.getAll()); // avoid mutating base list
     teams.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return teams;
   }
 
-  /// Get team by ID
+  /// Keep BaseRepository getById signature for compatibility (likely int).
+  /// Do not use this for domain String IDs. Use getByTeamId(String) below.
   @override
   Team? getById(int id) {
     return super.getById(id);
@@ -27,21 +28,28 @@ class TeamRepository extends BaseRepository<Team> {
     await save(team);
   }
 
-  /// Update team
+  /// Update team by Hive key (not domain id)
   Future<void> updateTeam(int key, Team team) async {
     await update(key, team);
   }
 
-  /// Get teams by location
-  List<Team> getByLocation(String location) {
-    return filter((team) =>
-        team.location?.toLowerCase().contains(location.toLowerCase()) ?? false);
+  /// Get team by domain id (String)
+  Team? getByTeamId(String id) {
+    return findFirst((t) => t.id == id);
   }
 
-  /// Search teams by name
+  /// Get teams by location (case-insensitive, guarded)
+  List<Team> getByLocation(String location) {
+    final q = location.trim().toLowerCase();
+    if (q.isEmpty) return [];
+    return filter((team) => (team.location ?? '').toLowerCase().contains(q));
+  }
+
+  /// Search teams by name (case-insensitive, guarded)
   List<Team> searchByName(String query) {
-    return filter((team) =>
-        team.teamName.toLowerCase().contains(query.toLowerCase()));
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return [];
+    return filter((team) => team.teamName.toLowerCase().contains(q));
   }
 
   /// Get teams with trophies above threshold
@@ -51,52 +59,66 @@ class TeamRepository extends BaseRepository<Team> {
 
   /// Get teams sorted by trophies (descending)
   List<Team> getTopTeamsByTrophies({int limit = 10}) {
-    final teams = getAll();
+    if (limit <= 0) return <Team>[];
+    final teams = List<Team>.of(getAll());
     teams.sort((a, b) => b.trophies.compareTo(a.trophies));
     return teams.take(limit).toList();
   }
 
-  /// Get teams created within date range
+  /// Get teams created within date range (inclusive, UTC-normalized)
   List<Team> getByDateRange(DateTime start, DateTime end) {
+    final s = start.toUtc();
+    final e = end.toUtc();
     return filter((team) {
-      return team.createdAt.isAfter(start.subtract(const Duration(days: 1))) &&
-             team.createdAt.isBefore(end.add(const Duration(days: 1)));
+      final d = team.createdAt.toUtc();
+      return d.compareTo(s) >= 0 && d.compareTo(e) <= 0;
     });
   }
 
   /// Get teams with captain
   List<Team> getTeamsWithCaptain() {
-    return filter((team) => team.captainPlayerId != null);
+    return filter((team) => (team.captainPlayerId?.isNotEmpty ?? false));
   }
 
-  /// Get team by captain ID
-  Team? getByCaptainId(int captainId) {
+  /// Get team by captain ID (String)
+  Team? getByCaptainId(String captainId) {
     return findFirst((team) => team.captainPlayerId == captainId);
   }
 
-  /// Get team by vice captain ID
-  Team? getByViceCaptainId(int viceCaptainId) {
+  /// Get team by vice captain ID (String)
+  Team? getByViceCaptainId(String viceCaptainId) {
     return findFirst((team) => team.viceCaptainPlayerId == viceCaptainId);
   }
 
   /// Sync team from server (merge/update existing)
   Future<void> syncFromServer(Team serverTeam) async {
     try {
-      final existing = getById(serverTeam.id);
-      if (existing != null) {
-        // Update existing if server version is newer
-        if (serverTeam.updatedAt.isAfter(existing.updatedAt)) {
-          final key = keys.firstWhere((k) => getByKey(k)?.id == serverTeam.id);
+      // Find by domain id (String) to avoid int/String mismatch
+      final existing = getByTeamId(serverTeam.id);
+      if (existing == null) {
+        await save(serverTeam);
+        return;
+      }
+
+      // updatedAt/createdAt assumed non-nullable; compare directly
+      if (serverTeam.updatedAt.isAfter(existing.updatedAt)) {
+        final key = _findKeyByTeamId(serverTeam.id);
+        if (key != null) {
           await update(key, serverTeam);
+        } else {
+          // Fallback if we can't resolve Hive key
+          await save(serverTeam);
         }
-      } else {
-        // Add new team
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[TeamRepository] Sync error: $e\n$st');
+      }
+      // Only save if not already present (avoid dupes)
+      final exists = getByTeamId(serverTeam.id) != null;
+      if (!exists) {
         await save(serverTeam);
       }
-    } catch (e) {
-      debugPrint('[TeamRepository] Sync error: $e');
-      // Add as new if sync fails
-      await save(serverTeam);
     }
   }
 
@@ -111,14 +133,23 @@ class TeamRepository extends BaseRepository<Team> {
   Map<String, dynamic> getSyncStats() {
     final all = getAll();
     final totalTrophies = all.fold<int>(0, (sum, team) => sum + team.trophies);
-    final avgTrophies = all.isEmpty ? 0 : totalTrophies / all.length;
+    final avgTrophies = all.isEmpty ? 0 : (totalTrophies / all.length).round();
 
     return {
       'total': all.length,
-      'withCaptain': all.where((t) => t.captainPlayerId != null).length,
-      'withLocation': all.where((t) => t.location != null).length,
+      'withCaptain': all.where((t) => (t.captainPlayerId?.isNotEmpty ?? false)).length,
+      'withLocation': all.where((t) => (t.location ?? '').trim().isNotEmpty).length,
       'totalTrophies': totalTrophies,
-      'averageTrophies': avgTrophies.round(),
+      'averageTrophies': avgTrophies,
     };
+  }
+
+  /// Resolve Hive key (int) from domain id (String)
+  int? _findKeyByTeamId(String id) {
+    for (final dynamic k in keys) {
+      final t = getByKey(k);
+      if (t?.id == id) return k as int?;
+    }
+    return null;
   }
 }

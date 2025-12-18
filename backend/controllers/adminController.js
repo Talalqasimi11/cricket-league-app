@@ -1,72 +1,41 @@
-const db = require("../config/db");
+const { db } = require("../config/db");
 const { getUserFriendlyMessage, mapDatabaseError } = require("../utils/errorMessages");
 
 // ========================
-// DASHBOARD STATISTICS
+// 📊 DASHBOARD STATISTICS
 // ========================
 const getDashboardStats = async (req, res) => {
   try {
-    let totalUsers = 0;
-    let totalAdmins = 0;
-    let totalTeams = 0;
-    let totalTournaments = 0;
-    let totalMatches = 0;
-
-    // Get user count
-    try {
-      const [userCountResult] = await db.query("SELECT COUNT(*) as total_users FROM users");
-      totalUsers = userCountResult[0].total_users;
-    } catch (err) {
-      console.log('Warning: Could not get user count:', err.message);
-    }
-
-    // Get admin count
-    try {
-      const [adminCountResult] = await db.query("SELECT COUNT(*) as total_admins FROM users WHERE is_admin = TRUE");
-      totalAdmins = adminCountResult[0].total_admins;
-    } catch (err) {
-      console.log('Warning: Could not get admin count:', err.message);
-    }
-
-    // Get team count
-    try {
-      const [teamCountResult] = await db.query("SELECT COUNT(*) as total_teams FROM teams");
-      totalTeams = teamCountResult[0].total_teams;
-    } catch (err) {
-      console.log('Warning: Could not get team count:', err.message);
-    }
-
-    // Get tournament count
-    try {
-      const [tournamentCountResult] = await db.query("SELECT COUNT(*) as total_tournaments FROM tournaments");
-      totalTournaments = tournamentCountResult[0].total_tournaments;
-    } catch (err) {
-      console.log('Warning: Could not get tournament count:', err.message);
-    }
-
-    // Get match count
-    try {
-      const [matchCountResult] = await db.query("SELECT COUNT(*) as total_matches FROM matches");
-      totalMatches = matchCountResult[0].total_matches;
-    } catch (err) {
-      console.log('Warning: Could not get match count:', err.message);
-    }
+    // Run all count queries in parallel for better performance
+    const [
+      [userRows],
+      [adminRows],
+      [teamRows],
+      [tournRows],
+      [matchRows]
+    ] = await Promise.all([
+      db.query("SELECT COUNT(*) as total FROM users"),
+      db.query("SELECT COUNT(*) as total FROM users WHERE is_admin = TRUE"),
+      db.query("SELECT COUNT(*) as total FROM teams"),
+      db.query("SELECT COUNT(*) as total FROM tournaments"),
+      db.query("SELECT COUNT(*) as total FROM matches")
+    ]);
 
     res.json({
-      totalUsers,
-      totalAdmins,
-      totalTeams,
-      totalTournaments,
-      totalMatches
+      totalUsers: userRows[0].total || 0,
+      totalAdmins: adminRows[0].total || 0,
+      totalTeams: teamRows[0].total || 0,
+      totalTournaments: tournRows[0].total || 0,
+      totalMatches: matchRows[0].total || 0
     });
   } catch (err) {
     console.error("getDashboardStats: Unexpected error", { error: err.message });
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Server error retrieving stats" });
   }
 };
 
 // ========================
-// USER MANAGEMENT
+// 👥 USER MANAGEMENT
 // ========================
 const getAllUsers = async (req, res) => {
   try {
@@ -84,8 +53,8 @@ const getAllUsers = async (req, res) => {
 
     res.json(users);
   } catch (err) {
-    req.log?.error("getAllUsers: Database error", { error: err.message });
-    res.status(500).json({ error: "Server error" });
+    console.error("getAllUsers: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error retrieving users" });
   }
 };
 
@@ -98,27 +67,27 @@ const updateUserAdminStatus = async (req, res) => {
   }
 
   try {
-    // Check if user exists
+    // Check if user exists and prevent self-demotion
     const [userCheck] = await db.query("SELECT id FROM users WHERE id = ?", [userId]);
+
     if (userCheck.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Prevent admin from removing their own admin status
     if (req.user.id === parseInt(userId) && !is_admin) {
       return res.status(400).json({ error: "Cannot remove your own admin privileges" });
     }
 
     await db.query("UPDATE users SET is_admin = ? WHERE id = ?", [is_admin, userId]);
 
-    res.json({ 
+    res.json({
       message: `User admin status updated to ${is_admin ? 'admin' : 'regular user'}`,
       user_id: userId,
-      is_admin 
+      is_admin
     });
   } catch (err) {
-    req.log?.error("updateUserAdminStatus: Database error", { error: err.message });
-    res.status(500).json({ error: "Server error" });
+    console.error("updateUserAdminStatus: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error updating user" });
   }
 };
 
@@ -126,37 +95,31 @@ const deleteUser = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    // Check if user exists
     const [userCheck] = await db.query("SELECT id, is_admin FROM users WHERE id = ?", [userId]);
+
     if (userCheck.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Prevent admin from deleting themselves
     if (req.user.id === parseInt(userId)) {
       return res.status(400).json({ error: "Cannot delete your own account" });
     }
 
-    // Check if user is admin
     if (userCheck[0].is_admin) {
-      return res.status(400).json({ error: "Cannot delete admin users" });
+      return res.status(403).json({ error: "Cannot delete other admin users" });
     }
 
-    // Delete user (cascade will handle related data)
     await db.query("DELETE FROM users WHERE id = ?", [userId]);
 
-    res.json({ 
-      message: "User deleted successfully",
-      user_id: userId 
-    });
+    res.json({ message: "User deleted successfully", user_id: userId });
   } catch (err) {
-    req.log?.error("deleteUser: Database error", { error: err.message });
-    res.status(500).json({ error: "Server error" });
+    console.error("deleteUser: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error deleting user" });
   }
 };
 
 // ========================
-// TEAM MANAGEMENT
+// 🛡️ TEAM MANAGEMENT
 // ========================
 const getAllTeams = async (req, res) => {
   try {
@@ -181,8 +144,8 @@ const getAllTeams = async (req, res) => {
 
     res.json(teams);
   } catch (err) {
-    req.log?.error("getAllTeams: Database error", { error: err.message });
-    res.status(500).json({ error: "Server error" });
+    console.error("getAllTeams: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error retrieving teams" });
   }
 };
 
@@ -190,12 +153,8 @@ const getTeamDetails = async (req, res) => {
   const { teamId } = req.params;
 
   try {
-    // Get team info
     const [teamResult] = await db.query(`
-      SELECT 
-        t.*,
-        u.phone_number as owner_phone,
-        u.is_admin as owner_is_admin
+      SELECT t.*, u.phone_number as owner_phone, u.is_admin as owner_is_admin
       FROM teams t
       LEFT JOIN users u ON t.owner_id = u.id
       WHERE t.id = ?
@@ -205,32 +164,16 @@ const getTeamDetails = async (req, res) => {
       return res.status(404).json({ error: "Team not found" });
     }
 
-    // Get players
     const [players] = await db.query(`
-      SELECT 
-        id,
-        player_name,
-        player_role,
-        player_image_url,
-        runs,
-        matches_played,
-        hundreds,
-        fifties,
-        batting_average,
-        strike_rate,
-        wickets
-      FROM players 
-      WHERE team_id = ?
-      ORDER BY player_name
+      SELECT id, player_name, player_role, player_image_url, runs, matches_played, 
+             hundreds, fifties, batting_average, strike_rate, wickets 
+      FROM players WHERE team_id = ? ORDER BY player_name
     `, [teamId]);
 
-    res.json({
-      team: teamResult[0],
-      players
-    });
+    res.json({ team: teamResult[0], players });
   } catch (err) {
-    req.log?.error("getTeamDetails: Database error", { error: err.message });
-    res.status(500).json({ error: "Server error" });
+    console.error("getTeamDetails: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error retrieving team details" });
   }
 };
 
@@ -243,27 +186,22 @@ const updateTeam = async (req, res) => {
   }
 
   try {
-    // Check if team exists
-    const [teamCheck] = await db.query("SELECT id FROM teams WHERE id = ?", [teamId]);
-    if (teamCheck.length === 0) {
-      return res.status(404).json({ error: "Team not found" });
-    }
-
-    await db.query(
+    const [result] = await db.query(
       "UPDATE teams SET team_name = ?, team_location = ?, team_logo_url = ? WHERE id = ?",
       [team_name, team_location, team_logo_url || null, teamId]
     );
 
-    res.json({ 
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Team not found" });
+    }
+
+    res.json({
       message: "Team updated successfully",
-      team_id: teamId,
-      team_name,
-      team_location,
-      team_logo_url
+      team: { id: teamId, team_name, team_location, team_logo_url }
     });
   } catch (err) {
-    req.log?.error("updateTeam: Database error", { error: err.message });
-    res.status(500).json({ error: "Server error" });
+    console.error("updateTeam: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error updating team" });
   }
 };
 
@@ -271,34 +209,213 @@ const deleteTeam = async (req, res) => {
   const { teamId } = req.params;
 
   try {
-    // Check if team exists
-    const [teamCheck] = await db.query("SELECT id FROM teams WHERE id = ?", [teamId]);
-    if (teamCheck.length === 0) {
-      return res.status(404).json({ error: "Team not found" });
-    }
-
-    // Check if team has any matches (optional safety check)
+    // Check for existing matches to prevent data integrity issues
     const [matchCheck] = await db.query(`
-      SELECT COUNT(*) as match_count FROM matches 
-      WHERE team1_id = ? OR team2_id = ?
+      SELECT COUNT(*) as count FROM matches WHERE team1_id = ? OR team2_id = ?
     `, [teamId, teamId]);
 
-    if (matchCheck[0].match_count > 0) {
-      return res.status(400).json({ 
-        error: "Cannot delete team with existing matches. Consider archiving instead." 
+    if (matchCheck[0].count > 0) {
+      return res.status(400).json({
+        error: "Cannot delete team with existing matches. Archive it instead."
       });
     }
 
-    // Delete team (cascade will handle related data)
-    await db.query("DELETE FROM teams WHERE id = ?", [teamId]);
+    const [result] = await db.query("DELETE FROM teams WHERE id = ?", [teamId]);
 
-    res.json({ 
-      message: "Team deleted successfully",
-      team_id: teamId 
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Team not found" });
+    }
+
+    res.json({ message: "Team deleted successfully", team_id: teamId });
+  } catch (err) {
+    console.error("deleteTeam: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error deleting team" });
+  }
+};
+
+// ========================
+// 🏆 TOURNAMENT MANAGEMENT
+// ========================
+const getAllTournaments = async (req, res) => {
+  try {
+    const [tournaments] = await db.query(`
+      SELECT 
+        t.id, t.tournament_name, t.start_date, t.end_date, t.status, t.location, 
+        t.created_by, u.phone_number as creator_phone,
+        (SELECT COUNT(*) FROM tournament_teams WHERE tournament_id = t.id) as team_count
+      FROM tournaments t
+      LEFT JOIN users u ON t.created_by = u.id
+      ORDER BY t.start_date DESC
+    `);
+
+    res.json(tournaments);
+  } catch (err) {
+    console.error("getAllTournaments: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error retrieving tournaments" });
+  }
+};
+
+const deleteTournament = async (req, res) => {
+  const { tournamentId } = req.params;
+
+  try {
+    const [result] = await db.query("DELETE FROM tournaments WHERE id = ?", [tournamentId]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Tournament not found" });
+    }
+
+    res.json({ message: "Tournament deleted successfully", tournament_id: tournamentId });
+  } catch (err) {
+    console.error("deleteTournament: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error deleting tournament" });
+  }
+};
+
+// ========================
+// 🏏 MATCH MANAGEMENT
+// ========================
+const getAllMatches = async (req, res) => {
+  try {
+    const { status } = req.query;
+    let query = `
+      SELECT 
+        m.id, m.status, m.overs, m.match_datetime as match_date, m.venue, m.winner_team_id,
+        t1.team_name as team1_name, t2.team_name as team2_name,
+        tr.tournament_name,
+        (SELECT COUNT(*) FROM match_innings WHERE match_id = m.id) as innings_count
+      FROM matches m
+      LEFT JOIN teams t1 ON m.team1_id = t1.id
+      LEFT JOIN teams t2 ON m.team2_id = t2.id
+      LEFT JOIN tournaments tr ON m.tournament_id = tr.id
+    `;
+
+    const params = [];
+    if (status) {
+      query += " WHERE m.status = ?";
+      params.push(status);
+    }
+
+    query += " ORDER BY m.id DESC LIMIT 100";
+
+    const [matches] = await db.query(query, params);
+    res.json(matches);
+  } catch (err) {
+    console.error("getAllMatches: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error retrieving matches" });
+  }
+};
+
+const getMatchDetails = async (req, res) => {
+  const { matchId } = req.params;
+  try {
+    const [matchResult] = await db.query(`
+      SELECT m.*, m.match_datetime as match_date, t1.team_name as team1_name, t2.team_name as team2_name,
+             tr.tournament_name, wt.team_name as winner_name
+      FROM matches m
+      LEFT JOIN teams t1 ON m.team1_id = t1.id
+      LEFT JOIN teams t2 ON m.team2_id = t2.id
+      LEFT JOIN teams wt ON m.winner_team_id = wt.id
+      LEFT JOIN tournaments tr ON m.tournament_id = tr.id
+      WHERE m.id = ?
+    `, [matchId]);
+
+    if (matchResult.length === 0) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+
+    const [innings] = await db.query(`
+      SELECT mi.*, t.team_name as batting_team_name 
+      FROM match_innings mi 
+      LEFT JOIN teams t ON mi.batting_team_id = t.id
+      WHERE match_id = ? ORDER BY inning_number
+    `, [matchId]);
+
+    const [balls] = await db.query("SELECT COUNT(*) as count FROM ball_by_ball WHERE match_id = ?", [matchId]);
+
+    res.json({
+      match: matchResult[0],
+      innings,
+      total_balls: balls[0].count
     });
   } catch (err) {
-    req.log?.error("deleteTeam: Database error", { error: err.message });
-    res.status(500).json({ error: "Server error" });
+    console.error("getMatchDetails: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error retrieving match details" });
+  }
+};
+
+const createMatch = async (req, res) => {
+  const { tournament_id, team1_id, team2_id, match_date, venue, overs } = req.body;
+
+  if (!team1_id || !team2_id || !match_date || !venue || !overs) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  if (team1_id === team2_id) {
+    return res.status(400).json({ error: "Team 1 and Team 2 must be different" });
+  }
+
+  try {
+    const [result] = await db.query(
+      `INSERT INTO matches (tournament_id, team1_id, team2_id, match_datetime, venue, overs, status) 
+       VALUES (?, ?, ?, ?, ?, ?, 'upcoming')`,
+      [tournament_id || null, team1_id, team2_id, match_date, venue, overs]
+    );
+
+    res.status(201).json({
+      message: "Match created successfully",
+      match_id: result.insertId
+    });
+  } catch (err) {
+    console.error("createMatch: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error creating match" });
+  }
+};
+
+const updateMatch = async (req, res) => {
+  const { matchId } = req.params;
+  const { status, overs, winner_team_id } = req.body;
+
+  try {
+    const updates = [];
+    const values = [];
+
+    if (status) { updates.push("status = ?"); values.push(status); }
+    if (overs !== undefined) { updates.push("overs = ?"); values.push(overs); }
+    if (winner_team_id !== undefined) { updates.push("winner_team_id = ?"); values.push(winner_team_id); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+
+    values.push(matchId);
+
+    const [result] = await db.query(`UPDATE matches SET ${updates.join(", ")} WHERE id = ?`, values);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+
+    res.json({ message: "Match updated successfully", match_id: matchId });
+  } catch (err) {
+    console.error("updateMatch: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error updating match" });
+  }
+};
+
+const deleteMatch = async (req, res) => {
+  const { matchId } = req.params;
+  try {
+    const [result] = await db.query("DELETE FROM matches WHERE id = ?", [matchId]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+
+    res.json({ message: "Match deleted successfully" });
+  } catch (err) {
+    console.error("deleteMatch: Database error", { error: err.message });
+    res.status(500).json({ error: "Server error deleting match" });
   }
 };
 
@@ -310,5 +427,12 @@ module.exports = {
   getAllTeams,
   getTeamDetails,
   updateTeam,
-  deleteTeam
+  deleteTeam,
+  getAllTournaments,
+  deleteTournament,
+  getAllMatches,
+  getMatchDetails,
+  createMatch,
+  updateMatch,
+  deleteMatch
 };

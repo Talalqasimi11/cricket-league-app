@@ -68,31 +68,44 @@ class Match extends HiveObject {
 
   factory Match.fromJson(Map<String, dynamic> json) {
     return Match(
-      id: json['id'] as int? ?? 0,
-      tournamentId: json['tournament_id'] as int? ?? 0,
-      team1Id: json['team1_id'] as int? ?? 0,
-      team2Id: json['team2_id'] as int? ?? 0,
-      team1Name: json['team1_name'] as String? ?? '',
-      team2Name: json['team2_name'] as String? ?? '',
-      status: json['status'] as String? ?? 'scheduled',
-      scheduledTime:
-          DateTime.tryParse(json['scheduled_time'] as String? ?? '') ??
-          DateTime.now(),
-      venue: json['venue'] as String?,
-      overs: json['overs'] as int? ?? 20,
-      team1Score: json['team1_score'] as int?,
-      team1Wickets: json['team1_wickets'] as int?,
-      team2Score: json['team2_score'] as int?,
-      team2Wickets: json['team2_wickets'] as int?,
+      // SAFE PARSING: Handles both "1" (String) and 1 (Int)
+      id: _parseInt(json['id']),
+      tournamentId: _parseInt(json['tournament_id']),
+      team1Id: _parseInt(json['team1_id']),
+      team2Id: _parseInt(json['team2_id']),
+      team1Name: json['team1_name']?.toString() ?? '',
+      team2Name: json['team2_name']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'scheduled',
+      scheduledTime: _parseDate(json['scheduled_time']),
+      venue: json['venue']?.toString(),
+      overs: _parseInt(json['overs'], defaultValue: 20),
+      team1Score: _parseIntNullable(json['team1_score']),
+      team1Wickets: _parseIntNullable(json['team1_wickets']),
+      team2Score: _parseIntNullable(json['team2_score']),
+      team2Wickets: _parseIntNullable(json['team2_wickets']),
       winnerId: json['winner_id']?.toString(),
-      winnerName: json['winner_name'] as String?,
-      result: json['result'] as String?,
-      createdAt:
-          DateTime.tryParse(json['created_at'] as String? ?? '') ??
-          DateTime.now(),
-      updatedAt:
-          DateTime.tryParse(json['updated_at'] as String? ?? '') ??
-          DateTime.now(),
+      winnerName: json['winner_name']?.toString(),
+      result: json['result']?.toString(),
+      createdAt: _parseDate(json['created_at']),
+      updatedAt: _parseDate(json['updated_at']),
+    );
+  }
+
+  factory Match.fromTournamentMatch(Map<String, dynamic> json) {
+    return Match(
+      id: _parseInt(json['id']),
+      tournamentId: _parseInt(json['tournament_id']),
+      team1Id: _parseInt(json['team1_id']),
+      team2Id: _parseInt(json['team2_id']),
+      team1Name: json['team1_name']?.toString() ?? 'Team 1',
+      team2Name: json['team2_name']?.toString() ?? 'Team 2',
+      status: json['status']?.toString() ?? 'scheduled',
+      scheduledTime: _parseDate(json['match_date']),
+      venue: json['location']?.toString(),
+      overs: 20,
+      winnerId: json['winner_id']?.toString(),
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
     );
   }
 
@@ -164,9 +177,38 @@ class Match extends HiveObject {
     );
   }
 
-  bool get isLive => status == 'live';
-  bool get isCompleted => status == 'completed';
-  bool get isScheduled => status == 'scheduled';
+  // --- HELPER METHODS ---
+
+  static int _parseInt(dynamic value, {int defaultValue = 0}) {
+    if (value == null) return defaultValue;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? defaultValue;
+    return defaultValue;
+  }
+
+  static int? _parseIntNullable(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) {
+      if (value.isEmpty) return null;
+      return int.tryParse(value);
+    }
+    return null;
+  }
+
+  static DateTime _parseDate(dynamic value) {
+    if (value == null) return DateTime.now();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    return DateTime.now();
+  }
+
+  bool get isLive => status.toLowerCase() == 'live';
+  bool get isCompleted => status.toLowerCase() == 'completed';
+  bool get isScheduled => status.toLowerCase() == 'scheduled';
+
   String get formattedDate =>
       DateFormat('MMM dd, yyyy - HH:mm').format(scheduledTime);
 

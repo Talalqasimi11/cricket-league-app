@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { getUserFriendlyMessage, mapDatabaseError } = require("../utils/errorMessages");
-const { validateTeamLogoUrl } = require("../utils/urlValidation");
+const { validateTeamLogoUrl } = require("../utils/urlValidation"); // Kept if needed for future profile updates
 require("dotenv").config();
 
 // Auth throttling constants (PRD-compliant)
@@ -16,158 +16,135 @@ const AUTH_THROTTLING = {
   }
 };
 
+// Helper: Generate Access & Refresh Tokens
+const generateTokens = (user) => {
+  const isAdmin = user.is_admin || false;
+  const roles = ['captain'];
+  const scopes = ['team:read', 'team:manage', 'match:score', 'player:read', 'player:manage', 'tournament:manage'];
+
+  if (isAdmin) {
+    roles.push('admin');
+    scopes.push('admin:manage', 'user:manage', 'team:admin');
+  }
+
+  const jwtPayload = {
+    sub: user.id,
+    phone_number: user.phone_number,
+    email: user.email,
+    roles: roles,
+    scopes: scopes,
+    typ: 'access',
+    iss: process.env.JWT_ISS,
+    aud: process.env.JWT_AUD
+  };
+
+  const accessToken = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: "1500m" });
+  const refreshToken = jwt.sign(
+    { sub: user.id, typ: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD },
+    process.env.JWT_REFRESH_SECRET,
+    { expiresIn: "700d" }
+  );
+
+  return { accessToken, refreshToken };
+};
+
+// Helper: Set Cookies
+const setAuthCookies = (res, refreshToken, csrfToken) => {
+  const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
+
+  res.cookie("refresh_token", refreshToken, {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: isSecure ? "none" : "lax",
+    path: "/",
+    maxAge: 700 * 24 * 60 * 60 * 1000, // 7 days
+  });
+
+  res.cookie("csrf-token", csrfToken, {
+    httpOnly: false,
+    secure: isSecure,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 700 * 24 * 60 * 60 * 1000,
+  });
+};
+
 // ========================
 // REGISTER CAPTAIN
 // ========================
 const registerCaptain = async (req, res) => {
   const { phone_number, email, password } = req.body;
 
-  // Require either phone_number OR email, but not both
-  if (!password) {
-    return res.status(400).json({ error: "Password is required" });
-  }
+  // Input Validation
+  if (!password) return res.status(400).json({ error: "Password is required" });
+  if (!phone_number && !email) return res.status(400).json({ error: "Either phone number or email is required" });
+  if (phone_number && email) return res.status(400).json({ error: "Provide either phone number OR email, not both" });
+  if (String(password).length < 8) return res.status(400).json({ error: getUserFriendlyMessage("AUTH_WEAK_PASSWORD") });
 
-  if (!phone_number && !email) {
-    return res.status(400).json({ error: "Either phone number or email is required" });
-  }
-
-  if (phone_number && email) {
-    return res.status(400).json({ error: "Provide either phone number OR email, not both" });
-  }
-
-  // Validate password
-  if (String(password).length < 8) {
-    return res.status(400).json({ error: getUserFriendlyMessage("AUTH_WEAK_PASSWORD") });
-  }
-
-  // Validate phone number if provided
   if (phone_number) {
     const phoneRegex = /^\+?[1-9]\d{7,14}$/;
-    if (!phoneRegex.test(String(phone_number))) {
-      return res.status(400).json({ error: getUserFriendlyMessage("AUTH_INVALID_PHONE") });
-    }
+    if (!phoneRegex.test(String(phone_number))) return res.status(400).json({ error: getUserFriendlyMessage("AUTH_INVALID_PHONE") });
   }
 
-  // Validate email if provided
   if (email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(String(email))) {
-      return res.status(400).json({ error: "Invalid email format" });
-    }
+    if (!emailRegex.test(String(email))) return res.status(400).json({ error: "Invalid email format" });
   }
 
   try {
-    // Check if phone number or email already exists
-    let existingQuery = "";
-    let existingParams = [];
-
-    if (phone_number) {
-      existingQuery = "SELECT id FROM users WHERE phone_number = ?";
-      existingParams = [phone_number];
-    } else if (email) {
-      existingQuery = "SELECT id FROM users WHERE email = ?";
-      existingParams = [email];
-    }
+    // Check Existence
+    let existingQuery = phone_number ? "SELECT id FROM users WHERE phone_number = ?" : "SELECT id FROM users WHERE email = ?";
+    let existingParams = phone_number ? [phone_number] : [email];
 
     const [existing] = await db.query(existingQuery, existingParams);
     if (existing.length > 0) {
       return res.status(409).json({
-        error: phone_number
-          ? getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS")
-          : "Email already registered"
+        error: phone_number ? getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS") : "Email already registered"
       });
     }
 
-    // Create user
+    // Create User
     const passwordHash = await bcrypt.hash(password, 12);
     const insertQuery = phone_number
       ? "INSERT INTO users (phone_number, password_hash) VALUES (?, ?)"
       : "INSERT INTO users (email, password_hash) VALUES (?, ?)";
 
-    const insertParams = [phone_number || email, passwordHash];
-
-    const [userResult] = await db.query(insertQuery, insertParams);
+    const [userResult] = await db.query(insertQuery, [phone_number || email, passwordHash]);
     const ownerId = userResult.insertId;
 
-    // Issue tokens on successful registration
-    const [adminCheck] = await db.query("SELECT is_admin FROM users WHERE id = ?", [ownerId]);
-    const isAdmin = adminCheck.length > 0 && adminCheck[0].is_admin;
+    // Fetch full user for token generation (need is_admin)
+    const [userRows] = await db.query("SELECT * FROM users WHERE id = ?", [ownerId]);
+    const newUser = userRows[0];
 
-    const roles = ['captain'];
-    const scopes = ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'];
-
-    if (isAdmin) {
-      roles.push('admin');
-      scopes.push('admin:manage', 'user:manage', 'team:admin');
-    }
-
-    const jwtPayload = {
-      sub: ownerId,
-      phone_number: phone_number,
-      email: email,
-      roles: roles,
-      scopes: scopes,
-      typ: 'access',
-      iss: process.env.JWT_ISS,
-      aud: process.env.JWT_AUD
-    };
-
-    const accessToken = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: "15m" });
-    const refreshToken = jwt.sign({ sub: ownerId, typ: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
-
-    // Persist refresh token
-    await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [ownerId, refreshToken]);
-
-    // Set httpOnly cookie with env-based security flags
-    const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
-    res.cookie("refresh_token", refreshToken, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: isSecure ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    // Set CSRF token for web clients
+    // Issue Tokens
+    const { accessToken, refreshToken } = generateTokens(newUser);
     const csrfToken = crypto.randomBytes(32).toString('hex');
-    res.cookie("csrf-token", csrfToken, {
-      httpOnly: false,
-      secure: isSecure,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
 
-    // Respond with access token
+    await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [ownerId, refreshToken]);
+    setAuthCookies(res, refreshToken, csrfToken);
+
+    // Response
     const response = {
       message: "Registration successful",
       token: accessToken,
-      user: {
-        id: ownerId,
-        phone_number: phone_number,
-        email: email
-      },
+      user: { id: ownerId, phone_number, email }
     };
 
-    // Only include refresh token in body for mobile clients
     const isMobileClient = req.headers['x-client-type'] === 'mobile';
-    const allowRefreshInBody = process.env.ALLOW_REFRESH_IN_BODY === 'true' && isMobileClient;
-
-    if (allowRefreshInBody) {
+    if (process.env.ALLOW_REFRESH_IN_BODY === 'true' && isMobileClient) {
       response.refresh_token = refreshToken;
     }
 
     res.status(201).json(response);
+
   } catch (err) {
     req.log?.error("registerCaptain: Database error", { error: err.message, code: err.code });
     if (err && err.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({
-        error: phone_number
-          ? getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS")
-          : "Email already registered"
+        error: phone_number ? getUserFriendlyMessage("AUTH_PHONE_ALREADY_EXISTS") : "Email already registered"
       });
     }
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Server error", details: err.message, stack: err.stack });
   }
 };
 
@@ -177,166 +154,91 @@ const registerCaptain = async (req, res) => {
 const loginCaptain = async (req, res) => {
   const { phone_number, email, password } = req.body;
 
-  // Require either phone_number OR email, but not both
-  if (!password) {
-    return res.status(400).json({ error: "Password is required" });
-  }
-
-  if (!phone_number && !email) {
-    return res.status(400).json({ error: "Either phone number or email is required" });
-  }
-
-  if (phone_number && email) {
-    return res.status(400).json({ error: "Provide either phone number OR email, not both" });
-  }
+  if (!password) return res.status(400).json({ error: "Password is required" });
+  if (!phone_number && !email) return res.status(400).json({ error: "Either phone number or email is required" });
+  if (phone_number && email) return res.status(400).json({ error: "Provide either phone number OR email, not both" });
 
   const loginIdentifier = phone_number || email;
   const isPhoneLogin = !!phone_number;
+  const identifierField = isPhoneLogin ? 'phone_number' : 'email';
+  const ipAddress = req.ip || req.socket?.remoteAddress || null;
 
   try {
-    // 0️⃣ Check for recent auth failures to implement progressive throttling
-    const ipAddress = req.ip || req.socket?.remoteAddress || null;
-    const identifierField = isPhoneLogin ? 'phone_number' : 'email';
-
-    // For throttling, we use the identifier (phone or email) as the key
+    // 0️⃣ Throttling Check
     const [[{ failureCount }]] = await db.query(
       `SELECT COUNT(*) AS failureCount FROM auth_failures
        WHERE ${identifierField} = ? AND ip_address = ? AND failed_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE) AND resolved_at IS NULL`,
       [loginIdentifier, ipAddress]
     );
 
-    // Progressive lockout: PRD-compliant thresholds
-    let requiredDelay = 0;
-    const failureCountNum = Number(failureCount);
+    const count = Number(failureCount);
+    let delayMs = 0;
 
-    // PRD thresholds: 3→1m, 5→5m, 10→30m in a 15m window
-    if (failureCountNum >= AUTH_THROTTLING.THRESHOLDS.LEVEL_3.failures) {
-      requiredDelay = AUTH_THROTTLING.THRESHOLDS.LEVEL_3.delayMinutes * 60 * 1000;
-    } else if (failureCountNum >= AUTH_THROTTLING.THRESHOLDS.LEVEL_2.failures) {
-      requiredDelay = AUTH_THROTTLING.THRESHOLDS.LEVEL_2.delayMinutes * 60 * 1000;
-    } else if (failureCountNum >= AUTH_THROTTLING.THRESHOLDS.LEVEL_1.failures) {
-      requiredDelay = AUTH_THROTTLING.THRESHOLDS.LEVEL_1.delayMinutes * 60 * 1000;
-    }
+    if (count >= AUTH_THROTTLING.THRESHOLDS.LEVEL_3.failures) delayMs = AUTH_THROTTLING.THRESHOLDS.LEVEL_3.delayMinutes * 60000;
+    else if (count >= AUTH_THROTTLING.THRESHOLDS.LEVEL_2.failures) delayMs = AUTH_THROTTLING.THRESHOLDS.LEVEL_2.delayMinutes * 60000;
+    else if (count >= AUTH_THROTTLING.THRESHOLDS.LEVEL_1.failures) delayMs = AUTH_THROTTLING.THRESHOLDS.LEVEL_1.delayMinutes * 60000;
 
-    if (requiredDelay > 0) {
+    if (delayMs > 0) {
       const [[{ lastFailure }]] = await db.query(
         `SELECT UNIX_TIMESTAMP(MAX(failed_at)) * 1000 AS lastFailure FROM auth_failures
          WHERE ${identifierField} = ? AND ip_address = ? AND resolved_at IS NULL`,
         [loginIdentifier, ipAddress]
       );
-      const timeSinceLastFailure = Date.now() - Number(lastFailure);
-      if (timeSinceLastFailure < requiredDelay) {
+      const timePassed = Date.now() - Number(lastFailure);
+      if (timePassed < delayMs) {
         return res.status(429).json({
           error: "Too many failed login attempts. Please try again later.",
-          retryAfter: Math.ceil((requiredDelay - timeSinceLastFailure) / 1000)
+          retryAfter: Math.ceil((delayMs - timePassed) / 1000)
         });
       }
     }
 
-    // 1️⃣ Find user
-    const [rows] = await db.query(
-      `SELECT * FROM users WHERE ${identifierField} = ?`,
-      [loginIdentifier]
-    );
+    // 1️⃣ Find User
+    const [rows] = await db.query(`SELECT * FROM users WHERE ${identifierField} = ?`, [loginIdentifier]);
 
     if (rows.length === 0) {
-      // Log failed attempt (no user found)
-      await db.query(
-        `INSERT INTO auth_failures (${identifierField}, ip_address, user_agent) VALUES (?, ?, ?)`,
-        [loginIdentifier, ipAddress, req.headers['user-agent'] || null]
-      );
+      await db.query(`INSERT INTO auth_failures (${identifierField}, ip_address, user_agent) VALUES (?, ?, ?)`,
+        [loginIdentifier, ipAddress, req.headers['user-agent'] || null]);
       return res.status(404).json({ error: "User not found" });
     }
 
     const user = rows[0];
 
-    // 2️⃣ Check password with bcrypt
-    const passwordOk = await bcrypt.compare(password, user.password_hash || "");
-    if (!passwordOk) {
-      // Log failed password attempt
-      await db.query(
-        `INSERT INTO auth_failures (${identifierField}, ip_address, user_agent) VALUES (?, ?, ?)`,
-        [loginIdentifier, ipAddress, req.headers['user-agent'] || null]
-      );
+    // 2️⃣ Verify Password
+    const match = await bcrypt.compare(password, user.password_hash || "");
+    if (!match) {
+      await db.query(`INSERT INTO auth_failures (${identifierField}, ip_address, user_agent) VALUES (?, ?, ?)`,
+        [loginIdentifier, ipAddress, req.headers['user-agent'] || null]);
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // 3️⃣ SUCCESS - Mark auth failures as resolved for this identifier and IP
+    // 3️⃣ Clear Failures
     await db.query(
       `UPDATE auth_failures SET resolved_at = NOW()
        WHERE ${identifierField} = ? AND ip_address = ? AND resolved_at IS NULL`,
       [loginIdentifier, ipAddress]
     );
 
-    // 4️⃣ Create short-lived access token and long-lived refresh token
-    // Check if user is admin
-    const isAdmin = user.is_admin || false;
-
-    const roles = ['captain'];
-    const scopes = ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'];
-
-    if (isAdmin) {
-      roles.push('admin');
-      scopes.push('admin:manage', 'user:manage', 'team:admin');
-    }
-
-    const jwtPayload = {
-      sub: user.id,
-      phone_number: user.phone_number,
-      email: user.email,
-      roles: roles,
-      scopes: scopes,
-      typ: 'access',
-      iss: process.env.JWT_ISS,
-      aud: process.env.JWT_AUD
-    };
-
-    const accessToken = jwt.sign(jwtPayload, process.env.JWT_SECRET, { expiresIn: "15m" });
-    const refreshToken = jwt.sign({ sub: user.id, typ: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
-
-    // 5️⃣ Persist refresh token (basic blacklist table)
-    await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [user.id, refreshToken]);
-
-    // 6️⃣ Set httpOnly cookie with env-based security flags
-    const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
-    res.cookie("refresh_token", refreshToken, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: isSecure ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    // Set CSRF token for web clients
+    // 4️⃣ Issue Tokens
+    const { accessToken, refreshToken } = generateTokens(user);
     const csrfToken = crypto.randomBytes(32).toString('hex');
-    res.cookie("csrf-token", csrfToken, {
-      httpOnly: false,
-      secure: isSecure,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
 
-    // 7️⃣ Respond access token and conditionally refresh token (for mobile clients)
+    // 5️⃣ Persist & Respond
+    await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [user.id, refreshToken]);
+    setAuthCookies(res, refreshToken, csrfToken);
+
     const response = {
       message: "Login successful",
       token: accessToken,
-      user: {
-        id: user.id,
-        phone_number: user.phone_number,
-        email: user.email
-      },
+      user: { id: user.id, phone_number: user.phone_number, email: user.email }
     };
 
-    // Only include refresh token in body for mobile clients
-    const isMobileClient = req.headers['x-client-type'] === 'mobile';
-    const allowRefreshInBody = process.env.ALLOW_REFRESH_IN_BODY === 'true' && isMobileClient;
-
-    if (allowRefreshInBody) {
+    if (process.env.ALLOW_REFRESH_IN_BODY === 'true' && req.headers['x-client-type'] === 'mobile') {
       response.refresh_token = refreshToken;
     }
 
     res.json(response);
+
   } catch (err) {
     req.log?.error(err);
     res.status(500).json({ error: "Server error", details: err.message });
@@ -347,141 +249,88 @@ const loginCaptain = async (req, res) => {
 // REFRESH ACCESS TOKEN
 // ========================
 const refreshToken = async (req, res) => {
-  // Accept refresh token from httpOnly cookie OR request body for mobile clients
   const tokenFromCookie = req.cookies && req.cookies.refresh_token;
   const tokenFromBody = req.body && req.body.refresh_token;
   const presented = tokenFromCookie || tokenFromBody;
-  if (!presented) {
-    return res.status(401).json({ error: "Refresh token missing" });
-  }
 
-  // CSRF protection for cookie-based refresh
+  if (!presented) return res.status(401).json({ error: "Refresh token missing" });
+
+  // CSRF check for browser clients
   if (tokenFromCookie && !tokenFromBody) {
-    const csrfToken = req.get('X-CSRF-Token');
-    const expectedCsrfToken = req.cookies['csrf-token'];
-    
-    if (!csrfToken || !expectedCsrfToken || csrfToken !== expectedCsrfToken) {
-      return res.status(403).json({ error: "CSRF token mismatch" });
-    }
+    const csrf = req.get('X-CSRF-Token');
+    const expected = req.cookies['csrf-token'];
+    if (!csrf || !expected || csrf !== expected) return res.status(403).json({ error: "CSRF token mismatch" });
   }
 
   try {
-    // Verify token signature and claims
+    // Verify JWT
     const payload = jwt.verify(presented, process.env.JWT_REFRESH_SECRET, {
       clockTolerance: 5,
       audience: process.env.JWT_AUD,
       issuer: process.env.JWT_ISS,
     });
 
-    // Check not revoked
+    // Check DB status
     const [rows] = await db.query("SELECT id, is_revoked, user_id FROM refresh_tokens WHERE token = ?", [presented]);
-    if (rows.length === 0 || rows[0].is_revoked) {
-      return res.status(401).json({ error: "Invalid refresh token" });
-    }
+    if (rows.length === 0 || rows[0].is_revoked) return res.status(401).json({ error: "Invalid refresh token" });
 
     const userId = rows[0].user_id;
+    const rotate = process.env.NODE_ENV === 'production' || String(process.env.ROTATE_REFRESH_ON_USE || '').toLowerCase() === 'true';
 
-    // Enable rotation by default in production, optional in development
-    const rotate = process.env.NODE_ENV === 'production' || 
-                   String(process.env.ROTATE_REFRESH_ON_USE || '').toLowerCase() === 'true';
     let newRefresh = null;
+
+    // Rotation Logic
     if (rotate) {
-      // revoke old
       await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE token = ?", [presented]);
-      // issue new
-      newRefresh = jwt.sign({ sub: userId, typ: "refresh", iss: process.env.JWT_ISS, aud: process.env.JWT_AUD }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
+
+      // Fetch user to regenerate tokens with fresh roles
+      const [userRows] = await db.query("SELECT * FROM users WHERE id = ?", [userId]);
+      const user = userRows[0];
+
+      const tokens = generateTokens(user); // Re-using helper
+      newRefresh = tokens.refreshToken;
+
       await db.query("INSERT INTO refresh_tokens (user_id, token, is_revoked) VALUES (?, ?, 0)", [userId, newRefresh]);
-      const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
-      res.cookie("refresh_token", newRefresh, {
-        httpOnly: true,
-        secure: isSecure,
-        sameSite: isSecure ? "none" : "lax", // 'none' requires secure; fallback to 'lax' for local dev
-        path: "/",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
 
-      // Set new CSRF token for web clients
-      const newCsrfToken = crypto.randomBytes(32).toString('hex');
-      res.cookie("csrf-token", newCsrfToken, {
-        httpOnly: false, // Must be accessible to JavaScript for CSRF protection
-        secure: isSecure,
-        sameSite: "lax", // Use 'lax' for CSRF token regardless of environment
-        path: "/",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-
-      // Signal to client that refresh token was rotated
+      const newCsrf = crypto.randomBytes(32).toString('hex');
+      setAuthCookies(res, newRefresh, newCsrf);
       res.set('X-Refresh-Rotated', 'true');
     }
 
-    // Get user details for token claims
-    const [userRows] = await db.query("SELECT phone_number, is_admin FROM users WHERE id = ?", [userId]);
+    // Issue Access Token
+    // We fetch the user again to ensure the access token has the latest roles/claims
+    const [userRows] = await db.query("SELECT * FROM users WHERE id = ?", [userId]);
     const user = userRows[0];
-    
-    const isAdmin = user.is_admin || false;
-    const roles = ['captain'];
-    const scopes = ['team:read', 'team:manage', 'match:score', 'player:manage', 'tournament:manage'];
-    
-    if (isAdmin) {
-      roles.push('admin');
-      scopes.push('admin:manage', 'user:manage', 'team:admin');
-    }
-    
-    const accessToken = jwt.sign({ 
-      sub: userId, 
-      phone_number: user.phone_number,
-      roles: roles,
-      scopes: scopes,
-      typ: 'access', // Token type for validation
-      iss: process.env.JWT_ISS, 
-      aud: process.env.JWT_AUD 
-    }, process.env.JWT_SECRET, { expiresIn: "15m" });
-    
+    const { accessToken } = generateTokens(user);
+
     const response = { token: accessToken };
-    
-    // Always include refresh token in body when rotation occurs and token was presented in body
     if (newRefresh && tokenFromBody) {
       response.refresh_token = newRefresh;
     }
-    
-    // Set response header to indicate rotation occurred
-    if (newRefresh) {
-      res.setHeader('X-Refresh-Rotated', 'true');
-    }
-    
+
     return res.json(response);
+
   } catch (err) {
-    if (err && err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: "Refresh token expired" });
-    }
+    if (err && err.name === 'TokenExpiredError') return res.status(401).json({ error: "Refresh token expired" });
     return res.status(401).json({ error: "Invalid refresh token" });
   }
 };
 
 // ========================
-// LOGOUT - revoke refresh tokens
+// LOGOUT
 // ========================
 const logout = async (req, res) => {
-  const tokenFromCookie = req.cookies && req.cookies.refresh_token;
-  const tokenFromBody = req.body && req.body.refresh_token;
+  const fromCookie = req.cookies && req.cookies.refresh_token;
+  const fromBody = req.body && req.body.refresh_token;
+
   try {
-    if (tokenFromCookie) {
-      await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE token = ?", [tokenFromCookie]);
-    }
-    if (tokenFromBody) {
-      await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE token = ?", [tokenFromBody]);
-    }
+    if (fromCookie) await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE token = ?", [fromCookie]);
+    if (fromBody) await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE token = ?", [fromBody]);
+
     const isSecure = process.env.NODE_ENV === "production" || String(process.env.COOKIE_SECURE).toLowerCase() === "true";
-    res.clearCookie("refresh_token", { 
-      path: "/", 
-      secure: isSecure, 
-      sameSite: isSecure ? "none" : "lax" 
-    });
-    res.clearCookie("csrf-token", { 
-      path: "/", 
-      secure: isSecure, 
-      sameSite: "lax" 
-    });
+    res.clearCookie("refresh_token", { path: "/", secure: isSecure, sameSite: isSecure ? "none" : "lax" });
+    res.clearCookie("csrf-token", { path: "/", secure: isSecure, sameSite: "lax" });
+
     return res.status(200).json({ message: "Logged out" });
   } catch (err) {
     req.log?.error(err);
@@ -490,56 +339,41 @@ const logout = async (req, res) => {
 };
 
 // ========================
-// PASSWORD RESET FLOW
+// PASSWORD RESET REQUEST
 // ========================
 const requestPasswordReset = async (req, res) => {
   const { phone_number } = req.body || {};
-  if (!phone_number) {
-    return res.status(400).json({ error: "Phone number is required" });
-  }
+  if (!phone_number) return res.status(400).json({ error: "Phone number is required" });
 
   try {
     const [users] = await db.query("SELECT id FROM users WHERE phone_number = ?", [phone_number]);
-    if (users.length === 0) {
-      // Respond success to avoid user enumeration
-      return res.json({ message: "If the account exists, a reset was initiated" });
-    }
+    if (users.length === 0) return res.json({ message: "If the account exists, a reset was initiated" }); // No enum
     const userId = users[0].id;
 
-    // Throttle: max 1 request per 15 minutes per user
+    // Throttle: 1 req / 15 min
     const [[{ cnt }]] = await db.query(
       "SELECT COUNT(*) AS cnt FROM password_resets WHERE user_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)",
       [userId]
     );
-    if (Number(cnt) >= 1) {
-      return res.status(429).json({ error: "Too many requests. Please try again later." });
-    }
+    if (Number(cnt) >= 1) return res.status(429).json({ error: "Too many requests. Please try again later." });
 
-    // Invalidate any active tokens (single-active token policy)
+    // Invalidate old tokens
     await db.query("UPDATE password_resets SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL AND expires_at > NOW()", [userId]);
 
+    // Generate Token
     const rawToken = crypto.randomBytes(48).toString("hex");
     const tokenHash = await bcrypt.hash(rawToken, 12);
-    const expiresMinutes = 15;
     await db.query(
-      "INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))",
-      [userId, tokenHash, expiresMinutes]
+      "INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE))",
+      [userId, tokenHash]
     );
 
-    // In production, send via SMS/Email. For development, return token for UX testing
     const response = { message: "Reset initiated" };
-    
-    // Only return token when explicitly allowed AND not in production
-    const returnTokenInBody = process.env.RETURN_RESET_TOKEN_IN_BODY === 'true' && 
-                             process.env.NODE_ENV !== 'production';
-    
-    if (returnTokenInBody) {
+    // Dev-only token return
+    if (process.env.NODE_ENV !== 'production' && process.env.RETURN_RESET_TOKEN_IN_BODY === 'true') {
       response.token = rawToken;
-      console.log(`⚠️  Password reset token returned in body for user ${userId} (development only)`);
-    } else if (process.env.NODE_ENV !== 'production') {
-      console.log(`🔒 Password reset token generated for user ${userId} but not returned (security)`);
     }
-    
+
     return res.json(response);
   } catch (err) {
     req.log?.error(err);
@@ -547,11 +381,13 @@ const requestPasswordReset = async (req, res) => {
   }
 };
 
+// ========================
+// VERIFY RESET TOKEN
+// ========================
 const verifyPasswordReset = async (req, res) => {
   const { phone_number, token } = req.body || {};
-  if (!phone_number || !token) {
-    return res.status(400).json({ error: "phone_number and token are required" });
-  }
+  if (!phone_number || !token) return res.status(400).json({ error: "phone_number and token are required" });
+
   try {
     const [users] = await db.query("SELECT id FROM users WHERE phone_number = ?", [phone_number]);
     if (users.length === 0) return res.status(400).json({ error: "Invalid reset token" });
@@ -562,8 +398,10 @@ const verifyPasswordReset = async (req, res) => {
       [userId]
     );
     if (rows.length === 0) return res.status(400).json({ error: "Invalid or expired reset token" });
+
     const ok = await bcrypt.compare(token, rows[0].token_hash || "");
     if (!ok) return res.status(400).json({ error: "Invalid or expired reset token" });
+
     return res.json({ valid: true });
   } catch (err) {
     req.log?.error(err);
@@ -571,14 +409,14 @@ const verifyPasswordReset = async (req, res) => {
   }
 };
 
+// ========================
+// CONFIRM RESET
+// ========================
 const confirmPasswordReset = async (req, res) => {
   const { phone_number, token, new_password } = req.body || {};
-  if (!phone_number || !token || !new_password) {
-    return res.status(400).json({ error: "phone_number, token and new_password are required" });
-  }
-  if (String(new_password).length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters" });
-  }
+  if (!phone_number || !token || !new_password) return res.status(400).json({ error: "Missing fields" });
+  if (String(new_password).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+
   try {
     const [users] = await db.query("SELECT id FROM users WHERE phone_number = ?", [phone_number]);
     if (users.length === 0) return res.status(400).json({ error: "Invalid reset token" });
@@ -589,13 +427,15 @@ const confirmPasswordReset = async (req, res) => {
       [userId]
     );
     if (rows.length === 0) return res.status(400).json({ error: "Invalid or expired reset token" });
-    const resetRow = rows[0];
-    const ok = await bcrypt.compare(token, resetRow.token_hash || "");
+
+    const ok = await bcrypt.compare(token, rows[0].token_hash || "");
     if (!ok) return res.status(400).json({ error: "Invalid or expired reset token" });
 
     const newHash = await bcrypt.hash(new_password, 12);
+
+    // Transaction-like execution
     await db.query("UPDATE users SET password_hash = ? WHERE id = ?", [newHash, userId]);
-    await db.query("UPDATE password_resets SET used_at = NOW() WHERE id = ?", [resetRow.id]);
+    await db.query("UPDATE password_resets SET used_at = NOW() WHERE id = ?", [rows[0].id]);
     await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE user_id = ? AND is_revoked = 0", [userId]);
 
     return res.json({ message: "Password reset successful" });
@@ -606,24 +446,27 @@ const confirmPasswordReset = async (req, res) => {
 };
 
 // ========================
-// ACCOUNT MANAGEMENT
+// CHANGE PASSWORD (Authenticated)
 // ========================
 const changePassword = async (req, res) => {
   const userId = req.user && req.user.id;
   const { current_password, new_password } = req.body || {};
+
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  if (!current_password || !new_password) return res.status(400).json({ error: "current_password and new_password are required" });
+  if (!current_password || !new_password) return res.status(400).json({ error: "Missing fields" });
   if (String(new_password).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
   try {
     const [rows] = await db.query("SELECT password_hash FROM users WHERE id = ?", [userId]);
     if (rows.length === 0) return res.status(404).json({ error: "User not found" });
+
     const ok = await bcrypt.compare(current_password, rows[0].password_hash || "");
     if (!ok) return res.status(401).json({ error: "Current password is incorrect" });
 
     const hash = await bcrypt.hash(new_password, 12);
     await db.query("UPDATE users SET password_hash = ? WHERE id = ?", [hash, userId]);
     await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE user_id = ? AND is_revoked = 0", [userId]);
+
     return res.json({ message: "Password changed" });
   } catch (err) {
     req.log?.error(err);
@@ -631,17 +474,21 @@ const changePassword = async (req, res) => {
   }
 };
 
+// ========================
+// CHANGE PHONE (Authenticated)
+// ========================
 const changePhoneNumber = async (req, res) => {
   const userId = req.user && req.user.id;
   const { new_phone_number } = req.body || {};
+
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const phoneRegex = /^\+?[1-9]\d{7,14}$/;
-  if (!new_phone_number || !phoneRegex.test(String(new_phone_number))) {
-    return res.status(400).json({ error: "Invalid phone number format" });
-  }
+  if (!new_phone_number || !phoneRegex.test(String(new_phone_number))) return res.status(400).json({ error: "Invalid phone number" });
+
   try {
     const [exists] = await db.query("SELECT id FROM users WHERE phone_number = ? AND id <> ?", [new_phone_number, userId]);
     if (exists.length > 0) return res.status(409).json({ error: "Phone number already in use" });
+
     await db.query("UPDATE users SET phone_number = ? WHERE id = ?", [new_phone_number, userId]);
     return res.json({ message: "Phone number updated", phone_number: new_phone_number });
   } catch (err) {
@@ -651,43 +498,23 @@ const changePhoneNumber = async (req, res) => {
 };
 
 // ========================
-// CSRF TOKEN ENDPOINT
+// UTILS: CSRF & Cleanup
 // ========================
 const getCsrfToken = async (req, res) => {
   try {
     const csrfToken = crypto.randomBytes(32).toString('hex');
     const isSecure = process.env.NODE_ENV === 'production';
-
-    res.cookie("csrf-token", csrfToken, {
-      httpOnly: false,
-      secure: isSecure,
-      sameSite: isSecure ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
+    res.cookie("csrf-token", csrfToken, { httpOnly: false, secure: isSecure, sameSite: isSecure ? "none" : "lax", path: "/", maxAge: 7 * 24 * 60 * 60 * 1000 });
     res.json({ csrf_token: csrfToken });
   } catch (err) {
-    req.log?.error(err);
     res.status(500).json({ error: "Server error" });
   }
 };
 
-// ========================
-// TEST CLEANUP (Development only)
-// ========================
 const clearAuthFailures = async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(404).json({ error: 'Not found' });
-  }
-  
+  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'Not found' });
   try {
-    // Clean up old resolved failures (older than 24 hours) and very old unresolved ones (older than 7 days)
-    await db.query(`
-      DELETE FROM auth_failures 
-      WHERE (resolved_at IS NOT NULL AND resolved_at < DATE_SUB(NOW(), INTERVAL 24 HOUR))
-         OR (resolved_at IS NULL AND failed_at < DATE_SUB(NOW(), INTERVAL 7 DAY))
-    `);
+    await db.query(`DELETE FROM auth_failures WHERE (resolved_at IS NOT NULL AND resolved_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)) OR (resolved_at IS NULL AND failed_at < DATE_SUB(NOW(), INTERVAL 7 DAY))`);
     res.json({ message: "Auth failures cleaned up" });
   } catch (err) {
     res.status(500).json({ error: "Server error" });

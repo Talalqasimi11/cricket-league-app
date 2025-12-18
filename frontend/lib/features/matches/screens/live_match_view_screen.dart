@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io';
 import '../../../core/api_client.dart';
 import '../../../core/websocket_service.dart';
 
@@ -14,6 +15,7 @@ class LiveMatchViewScreen extends StatefulWidget {
 
 class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
   bool _loading = true;
+  String? _error;
   String teamA = 'Team A';
   String teamB = 'Team B';
   String overs = '0';
@@ -23,6 +25,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
 
   bool _isRefreshing = false;
   bool _websocketConnected = false;
+
+  Timer? _pollingTimer;
 
   @override
   void initState() {
@@ -62,34 +66,33 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
     };
 
     WebSocketService.instance.onConnected = () {
-      if (mounted) {
-        setState(() {
-          _websocketConnected = true;
-        });
-        debugPrint('WebSocket connected successfully');
-      }
+      if (!mounted) return;
+      setState(() {
+        _websocketConnected = true;
+      });
+      debugPrint('WebSocket connected successfully');
+      // Stop polling when connected
+      _stopPollingFallback();
     };
 
     WebSocketService.instance.onDisconnected = () {
-      if (mounted) {
-        setState(() {
-          _websocketConnected = false;
-        });
-        debugPrint('WebSocket disconnected');
-        // Start polling fallback when disconnected
-        _startPollingFallback();
-      }
+      if (!mounted) return;
+      setState(() {
+        _websocketConnected = false;
+      });
+      debugPrint('WebSocket disconnected');
+      // Start polling fallback when disconnected
+      _startPollingFallback();
     };
 
     WebSocketService.instance.onError = (error) {
-      if (mounted) {
-        debugPrint('WebSocket error: $error');
-        setState(() {
-          _websocketConnected = false;
-        });
-        // Start polling fallback on error
-        _startPollingFallback();
-      }
+      if (!mounted) return;
+      debugPrint('WebSocket error: $error');
+      setState(() {
+        _websocketConnected = false;
+      });
+      // Start polling fallback on error
+      _startPollingFallback();
     };
 
     WebSocketService.instance.onSubscribed = (data) {
@@ -109,8 +112,6 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
     // Connect to WebSocket
     WebSocketService.instance.connect(widget.matchId);
   }
-
-  Timer? _pollingTimer;
 
   void _startPollingFallback() {
     // Stop any existing polling
@@ -159,17 +160,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
             final wicketType = (m['wicket_type'] ?? '').toString();
             final extras = (m['extras'] as String?) ?? '';
 
-            // Build display over with extras suffix
-            String overDisplay = '$overNo.$ballNo';
-            if (extras == 'wide') {
-              overDisplay += 'wd';
-            } else if (extras == 'no-ball') {
-              overDisplay += 'nb';
-            } else if (extras == 'bye') {
-              overDisplay += 'b';
-            } else if (extras == 'leg-bye') {
-              overDisplay += 'lb';
-            }
+            // Keep over display simple, extras handled separately
+            final overDisplay = '$overNo.$ballNo';
 
             final result = wicketType.isNotEmpty ? 'W' : runs;
             final bowler = (m['bowler_name'] ?? '').toString();
@@ -227,7 +219,6 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
 
     if (!_loading) {
       setState(() {
-        _loading = true;
         _isRefreshing = true;
       });
     }
@@ -240,6 +231,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final innings = (data['innings'] as List?) ?? [];
         final balls = (data['balls'] as List?) ?? [];
+
         // pick last innings as current if any
         if (innings.isNotEmpty) {
           final last = innings.last as Map<String, dynamic>;
@@ -254,8 +246,10 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
             score = '$runs/$wkts';
             currentOvers = ov;
             overs = ov; // if total overs not provided, show current overs
+            _error = null; // Clear error on success
           });
         }
+
         // map balls into viewer log
         final mapped = balls.map<Map<String, String>>((b) {
           final m = b as Map<String, dynamic>;
@@ -265,17 +259,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
           final wicketType = (m['wicket_type'] ?? '').toString();
           final extras = (m['extras'] as String?) ?? '';
 
-          // Build display over with extras suffix
-          String overDisplay = '$overNo.$ballNo';
-          if (extras == 'wide') {
-            overDisplay += 'wd';
-          } else if (extras == 'no-ball') {
-            overDisplay += 'nb';
-          } else if (extras == 'bye') {
-            overDisplay += 'b';
-          } else if (extras == 'leg-bye') {
-            overDisplay += 'lb';
-          }
+          // Keep over display simple, extras handled separately
+          final overDisplay = '$overNo.$ballNo';
 
           final result = wicketType.isNotEmpty ? 'W' : runs;
           final bowler = (m['bowler_name'] ?? '').toString();
@@ -305,23 +290,35 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
             'extras': extras,
           };
         }).toList();
+
         setState(() {
           ballByBall = mapped;
         });
       } else {
-        if (mounted) {
+        final errorMessage = _getErrorMessage('Failed to load live score (${resp.statusCode})');
+        if (_loading) { // Initial load
+          setState(() {
+            _error = errorMessage;
+          });
+        } else { // Refresh
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to load live score (${resp.statusCode})'),
-            ),
+            SnackBar(content: Text(errorMessage)),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error loading live score: $e')));
+        final errorMessage = _getErrorMessage(e);
+        if (_loading) { // Initial load
+          setState(() {
+            _error = errorMessage;
+          });
+        } else { // Refresh
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMessage)),
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -331,6 +328,17 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
         });
       }
     }
+  }
+
+  String _getErrorMessage(dynamic error) {
+    if (error is SocketException) {
+      return 'No internet connection. Please check your network and try again.';
+    } else if (error is TimeoutException) {
+      return 'The request timed out. Please try again later.';
+    } else if (error.toString().contains('404')) {
+      return 'Live score not available for this match.';
+    }
+    return 'An unexpected error occurred while fetching live score.';
   }
 
   Future<void> _onRefresh() async {
@@ -347,12 +355,15 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
         foregroundColor: theme.colorScheme.onSurface,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new, color: theme.colorScheme.onSurface),
+          icon:
+              Icon(Icons.arrow_back_ios_new, color: theme.colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           "Live Match",
-          style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold),
+          style: TextStyle(
+              color: theme.colorScheme.onSurface,
+              fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         actions: [
@@ -371,213 +382,277 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
             padding: const EdgeInsets.only(right: 8.0),
             child: _websocketConnected
                 ? const Icon(Icons.wifi, color: Colors.green, size: 18)
-                : Icon(Icons.wifi_off, color: theme.colorScheme.onSurface.withValues(alpha: 0.5), size: 18),
+                : Icon(Icons.wifi_off,
+                    // FIXED: withOpacity -> withValues
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                    size: 18),
           ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _onRefresh,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  // 🏏 Match Info Card
-                  Container(
+          : _error != null
+              ? _buildErrorWidget()
+              : RefreshIndicator(
+                  onRefresh: _onRefresh,
+                  child: ListView(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: const BorderRadius.all(Radius.circular(16)),
-                      border: Border.all(
-                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        // Match Title + Status
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              "$teamA vs $teamB",
-                              style: TextStyle(
-                                color: theme.colorScheme.onSurface,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        // Match Details
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              "$overs Overs Match",
-                              style: TextStyle(
-                                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.green.shade100,
-                                borderRadius: const BorderRadius.all(Radius.circular(12)),
-                              ),
-                              child: Text(
-                                "LIVE",
-                                style: TextStyle(
-                                  color: Colors.green.shade700,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        // Team Logos
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircleAvatar(
-                              radius: 20,
-                              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                              child: Icon(Icons.shield, color: theme.colorScheme.onSurfaceVariant),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Text(
-                                "vs",
-                                style: TextStyle(
-                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            CircleAvatar(
-                              radius: 20,
-                              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                              child: Icon(Icons.shield, color: theme.colorScheme.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // 📊 Scorecard
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: const BorderRadius.all(Radius.circular(16)),
-                      border: Border.all(
-                              color: theme.colorScheme.outline.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          "Batting Team",
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w600,
+                    children: [
+                      // 🏏 Match Info Card
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius:
+                              const BorderRadius.all(Radius.circular(16)),
+                          border: Border.all(
+                            // FIXED: withOpacity -> withValues
+                            color: theme.colorScheme.outline
+                                .withValues(alpha: 0.3),
                           ),
                         ),
-                        const SizedBox(height: 12),
-
-                        // Score + Overs
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        child: Column(
                           children: [
-                            Column(
+                            // Match Title + Status
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                  score,
+                                  "$teamA vs $teamB",
                                   style: TextStyle(
                                     color: theme.colorScheme.onSurface,
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            // Match Details
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  "$overs Overs Match",
+                                  style: TextStyle(
+                                    // FIXED: withOpacity -> withValues
+                                    color: theme.colorScheme.onSurface
+                                        .withValues(alpha: 0.7),
+                                    fontSize: 14,
                                   ),
                                 ),
-                                Text(
-                                  "Runs / Wickets",
-                                  style: TextStyle(
-                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                                    fontSize: 12,
+                                const SizedBox(width: 12),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade100,
+                                    borderRadius: const BorderRadius.all(
+                                        Radius.circular(12)),
+                                  ),
+                                  child: Text(
+                                    "LIVE",
+                                    style: TextStyle(
+                                      color: Colors.green.shade700,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                            Container(
-                              height: 40,
-                              width: 1,
-                              margin: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                              ),
-                              color: theme.colorScheme.outline.withOpacity(0.3),
-                            ),
-                            Column(
+                            const SizedBox(height: 12),
+                            // Team Logos
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text(
-                                  currentOvers,
-                                  style: TextStyle(
-                                    color: theme.colorScheme.onSurface,
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.bold,
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor:
+                                      theme.colorScheme.surfaceContainerHighest,
+                                  child: Icon(Icons.shield,
+                                      color: theme
+                                          .colorScheme.onSurfaceVariant),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12),
+                                  child: Text(
+                                    "vs",
+                                    style: TextStyle(
+                                      // FIXED: withOpacity -> withValues
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.6),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
-                                Text(
-                                  "Overs",
-                                  style: TextStyle(
-                                    color: theme.colorScheme.onSurface.withOpacity(0.6),
-                                    fontSize: 12,
-                                  ),
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor:
+                                      theme.colorScheme.surfaceContainerHighest,
+                                  child: Icon(Icons.shield,
+                                      color: theme
+                                          .colorScheme.onSurfaceVariant),
                                 ),
                               ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
 
-                  const SizedBox(height: 20),
+                      const SizedBox(height: 20),
 
-                  // 📒 Ball-by-Ball Log
-                  Text(
-                    "Ball-by-Ball Log",
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                      // 📊 Scorecard
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius:
+                              const BorderRadius.all(Radius.circular(16)),
+                          border: Border.all(
+                            // FIXED: withOpacity -> withValues
+                            color: theme.colorScheme.outline
+                                .withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              "Batting Team",
+                              style: TextStyle(
+                                // FIXED: withOpacity -> withValues
+                                color: theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.7),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
 
-                  ...ballByBall.map(
-                    (ball) => _buildBallLog(
-                      over: ball["over"] ?? "",
-                      bowler: ball["bowler"] ?? "",
-                      batsman: ball["batsman"] ?? "",
-                      commentary: ball["commentary"] ?? "",
-                      result: ball["result"] ?? "",
-                    ),
+                            // Score + Overs
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Column(
+                                  children: [
+                                    Text(
+                                      score,
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurface,
+                                        fontSize: 36,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      "Runs / Wickets",
+                                      style: TextStyle(
+                                        // FIXED: withOpacity -> withValues
+                                        color: theme.colorScheme.onSurface
+                                            .withValues(alpha: 0.6),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Container(
+                                  height: 40,
+                                  width: 1,
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                  ),
+                                  // FIXED: withOpacity -> withValues
+                                  color: theme.colorScheme.outline
+                                      .withValues(alpha: 0.3),
+                                ),
+                                Column(
+                                  children: [
+                                    Text(
+                                      currentOvers,
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurface,
+                                        fontSize: 36,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      "Overs",
+                                      style: TextStyle(
+                                        // FIXED: withOpacity -> withValues
+                                        color: theme.colorScheme.onSurface
+                                            .withValues(alpha: 0.6),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // 📒 Ball-by-Ball Log
+                      Text(
+                        "Ball-by-Ball Log",
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      ...ballByBall.map(
+                        (ball) => _buildBallLog(
+                          over: ball["over"] ?? "",
+                          bowler: ball["bowler"] ?? "",
+                          batsman: ball["batsman"] ?? "",
+                          commentary: ball["commentary"] ?? "",
+                          result: ball["result"] ?? "",
+                          extras: ball["extras"] ?? "",
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 60),
+            const SizedBox(height: 16),
+            Text(
+              _error ?? 'An unknown error occurred.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16),
             ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _loading = true;
+                  _error = null;
+                });
+                _fetchLive();
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -587,14 +662,15 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
     required String batsman,
     required String commentary,
     required String result,
+    required String extras,
   }) {
     final theme = Theme.of(context);
 
-    // Extract extras from over string if present
-    final hasWide = over.contains('wd');
-    final hasNoBall = over.contains('nb');
-    final hasBye = over.contains('b') && !over.contains('nb');
-    final hasLegBye = over.contains('lb');
+    // Determine extras from extras field (not by parsing over string)
+    final hasWide = extras == 'wide';
+    final hasNoBall = extras == 'no-ball';
+    final hasBye = extras == 'bye';
+    final hasLegBye = extras == 'leg-bye';
     final hasExtras = hasWide || hasNoBall || hasBye || hasLegBye;
 
     // Result-based color
@@ -604,7 +680,7 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
     } else if (result == "6") {
       resultColor = Colors.green;
     } else if (result == "4") {
-      resultColor = Colors.greenAccent;
+      resultColor = Colors.greenAccent.shade700;
     } else {
       resultColor = theme.colorScheme.onSurface;
     }
@@ -621,7 +697,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                 color: Colors.orange.shade300,
                 width: 1.5,
               )
-            : Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
+            // FIXED: withOpacity -> withValues
+            : Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -631,8 +708,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
             backgroundColor: result == "W"
                 ? Colors.red.shade100
                 : hasExtras
-                ? Colors.orange.shade100
-                : theme.colorScheme.surfaceContainerHighest,
+                    ? Colors.orange.shade100
+                    : theme.colorScheme.surfaceContainerHighest,
             child: Text(
               over,
               style: TextStyle(
@@ -641,8 +718,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                 color: result == "W"
                     ? Colors.red.shade700
                     : hasExtras
-                    ? Colors.orange.shade700
-                    : theme.colorScheme.onSurfaceVariant,
+                        ? Colors.orange.shade700
+                        : theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -673,7 +750,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                         ),
                         decoration: const BoxDecoration(
                           color: Colors.orange,
-                          borderRadius: BorderRadius.all(Radius.circular(4)),
+                          borderRadius:
+                              BorderRadius.all(Radius.circular(4)),
                         ),
                         child: const Text(
                           'WD',
@@ -692,7 +770,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                         ),
                         decoration: const BoxDecoration(
                           color: Colors.orange,
-                          borderRadius: BorderRadius.all(Radius.circular(4)),
+                          borderRadius:
+                              BorderRadius.all(Radius.circular(4)),
                         ),
                         child: const Text(
                           'NB',
@@ -707,7 +786,10 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
                 ),
                 Text(
                   commentary,
-                  style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 12),
+                  style: TextStyle(
+                      // FIXED: withOpacity -> withValues
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      fontSize: 12),
                 ),
               ],
             ),
@@ -716,7 +798,8 @@ class _LiveMatchViewScreenState extends State<LiveMatchViewScreen> {
           // Result (runs, W, etc.)
           Text(
             result,
-            style: TextStyle(fontWeight: FontWeight.bold, color: resultColor),
+            style:
+                TextStyle(fontWeight: FontWeight.bold, color: resultColor),
           ),
         ],
       ),

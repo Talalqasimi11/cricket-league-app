@@ -1,0 +1,28 @@
+﻿1. Registering user...
+Register status: 500
+Registration failed (maybe user exists), trying login...
+Register response: {
+  error: 'Server error',
+  details: "Unknown column 'email' in 'where clause'",
+  stack: "Error: Unknown column 'email' in 'where clause'\n" +
+    '    at PromisePool.query (C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app\\backend\\node_modules\\mysql2\\lib\\promise\\pool.js:36:22)\n' +
+    '    at registerCaptain (C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app\\backend\\controllers\\authController.js:99:33)\n' +
+    '    at Layer.handleRequest (C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app\\backend\\node_modules\\router\\lib\\layer.js:152:17)\n' +
+    '    at next (C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app\\backend\\node_modules\\router\\lib\\route.js:157:13)\n' +
+    '    at C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:807:7\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n' +
+    '    at async C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app\\backend\\node_modules\\express-rate-limit\\dist\\index.cjs:691:5'
+}
+node : Login response: {
+At line:1 char:1
++ node test_fix_start_innings.js > test_output.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo              : NotSpe    cified: (Login r    esponse: {:Strin    g) [], RemoteExc    eption
+    + FullyQualified    ErrorId : Native    CommandError
+ 
+  error: 'Server error',
+  details: "Unknown column 'email' in 'where clause'"
+}
+Γ¥î Test Failed: Error: Failed to get token
+    at testFix (C:\Users\Administrator\Desktop\final project\cricket-league-app\backend\test_fix_start_innings.js:92:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)

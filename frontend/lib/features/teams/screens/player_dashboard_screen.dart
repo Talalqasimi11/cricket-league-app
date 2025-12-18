@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/api_client.dart';
+import '../../../services/api_service.dart';
 import '../models/player.dart';
-import '../../../core/theme/theme_config.dart';
 import '../../../widgets/image_upload_widget.dart';
 
 class PlayerDashboardScreen extends StatefulWidget {
@@ -53,17 +53,11 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
 
   dynamic _safeJsonDecode(String body) {
     try {
-      if (body.isEmpty) {
-        throw const FormatException('Empty response body');
-      }
+      if (body.isEmpty) throw const FormatException('Empty response body');
       return jsonDecode(body);
-    } on FormatException catch (e) {
-      debugPrint('JSON decode error: $e');
-      debugPrint('Response body: $body');
-      throw FormatException('Invalid JSON response: ${e.message}');
     } catch (e) {
-      debugPrint('Unexpected decode error: $e');
-      rethrow;
+      debugPrint('JSON decode error: $e');
+      return {}; // Return empty map on error to prevent crashes
     }
   }
 
@@ -74,13 +68,16 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
   }
 
   String _getInitial(String name) {
-    try {
-      if (name.isEmpty) return '?';
-      return name.trim()[0].toUpperCase();
-    } catch (e) {
-      debugPrint('Error getting initial: $e');
-      return '?';
-    }
+    if (name.isEmpty) return '?';
+    return name.trim()[0].toUpperCase();
+  }
+
+  // Helper to construct full image URL
+  String _getFullImageUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    if (path.startsWith('http')) return path;
+    // Remove leading slash if strictly needed, though usually standardizing on one is best
+    return '${ApiClient.baseUrl}$path';
   }
 
   @override
@@ -98,43 +95,22 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
 
   void _showSuccessMessage(String message) {
     if (!mounted || _isDisposed) return;
-    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: AppColors.secondaryGreen,
+        content: Text(message),
+        backgroundColor: Colors.green,
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
       ),
     );
   }
 
   void _showErrorMessage(String message) {
     if (!mounted || _isDisposed) return;
-    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: AppColors.errorRed,
+        content: Text(message),
+        backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 4),
-        action: SnackBarAction(
-          label: 'DISMISS',
-          onPressed: () {},
-          textColor: Colors.white,
-        ),
       ),
     );
   }
@@ -147,7 +123,7 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
     }
 
     if (!mounted || _isDisposed) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Session expired. Please login again.'),
@@ -160,19 +136,89 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
     }
   }
 
+  // ✅ DELETE FUNCTIONALITY
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Player'),
+        content: Text(
+          'Are you sure you want to delete ${_player.playerName}? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _deletePlayer();
+    }
+  }
+
+  Future<void> _deletePlayer() async {
+    if (!mounted || _isDisposed) return;
+    _safeSetState(() => _isLoading = true);
+
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      if (token == null) {
+        await _handleAuthError();
+        return;
+      }
+
+      final response = await _apiClient.delete(
+        '/api/players/${_player.id}',
+        headers: {"Authorization": "Bearer $token"},
+      );
+
+      if (!mounted || _isDisposed) return;
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        _showSuccessMessage('Player deleted successfully');
+        // Pass 'deleted' string or null back to indicate deletion if needed,
+        // usually popping with null when expecting a Player object implies deletion handling in parent
+        Navigator.pop(context, null);
+      } else {
+        _showErrorMessage('Failed to delete player: ${response.statusCode}');
+        _safeSetState(() => _isLoading = false);
+      }
+    } catch (e) {
+      _showErrorMessage('Error deleting player: $e');
+      _safeSetState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _showEditPlayerDialog() async {
     if (_isLoading || _isDisposed || !mounted) return;
 
     final formKey = GlobalKey<FormState>();
     bool isSubmitting = false;
     String currentRole = _safeString(_player.playerRole, _allowedRoles[0]);
-    String? uploadedImageUrl;
+    String? uploadedImageUrl = _player.playerImageUrl;
 
     final nameController = TextEditingController(
       text: _safeString(_player.playerName, ''),
     );
+    final matchesController = TextEditingController(
+      text: _safeInt(_player.matchesPlayed, 0).toString(),
+    );
     final runsController = TextEditingController(
       text: _safeInt(_player.runs, 0).toString(),
+    );
+    final hundredsController = TextEditingController(
+      text: _safeInt(_player.hundreds, 0).toString(),
+    );
+    final fiftiesController = TextEditingController(
+      text: _safeInt(_player.fifties, 0).toString(),
     );
     final avgController = TextEditingController(
       text: _safeDouble(_player.battingAverage, 0.0).toStringAsFixed(2),
@@ -183,12 +229,6 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
     final wicketsController = TextEditingController(
       text: _safeInt(_player.wickets, 0).toString(),
     );
-
-    final nameFocus = FocusNode();
-    final runsFocus = FocusNode();
-    final avgFocus = FocusNode();
-    final strikeFocus = FocusNode();
-    final wicketsFocus = FocusNode();
 
     try {
       await showDialog<void>(
@@ -204,44 +244,34 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
                 setDialogState(() => isSubmitting = true);
 
                 try {
-                  final playerName = nameController.text.trim();
-                  final runs = int.tryParse(runsController.text.trim()) ??
-                      _player.runs;
-                  final battingAverage =
-                      double.tryParse(avgController.text.trim()) ??
-                          _player.battingAverage;
-                  final strikeRate =
-                      double.tryParse(strikeController.text.trim()) ??
-                          _player.strikeRate;
-                  final wickets =
-                      int.tryParse(wicketsController.text.trim()) ??
-                          _player.wickets;
-
-                  if (playerName.isEmpty) {
-                    throw Exception('Player name cannot be empty');
-                  }
-
-                  final updated = _player.copyWith(
-                    playerName: playerName,
+                  // Create Updated Player Object locally
+                  final updatedPlayer = _player.copyWith(
+                    playerName: nameController.text.trim(),
                     playerRole: currentRole,
-                    runs: runs,
-                    battingAverage: battingAverage,
-                    strikeRate: strikeRate,
-                    wickets: wickets,
-                    playerImageUrl: uploadedImageUrl ?? _player.playerImageUrl,
+                    matchesPlayed:
+                        int.tryParse(matchesController.text.trim()) ?? 0,
+                    runs: int.tryParse(runsController.text.trim()) ?? 0,
+                    hundreds: int.tryParse(hundredsController.text.trim()) ?? 0,
+                    fifties: int.tryParse(fiftiesController.text.trim()) ?? 0,
+                    wickets: int.tryParse(wicketsController.text.trim()) ?? 0,
+                    battingAverage:
+                        double.tryParse(avgController.text.trim()) ?? 0.0,
+                    strikeRate:
+                        double.tryParse(strikeController.text.trim()) ?? 0.0,
+                    playerImageUrl: uploadedImageUrl,
                   );
 
-                  await _updatePlayer(updated);
+                  // Call the update function
+                  await _updatePlayer(updatedPlayer);
 
                   if (context.mounted) {
                     Navigator.of(context).pop();
                   }
                 } catch (e) {
-                  debugPrint('Error in handleSubmit: $e');
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Error: ${e.toString()}'),
+                        content: Text('Error: $e'),
                         backgroundColor: Colors.red,
                       ),
                     );
@@ -254,43 +284,35 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
               }
 
               return AlertDialog(
-                title: const Text('Edit Player'),
+                title: const Text('Edit Player Stats'),
                 content: SingleChildScrollView(
                   child: Form(
                     key: formKey,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Basic Info
                         TextFormField(
                           controller: nameController,
-                          focusNode: nameFocus,
                           textCapitalization: TextCapitalization.words,
                           decoration: const InputDecoration(
                             labelText: 'Player Name',
                             border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.person),
                           ),
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) {
-                              return 'Player name is required';
-                            }
-                            if (v.trim().length < 2) {
-                              return 'Name must be at least 2 characters';
-                            }
-                            if (v.trim().length > 50) {
-                              return 'Name must not exceed 50 characters';
-                            }
-                            return null;
-                          },
-                          onFieldSubmitted: (_) => runsFocus.requestFocus(),
-                          enabled: !isSubmitting,
-                          maxLength: 50,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Required'
+                              : null,
                         ),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
-                          value: currentRole,
+                          initialValue: _allowedRoles.contains(currentRole)
+                              ? currentRole
+                              : _allowedRoles[0],
                           decoration: const InputDecoration(
                             labelText: 'Role',
                             border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.sports_cricket),
                           ),
                           items: _allowedRoles
                               .map(
@@ -302,116 +324,140 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
                               .toList(),
                           onChanged: isSubmitting
                               ? null
-                              : (value) {
-                                  if (value != null) {
-                                    setDialogState(() => currentRole = value);
-                                  }
-                                },
-                          validator: (v) => v == null ? 'Role is required' : null,
+                              : (val) =>
+                                    setDialogState(() => currentRole = val!),
                         ),
                         const SizedBox(height: 12),
+
                         ImageUploadWidget(
                           label: 'Player Photo',
-                          currentImageUrl: _player.playerImageUrl,
-                          onImageUploaded: (imageUrl) {
-                            debugPrint('Player photo uploaded: $imageUrl');
-                            uploadedImageUrl = imageUrl;
+                          currentImageUrl: _getFullImageUrl(uploadedImageUrl),
+                          onUpload: (file) async {
+                            if (_player.id.isEmpty) return null;
+                            // Assuming ApiService handles the multipart upload
+                            final res = await ApiService().uploadPlayerPhoto(
+                              _player.id,
+                              file,
+                            );
+                            // Ensure we catch the URL from the response properly
+                            if (res != null && res.containsKey('imageUrl')) {
+                              return res['imageUrl'];
+                            }
+                            return null;
+                          },
+                          onImageUploaded: (url) {
+                            setDialogState(() => uploadedImageUrl = url);
                           },
                           onImageRemoved: () {
-                            debugPrint('Player photo removed');
-                            uploadedImageUrl = '';
+                            setDialogState(() => uploadedImageUrl = '');
                           },
                         ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: runsController,
-                          focusNode: runsFocus,
-                          decoration: const InputDecoration(
-                            labelText: 'Runs',
-                            border: OutlineInputBorder(),
-                          ),
-                          keyboardType: TextInputType.number,
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return null;
-                            }
-                            final runs = int.tryParse(value.trim());
-                            if (runs == null) return 'Must be a valid number';
-                            if (runs < 0) return 'Cannot be negative';
-                            if (runs > 1000000) return 'Value too large';
-                            return null;
-                          },
-                          onFieldSubmitted: (_) => avgFocus.requestFocus(),
-                          enabled: !isSubmitting,
+
+                        const SizedBox(height: 20),
+                        const Text(
+                          "Match Statistics",
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Stats Grid inputs
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: matchesController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Matches',
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextFormField(
+                                controller: runsController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Runs',
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          controller: avgController,
-                          focusNode: avgFocus,
-                          decoration: const InputDecoration(
-                            labelText: 'Batting Average',
-                            border: OutlineInputBorder(),
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return null;
-                            }
-                            final avg = double.tryParse(value.trim());
-                            if (avg == null) return 'Must be a valid number';
-                            if (avg < 0) return 'Cannot be negative';
-                            if (avg > 1000) return 'Value too large';
-                            return null;
-                          },
-                          onFieldSubmitted: (_) => strikeFocus.requestFocus(),
-                          enabled: !isSubmitting,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: hundredsController,
+                                decoration: const InputDecoration(
+                                  labelText: '100s',
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextFormField(
+                                controller: fiftiesController,
+                                decoration: const InputDecoration(
+                                  labelText: '50s',
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          controller: strikeController,
-                          focusNode: strikeFocus,
-                          decoration: const InputDecoration(
-                            labelText: 'Strike Rate',
-                            border: OutlineInputBorder(),
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return null;
-                            }
-                            final sr = double.tryParse(value.trim());
-                            if (sr == null) return 'Must be a valid number';
-                            if (sr < 0) return 'Cannot be negative';
-                            if (sr > 1000) return 'Value too large';
-                            return null;
-                          },
-                          onFieldSubmitted: (_) => wicketsFocus.requestFocus(),
-                          enabled: !isSubmitting,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: avgController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Average',
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextFormField(
+                                controller: strikeController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Strike Rate',
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          controller: wicketsController,
-                          focusNode: wicketsFocus,
-                          decoration: const InputDecoration(
-                            labelText: 'Wickets',
-                            border: OutlineInputBorder(),
-                          ),
-                          keyboardType: TextInputType.number,
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return null;
-                            }
-                            final w = int.tryParse(value.trim());
-                            if (w == null) return 'Must be a valid number';
-                            if (w < 0) return 'Cannot be negative';
-                            if (w > 10000) return 'Value too large';
-                            return null;
-                          },
-                          enabled: !isSubmitting,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: wicketsController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Wickets',
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -421,20 +467,19 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
                   TextButton(
                     onPressed: isSubmitting
                         ? null
-                        : () {
-                            if (Navigator.canPop(context)) {
-                              Navigator.of(context).pop();
-                            }
-                          },
+                        : () => Navigator.pop(context),
                     child: const Text('Cancel'),
                   ),
-                  ElevatedButton(
+                  FilledButton(
                     onPressed: isSubmitting ? null : handleSubmit,
                     child: isSubmitting
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Text('Save'),
                   ),
@@ -445,23 +490,11 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
         },
       );
     } catch (e) {
-      debugPrint('Error showing edit dialog: $e');
       _showErrorMessage('Failed to open edit dialog');
-    } finally {
-      // Dispose resources after dialog is closed
-      nameController.dispose();
-      runsController.dispose();
-      avgController.dispose();
-      strikeController.dispose();
-      wicketsController.dispose();
-      nameFocus.dispose();
-      runsFocus.dispose();
-      avgFocus.dispose();
-      strikeFocus.dispose();
-      wicketsFocus.dispose();
     }
   }
 
+  // ✅ CRITICAL FIX: Ensure Keys Match Backend Controller
   Future<void> _updatePlayer(Player updatedPlayer) async {
     if (!mounted || _isDisposed) return;
 
@@ -476,265 +509,268 @@ class _PlayerDashboardScreenState extends State<PlayerDashboardScreen> {
       }
 
       final playerId = _safeString(_player.id, '');
-      if (playerId.isEmpty) {
-        throw Exception('Invalid player ID');
-      }
+      if (playerId.isEmpty) throw Exception('Invalid player ID');
 
-      Map<String, dynamic> playerJson;
-      try {
-        playerJson = updatedPlayer.toJson();
-      } catch (e) {
-        debugPrint('Error serializing player: $e');
-        throw Exception('Failed to prepare player data');
-      }
+      // ⚠️ IMPORTANT: Construct Map manually to match backend exactly
+      // Backend expects 'player_image_url', NOT 'image' or 'path'
+      final Map<String, dynamic> requestBody = {
+        'player_name': updatedPlayer.playerName,
+        'player_role': updatedPlayer.playerRole,
+        'player_image_url':
+            updatedPlayer.playerImageUrl, // This matches backend validation
+        'runs': updatedPlayer.runs,
+        'matches_played': updatedPlayer.matchesPlayed,
+        'wickets': updatedPlayer.wickets,
+        'batting_average': updatedPlayer.battingAverage,
+        'strike_rate': updatedPlayer.strikeRate,
+        'hundreds': updatedPlayer.hundreds,
+        'fifties': updatedPlayer.fifties,
+      };
+
+      // Remove nulls to avoid backend validation errors
+      requestBody.removeWhere((key, value) => value == null);
 
       final response = await _apiClient.put(
-        "/players/$playerId",
-        headers: {"Authorization": "Bearer $token"},
-        body: playerJson,
+        "/api/players/$playerId",
+        headers: {
+          "Authorization": "Bearer $token",
+          "Content-Type": "application/json",
+        },
+        body:
+            requestBody, // Send map, not .toJson() (unless you are 100% sure toJson matches this)
       );
 
       if (!mounted || _isDisposed) return;
 
       if (response.statusCode == 200) {
-        await _handleSuccessResponse(response);
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        final data = _safeJsonDecode(response.body);
+
+        // Handle response wrapper { "message": "...", "player": {...} }
+        final playerData = (data is Map && data.containsKey('player'))
+            ? data['player']
+            : data;
+
+        if (playerData != null) {
+          final newPlayer = Player.fromJson(playerData);
+          _safeSetState(() => _player = newPlayer);
+          _showSuccessMessage('Player updated successfully');
+        } else {
+          // Fallback if backend doesn't return full object, trust local update
+          _safeSetState(() => _player = updatedPlayer);
+          _showSuccessMessage('Player updated');
+        }
+      } else if (response.statusCode == 401) {
         await _handleAuthError();
-      } else if (response.statusCode == 404) {
-        _showErrorMessage('Player not found');
       } else {
-        await _handleErrorResponse(response);
+        // Parse error message
+        final errorData = _safeJsonDecode(response.body);
+        final errorMsg =
+            errorData['error'] ?? 'Update failed: ${response.statusCode}';
+        _showErrorMessage(errorMsg);
       }
-    } catch (e, stackTrace) {
-      debugPrint('Error updating player: $e');
-      debugPrint('Stack trace: $stackTrace');
-      
-      if (mounted && !_isDisposed) {
-        _showErrorMessage('Network error: ${e.toString()}');
-      }
+    } catch (e) {
+      _showErrorMessage('Error: $e');
     } finally {
-      if (!_isDisposed) {
-        _safeSetState(() => _isLoading = false);
-      }
+      if (!_isDisposed) _safeSetState(() => _isLoading = false);
     }
   }
 
-  Future<void> _handleSuccessResponse(dynamic response) async {
-    try {
-      final data = _safeJsonDecode(response.body);
-
-      if (data is! Map<String, dynamic>) {
-        throw const FormatException('Invalid response format');
-      }
-
-      final playerData = data['player'];
-      if (playerData == null) {
-        throw const FormatException('Player data not found in response');
-      }
-
-      if (playerData is! Map<String, dynamic>) {
-        throw FormatException('Invalid player data type: ${playerData.runtimeType}');
-      }
-
-      final updatedPlayer = Player.fromJson(playerData);
-
-      if (!_isDisposed) {
-        _safeSetState(() => _player = updatedPlayer);
-        _showSuccessMessage('Player information updated successfully');
-      }
-    } catch (e) {
-      debugPrint('Error handling success response: $e');
-      _showErrorMessage('Failed to process server response');
-    }
-  }
-
-  Future<void> _handleErrorResponse(dynamic response) async {
-    try {
-      final data = _safeJsonDecode(response.body);
-      
-      String message = 'Failed to update player';
-      if (data is Map<String, dynamic>) {
-        message = data['message']?.toString() ??
-            data['error']?.toString() ??
-            message;
-      }
-      
-      _showErrorMessage(message);
-    } catch (e) {
-      debugPrint('Error parsing error response: $e');
-      _showErrorMessage('Failed to update player');
-    }
-  }
-
-  Widget _buildStatCard(IconData icon, String label, String value) {
+  Widget _buildStatCard(
+    BuildContext context,
+    IconData icon,
+    String label,
+    String value,
+  ) {
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 36, color: Colors.green),
-          const SizedBox(height: 8),
+          Icon(icon, size: 28, color: theme.colorScheme.primary),
+          const SizedBox(height: 6),
           Text(
             value,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
           ),
           Text(
             label,
-            style: TextStyle(color: Colors.grey.shade600),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildPlayerHeader() {
-    final playerName = _safeString(_player.playerName, 'Unknown Player');
-    final playerRole = _safeString(_player.playerRole, 'Unknown Role');
-
-    return Column(
-      children: [
-        CircleAvatar(
-          radius: 60,
-          backgroundColor: Colors.green,
-          backgroundImage: _player.playerImageUrl != null &&
-                  _player.playerImageUrl!.isNotEmpty
-              ? NetworkImage(_player.playerImageUrl!)
-              : null,
-          child: _player.playerImageUrl == null ||
-                  _player.playerImageUrl!.isEmpty
-              ? Text(
-                  _getInitial(playerName),
-                  style: const TextStyle(fontSize: 42, color: Colors.white),
-                )
-              : null,
-          onBackgroundImageError: (exception, stackTrace) {
-            debugPrint('Error loading player image: $exception');
-          },
-        ),
-        const SizedBox(height: 10),
-        Text(
-          playerName,
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        Text(
-          playerRole,
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatsGrid() {
-    final runs = _safeInt(_player.runs, 0);
-    final battingAvg = _safeDouble(_player.battingAverage, 0.0);
-    final strikeRate = _safeDouble(_player.strikeRate, 0.0);
-    final wickets = _safeInt(_player.wickets, 0);
-
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      children: [
-        _buildStatCard(Icons.sports_cricket, 'Runs', runs.toString()),
-        _buildStatCard(
-          Icons.leaderboard,
-          'Batting Avg',
-          battingAvg.toStringAsFixed(2),
-        ),
-        _buildStatCard(
-          Icons.trending_up,
-          'Strike Rate',
-          strikeRate.toStringAsFixed(2),
-        ),
-        _buildStatCard(Icons.sports, 'Wickets', wickets.toString()),
-      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        if (_isLoading) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Please wait for the update to complete'),
-            ),
-          );
-          return false;
-        }
-        return true;
+    final theme = Theme.of(context);
+
+    // ✅ PopScope: Return the updated _player object when going back
+    return PopScope(
+      canPop: !_isLoading,
+      onPopInvokedWithResult: (didPop, result) {
+        // This is handled by leading/onPressed manually, but serves as fallback
       },
       child: Scaffold(
-        backgroundColor: Colors.grey.shade100,
+        backgroundColor: theme.colorScheme.surface,
         appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 1,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: _isLoading
-                ? null
-                : () {
-                    if (mounted && !_isDisposed) {
-                      Navigator.pop(context, _player);
-                    }
-                  },
-          ),
+          backgroundColor: theme.colorScheme.surface,
+          foregroundColor: theme.colorScheme.onSurface,
+          elevation: 0,
+          centerTitle: true,
           title: const Text(
             'Player Dashboard',
-            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            // ✅ Return the updated player data to previous screen
+            onPressed: _isLoading
+                ? null
+                : () => Navigator.pop(context, _player),
+          ),
         ),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
-                    _buildPlayerHeader(),
-                    const SizedBox(height: 20),
-                    _buildStatsGrid(),
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        minimumSize: const Size(double.infinity, 50),
+                    // Header
+                    CircleAvatar(
+                      radius: 60,
+                      backgroundColor: theme.colorScheme.primaryContainer,
+                      backgroundImage:
+                          (_player.playerImageUrl != null &&
+                              _player.playerImageUrl!.isNotEmpty)
+                          ? NetworkImage(
+                              _getFullImageUrl(_player.playerImageUrl),
+                            )
+                          : null,
+                      child:
+                          (_player.playerImageUrl == null ||
+                              _player.playerImageUrl!.isEmpty)
+                          ? Text(
+                              _getInitial(_player.playerName),
+                              style: TextStyle(
+                                fontSize: 48,
+                                color: theme.colorScheme.onPrimaryContainer,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _player.playerName,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
-                      icon: const Icon(Icons.edit, color: Colors.white),
-                      label: const Text(
-                        'Edit Player Info',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Chip(
+                      label: Text(_player.playerRole),
+                      backgroundColor: theme.colorScheme.secondaryContainer,
+                      labelStyle: TextStyle(
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Stats Grid
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 1.4,
+                      children: [
+                        _buildStatCard(
+                          context,
+                          Icons.sports_cricket,
+                          'Matches',
+                          _player.matchesPlayed.toString(),
+                        ),
+                        _buildStatCard(
+                          context,
+                          Icons.scoreboard,
+                          'Runs',
+                          _player.runs.toString(),
+                        ),
+                        _buildStatCard(
+                          context,
+                          Icons.stars,
+                          'Centuries',
+                          _player.hundreds.toString(),
+                        ),
+                        _buildStatCard(
+                          context,
+                          Icons.star_half,
+                          'Fifties',
+                          _player.fifties.toString(),
+                        ),
+                        _buildStatCard(
+                          context,
+                          Icons.leaderboard,
+                          'Average',
+                          _player.battingAverage.toStringAsFixed(2),
+                        ),
+                        _buildStatCard(
+                          context,
+                          Icons.speed,
+                          'Strike Rate',
+                          _player.strikeRate.toStringAsFixed(2),
+                        ),
+                        _buildStatCard(
+                          context,
+                          Icons.sports_baseball,
+                          'Wickets',
+                          _player.wickets.toString(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Edit Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _showEditPlayerDialog,
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Edit Profile & Stats'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
                       ),
-                      onPressed: _isLoading ? null : _showEditPlayerDialog,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Delete Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _confirmDelete,
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Delete Player'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          foregroundColor: theme.colorScheme.error,
+                          side: BorderSide(color: theme.colorScheme.error),
+                        ),
+                      ),
                     ),
                   ],
                 ),

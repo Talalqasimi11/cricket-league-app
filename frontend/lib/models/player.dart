@@ -2,138 +2,77 @@ import 'package:hive/hive.dart';
 
 part 'player.g.dart';
 
-@HiveType(typeId: 0)
+@HiveType(typeId: 4)
 class Player extends HiveObject {
   @HiveField(0)
-  final int id;
+  final String id;
   @HiveField(1)
-  final String playerName;
+  final String name;
   @HiveField(2)
-  final String playerRole;
+  final String role;
   @HiveField(3)
-  final String? playerImageUrl;
+  final String? imageUrl;
   @HiveField(4)
-  final int runs;
+  bool selected;
   @HiveField(5)
-  final int matchesPlayed;
+  final int runs;
   @HiveField(6)
-  final int hundreds;
-  @HiveField(7)
-  final int fifties;
-  @HiveField(8)
-  final double battingAverage;
-  @HiveField(9)
-  final double strikeRate;
-  @HiveField(10)
   final int wickets;
+  @HiveField(7)
+  final double battingAverage;
+  @HiveField(8)
+  final double strikeRate;
+  @HiveField(9)
+  final int matchesPlayed;
+  @HiveField(10)
+  final int hundreds;
+  @HiveField(11)
+  final int fifties;
 
   Player({
     required this.id,
-    required this.playerName,
-    required this.playerRole,
-    this.playerImageUrl,
-    required this.runs,
-    required this.matchesPlayed,
-    required this.hundreds,
-    required this.fifties,
-    required this.battingAverage,
-    required this.strikeRate,
-    required this.wickets,
+    required this.name,
+    required this.role,
+    this.imageUrl,
+    this.selected = false,
+    this.runs = 0,
+    this.wickets = 0,
+    this.battingAverage = 0.0,
+    this.strikeRate = 0.0,
+    this.matchesPlayed = 0,
+    this.hundreds = 0,
+    this.fifties = 0,
   });
 
-  // --- Private Static Helpers for Robust JSON Parsing ---
-  // These methods are designed to prevent crashes if the API sends data
-  // in an unexpected format (e.g., a number as a string).
-
-  /// Safely converts a dynamic value to an integer.
-  static int _toInt(dynamic v, {int fallback = 0}) {
-    if (v == null) return fallback;
-    if (v is int) return v;
-    if (v is double) return v.toInt();
-    if (v is String) return int.tryParse(v) ?? fallback;
-    return fallback;
-  }
-
-  /// Safely converts a dynamic value to a double.
-  static double _toDouble(dynamic v, {double fallback = 0.0}) {
-    if (v == null) return fallback;
-    if (v is double) return v;
-    if (v is num) return v.toDouble();
-    if (v is String) return double.tryParse(v) ?? fallback;
-    return fallback;
-  }
-
-  /// Safely converts a dynamic value to a string.
-  static String _toString(dynamic v, {String fallback = ''}) {
-    return v?.toString() ?? fallback;
-  }
-
-  /// Creates a Player instance from a JSON map.
-  /// Backend now uses consistent field names, so we can rely on canonical keys.
   factory Player.fromJson(Map<String, dynamic> json) {
     return Player(
-      id: _toInt(json['id']),
-      playerName: _toString(json['player_name']),
-      playerRole: _toString(json['player_role']),
-      playerImageUrl: json['player_image_url']?.toString(),
-      runs: _toInt(json['runs']),
-      matchesPlayed: _toInt(json['matches_played']),
-      hundreds: _toInt(json['hundreds']),
-      fifties: _toInt(json['fifties']),
-      battingAverage: _toDouble(json['batting_average']),
-      strikeRate: _toDouble(json['strike_rate']),
-      wickets: _toInt(json['wickets']),
+      id: json['id']?.toString() ?? '',
+      name: json['name'] as String? ?? 'Unknown Player',
+      role: json['role'] as String? ?? 'Unknown',
+      imageUrl: json['image_url'] as String?,
+      runs: json['runs'] as int? ?? 0,
+      wickets: json['wickets'] as int? ?? 0,
+      battingAverage: (json['batting_average'] as num?)?.toDouble() ?? 0.0,
+      strikeRate: (json['strike_rate'] as num?)?.toDouble() ?? 0.0,
+      matchesPlayed: json['matches_played'] as int? ?? 0,
+      hundreds: json['hundreds'] as int? ?? 0,
+      fifties: json['fifties'] as int? ?? 0,
     );
   }
 
-  /// Converts a Player instance to a JSON map for sending to the API.
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'player_name': playerName,
-      'player_role': playerRole,
-      'player_image_url': playerImageUrl,
+      'name': name,
+      'role': role,
+      'image_url': imageUrl,
       'runs': runs,
+      'wickets': wickets,
+      'batting_average': battingAverage,
+      'strike_rate': strikeRate,
       'matches_played': matchesPlayed,
       'hundreds': hundreds,
       'fifties': fifties,
-      'batting_average': battingAverage,
-      'strike_rate': strikeRate,
-      'wickets': wickets,
     };
-  }
-
-  /// Creates a copy of this Player with the given fields replaced with new values.
-  Player copyWith({
-    int? id,
-    String? playerName,
-    String? playerRole,
-    String? playerImageUrl,
-    int? runs,
-    int? matchesPlayed,
-    int? hundreds,
-    int? fifties,
-    double? battingAverage,
-    double? strikeRate,
-    int? wickets,
-  }) {
-    return Player(
-      id: id ?? this.id,
-      playerName: playerName ?? this.playerName,
-      playerRole: playerRole ?? this.playerRole,
-      playerImageUrl: playerImageUrl ?? this.playerImageUrl,
-      runs: runs ?? this.runs,
-      matchesPlayed: matchesPlayed ?? this.matchesPlayed,
-      hundreds: hundreds ?? this.hundreds,
-      fifties: fifties ?? this.fifties,
-      battingAverage: battingAverage ?? this.battingAverage,
-      strikeRate: strikeRate ?? this.strikeRate,
-      wickets: wickets ?? this.wickets,
-    );
-  }
-
-  @override
-  String toString() {
-    return 'Player(id: $id, name: $playerName, role: $playerRole)';
   }
 }

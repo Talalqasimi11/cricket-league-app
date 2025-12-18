@@ -8,7 +8,7 @@ part of 'player.dart';
 
 class PlayerAdapter extends TypeAdapter<Player> {
   @override
-  final int typeId = 0;
+  final int typeId = 4;
 
   @override
   Player read(BinaryReader reader) {
@@ -17,46 +17,49 @@ class PlayerAdapter extends TypeAdapter<Player> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return Player(
-      id: fields[0] as int,
-      playerName: fields[1] as String,
-      playerRole: fields[2] as String,
-      playerImageUrl: fields[3] as String?,
-      runs: fields[4] as int,
-      matchesPlayed: fields[5] as int,
-      hundreds: fields[6] as int,
-      fifties: fields[7] as int,
-      battingAverage: fields[8] as double,
-      strikeRate: fields[9] as double,
-      wickets: fields[10] as int,
+      id: fields[0] as String,
+      name: fields[1] as String,
+      role: fields[2] as String,
+      imageUrl: fields[3] as String?,
+      selected: fields[4] as bool,
+      runs: fields[5] as int,
+      wickets: fields[6] as int,
+      battingAverage: fields[7] as double,
+      strikeRate: fields[8] as double,
+      matchesPlayed: fields[9] as int,
+      hundreds: fields[10] as int,
+      fifties: fields[11] as int,
     );
   }
 
   @override
   void write(BinaryWriter writer, Player obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
-      ..write(obj.playerName)
+      ..write(obj.name)
       ..writeByte(2)
-      ..write(obj.playerRole)
+      ..write(obj.role)
       ..writeByte(3)
-      ..write(obj.playerImageUrl)
+      ..write(obj.imageUrl)
       ..writeByte(4)
-      ..write(obj.runs)
+      ..write(obj.selected)
       ..writeByte(5)
-      ..write(obj.matchesPlayed)
+      ..write(obj.runs)
       ..writeByte(6)
-      ..write(obj.hundreds)
+      ..write(obj.wickets)
       ..writeByte(7)
-      ..write(obj.fifties)
-      ..writeByte(8)
       ..write(obj.battingAverage)
-      ..writeByte(9)
+      ..writeByte(8)
       ..write(obj.strikeRate)
+      ..writeByte(9)
+      ..write(obj.matchesPlayed)
       ..writeByte(10)
-      ..write(obj.wickets);
+      ..write(obj.hundreds)
+      ..writeByte(11)
+      ..write(obj.fifties);
   }
 
   @override

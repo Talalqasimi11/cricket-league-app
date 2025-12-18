@@ -1,0 +1,27 @@
+﻿1. Registering user...
+Register status: 201
+2. Creating friendly match...
+Create Match Status: 500
+node : Create match 
+failed: { error: 
+'Server error 
+creating match' }
+At line:1 char:1
++ node test_fix_start
+_innings.js > 
+test_output_2.txt 
+2>&1
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (Create    
+ match fa...eatin    
+g match' }:Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 

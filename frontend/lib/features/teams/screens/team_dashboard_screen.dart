@@ -1,890 +1,139 @@
-import 'dart:convert';
-import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../../core/api_client.dart';
-import '../../../core/cache_service.dart';
-import '../../../core/error_handler.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
+import '../providers/team_provider.dart';
 import '../models/player.dart';
 import 'player_dashboard_screen.dart';
 import '../../../widgets/image_upload_widget.dart';
+import '../../../services/api_service.dart';
+import '../../../core/api_client.dart'; // For base URL
 
 class TeamDashboardScreen extends StatefulWidget {
-  final int? teamId;
-  final String? teamName;
-  final String? teamLogoUrl;
-  final int? trophies;
-  final List<Player>? players;
-
-  const TeamDashboardScreen({
-    super.key,
-    this.teamId,
-    this.teamName,
-    this.teamLogoUrl,
-    this.trophies,
-    this.players,
-  });
+  const TeamDashboardScreen({super.key});
 
   @override
   State<TeamDashboardScreen> createState() => _TeamDashboardScreenState();
 }
 
 class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
-  final storage = const FlutterSecureStorage();
-  final cacheService = CacheService();
-
-  bool _isLoading = true;
-  bool _isOffline = false;
-  bool _isLoadingFromCache = false;
-  bool _isDisposed = false;
-  int _retryCount = 0;
-  
-  static const int _maxRetries = 3;
-  static const Duration _baseDelay = Duration(seconds: 1);
-  
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
-
-  String teamName = '';
-  String teamLogoUrl = '';
-  String teamLocation = '';
-  int trophies = 0;
-  List<Player> players = [];
-  String? captainPlayerId;
-  String? viceCaptainPlayerId;
-
-  // Safe helpers
-  String _safeString(dynamic value, String defaultValue) {
-    if (value == null) return defaultValue;
-    final str = value.toString().trim();
-    return str.isNotEmpty ? str : defaultValue;
-  }
-
-  int _safeInt(dynamic value, int defaultValue) {
-    if (value == null) return defaultValue;
-    if (value is int) return value;
-    if (value is String) return int.tryParse(value) ?? defaultValue;
-    if (value is num) return value.toInt();
-    return defaultValue;
-  }
-
-  dynamic _safeJsonDecode(String body) {
-    try {
-      if (body.isEmpty) {
-        throw const FormatException('Empty response body');
-      }
-      return jsonDecode(body);
-    } on FormatException catch (e) {
-      debugPrint('JSON decode error: $e');
-      debugPrint('Response body: $body');
-      throw FormatException('Invalid JSON response: ${e.message}');
-    } catch (e) {
-      debugPrint('Unexpected decode error: $e');
-      rethrow;
-    }
-  }
-
-  void _safeSetState(VoidCallback fn) {
-    if (!_isDisposed && mounted) {
-      setState(fn);
-    }
-  }
-
-  String _getErrorMessage(dynamic error) {
-    if (error == null) return 'Unknown error';
-    final message = error.toString();
-    return message.replaceAll('Exception:', '').trim();
-  }
-
   @override
   void initState() {
     super.initState();
-    teamName = _safeString(widget.teamName, 'Team');
-    teamLogoUrl = _safeString(widget.teamLogoUrl, '');
-    trophies = widget.trophies ?? 0;
-    players = widget.players != null ? List.from(widget.players!) : [];
-
-    _initializeConnectivity();
+    // Fetch data immediately when screen loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<TeamProvider>().fetchMyTeam();
+    });
   }
 
-  @override
-  void dispose() {
-    _isDisposed = true;
-    _connectivitySubscription?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _initializeConnectivity() async {
-    try {
-      final initialResults = await Connectivity().checkConnectivity();
-      final isInitiallyConnected = 
-          initialResults.contains(ConnectivityResult.mobile) ||
-          initialResults.contains(ConnectivityResult.wifi) ||
-          initialResults.contains(ConnectivityResult.ethernet);
-
-      if (!_isDisposed) {
-        _safeSetState(() {
-          _isOffline = !isInitiallyConnected;
-        });
-      }
-
-      _startConnectivityMonitoring();
-      await _loadFromCacheAndFetch();
-    } catch (e) {
-      debugPrint('Error initializing connectivity: $e');
-    }
-  }
-
-  void _startConnectivityMonitoring() {
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
-      (List<ConnectivityResult> results) {
-        if (_isDisposed) return;
-
-        final isConnected =
-            results.contains(ConnectivityResult.mobile) ||
-            results.contains(ConnectivityResult.wifi) ||
-            results.contains(ConnectivityResult.ethernet);
-
-        final wasOffline = _isOffline;
-
-        _safeSetState(() {
-          _isOffline = !isConnected;
-        });
-
-        if (!wasOffline && isConnected && _isOffline) {
-          _retryCount = 0;
-          _fetchTeamDetails();
-        }
-      },
-      onError: (error) {
-        debugPrint('Connectivity subscription error: $error');
-      },
-    );
-  }
-
-  Future<void> _loadFromCacheAndFetch() async {
-    if (_isDisposed) return;
-    
-    await _loadFromCache();
-
-    if (!_isDisposed) {
-      await _fetchTeamDetails();
-    }
-  }
-
-  Future<void> _loadFromCache() async {
-    if (_isDisposed) return;
-
-    _safeSetState(() => _isLoadingFromCache = true);
-
-    try {
-      final cachedTeamData = await cacheService.getCachedTeamData();
-      final cachedPlayersData = await cacheService.getCachedPlayersData();
-
-      if (_isDisposed) return;
-
-      if (cachedTeamData != null) {
-        _safeSetState(() {
-          teamName = _safeString(cachedTeamData['team_name'], teamName);
-          teamLogoUrl = _safeString(cachedTeamData['team_logo_url'], teamLogoUrl);
-          teamLocation = _safeString(cachedTeamData['team_location'], teamLocation);
-          trophies = _safeInt(cachedTeamData['trophies'], trophies);
-          captainPlayerId = cachedTeamData['captain_player_id']?.toString();
-          viceCaptainPlayerId = cachedTeamData['vice_captain_player_id']?.toString();
-        });
-      }
-
-      if (cachedPlayersData != null) {
-        final cachedPlayers = <Player>[];
-        
-        for (final playerData in cachedPlayersData) {
-          try {
-            if (playerData is Map<String, dynamic>) {
-              cachedPlayers.add(Player.fromJson(playerData));
-            }
-          } catch (e) {
-            debugPrint('Error parsing cached player: $e');
-          }
-        }
-
-        if (cachedPlayers.isNotEmpty && !_isDisposed) {
-          _safeSetState(() {
-            players = cachedPlayers;
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint('Failed to load from cache: $e');
-    } finally {
-      if (!_isDisposed) {
-        _safeSetState(() => _isLoadingFromCache = false);
-      }
-    }
-  }
-
-  Future<void> _fetchTeamDetails() async {
-    if (_isDisposed) return;
-
-    _safeSetState(() => _isLoading = true);
-
-    try {
-      final token = await storage.read(key: 'jwt_token');
-
-      if (token == null || token.isEmpty) {
-        await _handleAuthError();
-        return;
-      }
-
-      final teamResponse = await ApiClient.instance.get(
-        '/api/teams/my-team',
-        headers: {'Authorization': 'Bearer $token'},
-      );
-
-      if (_isDisposed) return;
-
-      if (teamResponse.statusCode == 200) {
-        await _handleSuccessResponse(teamResponse);
-      } else if (teamResponse.statusCode == 401 || teamResponse.statusCode == 403) {
-        await _handleAuthError();
-      } else if (teamResponse.statusCode == 404) {
-        _showError('Team not found.');
-      } else if (teamResponse.statusCode >= 500) {
-        await _handleRetryableError('Server error (${teamResponse.statusCode})');
-      } else {
-        _showError('Could not refresh team data (${teamResponse.statusCode}).');
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Error fetching team details: $e');
-      debugPrint('Stack trace: $stackTrace');
-
-      if (e is SocketException) {
-        await _handleRetryableError('No internet connection. Please check your network and try again.');
-      } else {
-        await _handleRetryableError('Network error: ${_getErrorMessage(e)}');
-      }
-    } finally {
-      if (!_isDisposed) {
-        _safeSetState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _handleSuccessResponse(dynamic teamResponse) async {
-    try {
-      final data = _safeJsonDecode(teamResponse.body);
-
-      if (data is! Map<String, dynamic>) {
-        throw const FormatException('Invalid response format');
-      }
-
-      if (_isDisposed) return;
-
-      _safeSetState(() {
-        teamName = _safeString(data['team_name'], teamName);
-        teamLogoUrl = _safeString(
-          data['team_logo_url'] ?? data['team_logo'],
-          teamLogoUrl,
-        );
-        teamLocation = _safeString(data['team_location'], teamLocation);
-        trophies = _safeInt(data['trophies'], trophies);
-        captainPlayerId = data['captain_player_id']?.toString();
-        viceCaptainPlayerId = data['vice_captain_player_id']?.toString();
-      });
-
-      await _processPlayers(data);
-      await _cacheTeamData(data);
-
-      _retryCount = 0;
-    } catch (e) {
-      debugPrint('Error handling success response: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> _processPlayers(Map<String, dynamic> data) async {
-    try {
-      final playersData = data['players'];
-
-      if (playersData == null) {
-        _safeSetState(() => players = []);
-        return;
-      }
-
-      if (playersData is! List) {
-        debugPrint('Expected List for players but got: ${playersData.runtimeType}');
-        _safeSetState(() => players = []);
-        return;
-      }
-
-      final parsedPlayers = <Player>[];
-      final playerJsonList = <Map<String, dynamic>>[];
-
-      for (final playerData in playersData) {
-        try {
-          if (playerData is Map<String, dynamic>) {
-            final player = Player.fromJson(playerData);
-            parsedPlayers.add(player);
-            playerJsonList.add(playerData);
-          }
-        } catch (e) {
-          debugPrint('Error parsing player: $e');
-        }
-      }
-
-      if (_isDisposed) return;
-
-      _safeSetState(() {
-        players = parsedPlayers;
-      });
-
-      if (playerJsonList.isNotEmpty) {
-        try {
-          await cacheService.cachePlayersData(playerJsonList);
-        } catch (e) {
-          debugPrint('Error caching players: $e');
-        }
-      }
-    } catch (e) {
-      debugPrint('Error processing players: $e');
-      _safeSetState(() => players = []);
-    }
-  }
-
-  Future<void> _cacheTeamData(Map<String, dynamic> data) async {
-    try {
-      final teamDataToCache = Map<String, dynamic>.from(data);
-      teamDataToCache.remove('players');
-      await cacheService.cacheTeamData(teamDataToCache);
-    } catch (e) {
-      debugPrint('Error caching team data: $e');
-    }
-  }
-
-    // Continuing from Part 1...
-
-  Future<void> _handleAuthError() async {
-    try {
-      await storage.delete(key: 'jwt_token');
-    } catch (e) {
-      debugPrint('Error deleting token: $e');
-    }
-
-    if (!_isDisposed && mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
-    }
-  }
-
-  Future<void> _handleRetryableError(String errorMessage) async {
-    if (_isDisposed) return;
-
-    if (_retryCount < _maxRetries) {
-      _retryCount++;
-      final delay = Duration(
-        milliseconds: _baseDelay.inMilliseconds * (1 << (_retryCount - 1)),
-      );
-
-      if (mounted && !_isDisposed) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '$errorMessage. Retrying in ${delay.inSeconds}s... ($_retryCount/$_maxRetries)',
-            ),
-            duration: delay,
-          ),
-        );
-      }
-
-      await Future.delayed(delay);
-      
-      if (!_isDisposed && mounted) {
-        await _fetchTeamDetails();
-      }
-    } else {
-      _showRetrySnackBar(errorMessage);
-    }
-  }
-
-  void _showRetrySnackBar(String errorMessage) {
-    if (!mounted || _isDisposed) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$errorMessage. Tap to retry.'),
-        action: SnackBarAction(
-          label: 'Retry',
-          onPressed: () {
-            _retryCount = 0;
-            _fetchTeamDetails();
-          },
-        ),
-        duration: const Duration(seconds: 5),
-      ),
-    );
-  }
-
-  void _showError(String message) {
-    if (!mounted || _isDisposed) return;
-    ErrorHandler.showErrorSnackBar(context, message);
-  }
-
-  void _showSuccess(String message) {
-    if (!mounted || _isDisposed) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('✅ $message')),
-    );
-  }
-
-  Future<void> _addPlayer(String name, String role) async {
-    if (_isDisposed) return;
-
-    final token = await storage.read(key: 'jwt_token');
-    
-    if (token == null || token.isEmpty) {
-      await _handleAuthError();
-      return;
-    }
-
-    // Create placeholder with String ID
-    final placeholderId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-    final placeholder = Player(
-      id: placeholderId,
-      playerName: name,
-      playerRole: role,
-      runs: 0,
-      matchesPlayed: 0,
-      hundreds: 0,
-      fifties: 0,
-      battingAverage: 0,
-      strikeRate: 0,
-      wickets: 0,
-    );
-
-    _safeSetState(() => players.add(placeholder));
-
-    try {
-      final response = await ApiClient.instance.post(
-        '/api/players',
-        headers: {'Authorization': 'Bearer $token'},
-        body: {'player_name': name, 'player_role': role},
-      );
-
-      if (_isDisposed) return;
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        await _handleAddPlayerSuccess(response, placeholderId);
-      } else if (response.statusCode == 400) {
-        await _handleAddPlayerError(response, placeholderId);
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        await _handleAuthError();
-      } else if (response.statusCode >= 500) {
-        throw Exception('Server error. Please try again later.');
-      } else {
-        throw Exception('Failed to add player (${response.statusCode})');
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Error adding player: $e');
-      debugPrint('Stack trace: $stackTrace');
-
-      if (!_isDisposed) {
-        _safeSetState(() => players.removeWhere((p) => p.id == placeholderId));
-        
-        final errorMessage = e is SocketException
-            ? 'Failed to add player. Please check your connection and try again.'
-            : 'Error: ${_getErrorMessage(e)}';
-        
-        _showError(errorMessage);
-      }
-    }
-  }
-
-  Future<void> _handleAddPlayerSuccess(
-    dynamic response,
-    String placeholderId,
-  ) async {
-    try {
-      final data = _safeJsonDecode(response.body);
-      
-      if (data is! Map<String, dynamic>) {
-        throw const FormatException('Invalid response format');
-      }
-
-      final newPlayer = Player.fromJson(data);
-
-      if (!_isDisposed) {
-        _safeSetState(() {
-          final index = players.indexWhere((p) => p.id == placeholderId);
-          if (index != -1) {
-            players[index] = newPlayer;
-          }
-        });
-        
-        _showSuccess('Player added successfully');
-      }
-    } catch (e) {
-      debugPrint('Error handling add player success: $e');
-      _showError('Player added but failed to update display');
-    }
-  }
-
-  Future<void> _handleAddPlayerError(
-    dynamic response,
-    String placeholderId,
-  ) async {
-    try {
-      final data = _safeJsonDecode(response.body);
-      final errorMsg = data is Map<String, dynamic>
-          ? (data['error']?.toString() ?? 'Invalid player data')
-          : 'Invalid player data';
-
-      if (!_isDisposed) {
-        _safeSetState(() => players.removeWhere((p) => p.id == placeholderId));
-        _showError(errorMsg);
-      }
-    } catch (e) {
-      debugPrint('Error handling add player error: $e');
-      if (!_isDisposed) {
-        _safeSetState(() => players.removeWhere((p) => p.id == placeholderId));
-        _showError('Failed to add player');
-      }
-    }
-  }
-
-  Future<void> _editTeam(
-    String newName,
-    String newLocation, {
-    String? captainId,
-    String? viceCaptainId,
-    String? logoUrl,
-  }) async {
-    if (_isDisposed) return;
-
-    final token = await storage.read(key: 'jwt_token');
-    
-    if (token == null || token.isEmpty) {
-      await _handleAuthError();
-      return;
-    }
-
-    try {
-      final body = {
-        'team_name': newName,
-        'team_location': newLocation,
-        if (logoUrl != null && logoUrl.isNotEmpty) 'team_logo_url': logoUrl,
-        'captain_player_id': captainId ?? captainPlayerId,
-        'vice_captain_player_id': viceCaptainId ?? viceCaptainPlayerId,
-      };
-
-      final response = await ApiClient.instance.put(
-        '/api/teams/update',
-        headers: {'Authorization': 'Bearer $token'},
-        body: body,
-      );
-
-      if (_isDisposed) return;
-
-      if (response.statusCode == 200) {
-        await _handleEditTeamSuccess(response);
-      } else if (response.statusCode == 400) {
-        await _handleEditTeamError(response);
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        await _handleAuthError();
-      } else if (response.statusCode == 404) {
-        _showError('Team not found');
-      } else if (response.statusCode >= 500) {
-        _showError('Server error. Please try again later.');
-      } else {
-        _showError('Failed to update team (${response.statusCode})');
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Error editing team: $e');
-      debugPrint('Stack trace: $stackTrace');
-
-      if (!_isDisposed) {
-        final errorMessage = e is SocketException
-            ? 'Failed to update team. Please check your connection and try again.'
-            : 'Error: ${_getErrorMessage(e)}';
-        
-        _showError(errorMessage);
-      }
-    }
-  }
-
-  Future<void> _handleEditTeamSuccess(dynamic response) async {
-    try {
-      final data = _safeJsonDecode(response.body);
-
-      if (data is! Map<String, dynamic>) {
-        throw const FormatException('Invalid response format');
-      }
-
-      if (data['team'] != null && data['team'] is Map<String, dynamic>) {
-        final teamData = data['team'] as Map<String, dynamic>;
-        
-        if (!_isDisposed) {
-          _safeSetState(() {
-            teamName = _safeString(teamData['team_name'], teamName);
-            teamLocation = _safeString(teamData['team_location'], teamLocation);
-            teamLogoUrl = _safeString(teamData['team_logo_url'], teamLogoUrl);
-            captainPlayerId = teamData['captain_player_id']?.toString();
-            viceCaptainPlayerId = teamData['vice_captain_player_id']?.toString();
-          });
-
-          _showSuccess('Team Updated');
-        }
-      }
-    } catch (e) {
-      debugPrint('Error handling edit team success: $e');
-      _showError('Team updated but failed to refresh display');
-    }
-  }
-
-  Future<void> _handleEditTeamError(dynamic response) async {
-    try {
-      final data = _safeJsonDecode(response.body);
-      final errorMsg = data is Map<String, dynamic>
-          ? (data['error']?.toString() ?? 'Invalid team data')
-          : 'Invalid team data';
-      
-      _showError(errorMsg);
-    } catch (e) {
-      debugPrint('Error handling edit team error: $e');
-      _showError('Failed to update team');
-    }
-  }
-
-  Future<void> _deleteTeam() async {
-    if (_isDisposed || !mounted) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Team'),
-        content: const Text(
-          'Are you sure you want to delete your team? This action cannot be undone and will remove all players and team data.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || _isDisposed) return;
-
-    _safeSetState(() => _isLoading = true);
-
-    final token = await storage.read(key: 'jwt_token');
-    
-    if (token == null || token.isEmpty) {
-      await _handleAuthError();
-      return;
-    }
-
-    try {
-      final response = await ApiClient.instance.delete(
-        '/api/teams/my-team',
-        headers: {'Authorization': 'Bearer $token'},
-      );
-
-      if (_isDisposed) return;
-
-      if (response.statusCode == 200) {
-        if (mounted) {
-          _showSuccess('Team deleted successfully');
-          await Future.delayed(const Duration(milliseconds: 500));
-          
-          if (mounted && !_isDisposed) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          }
-        }
-      } else if (response.statusCode == 400) {
-        await _handleDeleteTeamError(response);
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        await _handleAuthError();
-      } else if (response.statusCode == 404) {
-        _showError('Team not found');
-      } else if (response.statusCode >= 500) {
-        _showError('Server error. Please try again later.');
-      } else {
-        _showError('Failed to delete team (${response.statusCode})');
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Error deleting team: $e');
-      debugPrint('Stack trace: $stackTrace');
-
-      if (!_isDisposed) {
-        final errorMessage = e is SocketException
-            ? 'Failed to delete team. Please check your connection and try again.'
-            : 'Error: ${_getErrorMessage(e)}';
-        
-        _showError(errorMessage);
-      }
-    } finally {
-      if (!_isDisposed) {
-        _safeSetState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _handleDeleteTeamError(dynamic response) async {
-    try {
-      final data = _safeJsonDecode(response.body);
-      final errorMsg = data is Map<String, dynamic>
-          ? (data['error']?.toString() ?? 'Cannot delete team')
-          : 'Cannot delete team';
-      
-      _showError(errorMsg);
-    } catch (e) {
-      debugPrint('Error handling delete team error: $e');
-      _showError('Failed to delete team');
-    }
+  // Helper to construct full image URL
+  String _getFullImageUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    if (path.startsWith('http')) return path;
+    // Ensure this matches your backend URL logic
+    return '${ApiClient.baseUrl}$path';
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        if (_isLoading) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Please wait for the current operation to complete'),
-            ),
-          );
-          return false;
-        }
-        return true;
-      },
-      child: Scaffold(
-        backgroundColor: Colors.grey[50],
-        body: Column(
-          children: [
-            if (_isOffline) _buildOfflineBanner(),
-            if (_isLoadingFromCache && !_isOffline) _buildLoadingCacheBanner(),
-            Expanded(child: _buildMainContent()),
-          ],
-        ),
-      ),
-    );
-  }
+    final theme = Theme.of(context);
 
-  Widget _buildOfflineBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-      color: Colors.orange.shade800,
-      child: const Row(
-        children: [
-          Icon(Icons.wifi_off, color: Colors.white, size: 20),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'You are offline. Showing cached data. Will sync when connection is restored.',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoadingCacheBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      color: Colors.blue.shade800,
-      child: const Row(
-        children: [
-          SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-            ),
-          ),
-          SizedBox(width: 8),
-          Text(
-            'Loading cached data...',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMainContent() {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
-        backgroundColor: Colors.grey[50],
+        title: const Text("Team Dashboard"),
         elevation: 0,
-        title: Text(
-          teamName,
-          style: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
         centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black, size: 24),
-          onPressed: _isLoading
-              ? null
-              : () {
-                  if (mounted && !_isDisposed) {
-                    Navigator.pop(context);
-                  }
-                },
-          tooltip: 'Go back',
-        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh Data',
+            onPressed: () => context.read<TeamProvider>().fetchMyTeam(),
+          ),
+        ],
       ),
-      body: _isLoading && players.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _fetchTeamDetails,
+      body: Consumer<TeamProvider>(
+        builder: (context, provider, child) {
+          // Show full screen loader ONLY if we have no data yet
+          if (provider.isLoading && !provider.hasMyTeam) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          // Show error ONLY if we have no data to show
+          if (provider.error != null && !provider.hasMyTeam) {
+            return Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                padding: const EdgeInsets.all(24.0),
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildTeamHeader(),
-                    const SizedBox(height: 20),
-                    Expanded(child: _buildPlayersList()),
-                    _buildActionButtons(),
+                    Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: theme.colorScheme.error,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      provider.error!,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: () => provider.fetchMyTeam(),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text("Retry"),
+                    ),
                   ],
                 ),
               ),
+            );
+          }
+
+          if (!provider.hasMyTeam) {
+            return const Center(child: Text("No team data found."));
+          }
+
+          final teamData = provider.myTeamData!;
+          final players = provider.myTeamPlayers;
+
+          return RefreshIndicator(
+            onRefresh: () => provider.fetchMyTeam(),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _buildTeamHeader(context, teamData),
+                  const SizedBox(height: 24),
+                  _buildPlayersList(context, players, provider),
+                  _buildActionButtons(context, provider, teamData, players),
+                ],
+              ),
             ),
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildTeamHeader() {
+  Widget _buildTeamHeader(BuildContext context, Map<String, dynamic> teamData) {
+    final theme = Theme.of(context);
+    final name = teamData['team_name'] ?? 'Team';
+    final logo = teamData['team_logo_url'] ?? teamData['team_logo'];
+    final location = teamData['team_location'] ?? '';
+    final trophies = teamData['trophies'] ?? 0;
+
     return Column(
       children: [
         Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Colors.grey.shade800,
+            color: theme.colorScheme.surfaceContainerHighest,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -894,75 +143,61 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
             child: SizedBox(
               width: 120,
               height: 120,
-              child: teamLogoUrl.isNotEmpty
+              child: logo != null && logo.toString().isNotEmpty
                   ? CachedNetworkImage(
-                      imageUrl: teamLogoUrl,
+                      imageUrl: _getFullImageUrl(logo),
                       fit: BoxFit.cover,
-                      placeholder: (context, url) => const Center(
-                        child: CircularProgressIndicator(),
+                      placeholder: (_, __) => const CircularProgressIndicator(),
+                      errorWidget: (_, __, ___) => Icon(
+                        Icons.shield,
+                        color: theme.colorScheme.onSurfaceVariant,
+                        size: 60,
                       ),
-                      errorWidget: (context, url, error) {
-                        debugPrint('Error loading team logo: $error');
-                        return const Center(
-                          child: Icon(
-                            Icons.shield,
-                            color: Colors.white54,
-                            size: 60,
-                          ),
-                        );
-                      },
                     )
-                  : const Center(
-                      child: Icon(Icons.shield, color: Colors.white54, size: 60),
+                  : Icon(
+                      Icons.shield,
+                      color: theme.colorScheme.onSurfaceVariant,
+                      size: 60,
                     ),
             ),
           ),
         ),
         const SizedBox(height: 16),
         Text(
-          teamName,
-          style: const TextStyle(
-            fontSize: 24,
+          name,
+          style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
-            color: Colors.black,
           ),
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.emoji_events, color: Colors.amber.shade400, size: 20),
+            Icon(Icons.emoji_events, color: Colors.amber.shade700, size: 20),
             const SizedBox(width: 8),
             Text(
-              "$trophies ${trophies == 1 ? 'Trophy' : 'Trophies'}",
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
+              "$trophies Trophies",
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],
         ),
-        if (teamLocation.isNotEmpty) ...[
-          const SizedBox(height: 8),
+        if (location.toString().isNotEmpty) ...[
+          const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.location_on, color: Colors.grey.shade400, size: 18),
+              Icon(
+                Icons.location_on,
+                color: theme.colorScheme.primary,
+                size: 18,
+              ),
               const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  teamLocation,
-                  style: TextStyle(
-                    color: Colors.grey.shade400,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              Text(
+                location,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -972,216 +207,258 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
     );
   }
 
-  Widget _buildPlayersList() {
+  Widget _buildPlayersList(
+    BuildContext context,
+    List<Player> players,
+    TeamProvider provider,
+  ) {
+    final theme = Theme.of(context);
+
     if (players.isEmpty) {
-      return Center(
+      return Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.people_outline, size: 64, color: Colors.grey.shade400),
+            Icon(
+              Icons.people_outline,
+              size: 48,
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
             const SizedBox(height: 16),
             Text(
-              "No players in this team yet.",
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
+              "No players yet.",
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
             ),
           ],
         ),
       );
     }
 
-    return ListView.builder(
+    final captainId = provider.myTeamData?['captain_player_id']?.toString();
+    final viceCaptainId = provider.myTeamData?['vice_captain_player_id']
+        ?.toString();
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: players.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
-        try {
-          if (index >= players.length) {
-            return const SizedBox.shrink();
-          }
+        final player = players[index];
+        final isCaptain = player.id == captainId;
+        final isViceCaptain = player.id == viceCaptainId;
 
-          final player = players[index];
-          final isCaptain = player.id == captainPlayerId;
-          final isViceCaptain = player.id == viceCaptainPlayerId;
-
-          return Card(
-            color: const Color(0xFF1A2C22),
-            margin: const EdgeInsets.only(bottom: 10),
-            elevation: 2,
-            child: ListTile(
-              leading: CircleAvatar(
-                radius: 26,
-                backgroundColor: const Color(0xFF2D4A3A),
-                backgroundImage: player.hasProfileImage
-                    ? NetworkImage(player.playerImageUrl!)
-                    : null,
-                child: !player.hasProfileImage
-                    ? Text(
-                        player.initials,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
-                    : null,
-                onBackgroundImageError: (exception, stackTrace) {
-                  debugPrint('Error loading player image: $exception');
-                },
-              ),
-              title: Text(
-                player.displayName,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                "${player.displayRole}\nRuns: ${player.runs} | Avg: ${player.battingAverage.toStringAsFixed(1)}",
-                style: const TextStyle(
-                  color: Color(0xFFB8E6C1),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: isCaptain
-                  ? const Chip(
-                      label: Text(
-                        'Captain',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+        return Card(
+          elevation: 0,
+          color: theme.colorScheme.surfaceContainer,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ListTile(
+            leading: CircleAvatar(
+              radius: 24,
+              backgroundColor: theme.colorScheme.primaryContainer,
+              backgroundImage: player.hasProfileImage
+                  ? NetworkImage(_getFullImageUrl(player.playerImageUrl))
+                  : null,
+              child: !player.hasProfileImage
+                  ? Text(
+                      player.initials,
+                      style: TextStyle(
+                        color: theme.colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.bold,
                       ),
-                      backgroundColor: Colors.amber,
                     )
-                  : isViceCaptain
-                      ? const Chip(
-                          label: Text(
-                            'Vice Captain',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11,
-                            ),
-                          ),
-                          backgroundColor: Colors.blue,
-                        )
-                      : null,
-              onTap: () => _navigateToPlayerDashboard(player, index),
+                  : null,
             ),
-          );
-        } catch (e) {
-          debugPrint('Error building player card at index $index: $e');
-          return const SizedBox.shrink();
-        }
+            title: Text(
+              player.displayName,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              "${player.displayRole} • Avg: ${player.battingAverage.toStringAsFixed(1)}",
+              style: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isCaptain)
+                  Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade100,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.amber.shade700),
+                    ),
+                    child: Text(
+                      'C',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                if (isViceCaptain)
+                  Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.blue.shade700),
+                    ),
+                    child: Text(
+                      'VC',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
+            onTap: () async {
+              // Navigate to player details
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PlayerDashboardScreen(player: player),
+                ),
+              );
+              // Refresh data when returning (in case player was edited/deleted)
+              if (context.mounted) provider.fetchMyTeam();
+            },
+          ),
+        );
       },
     );
   }
 
-  Future<void> _navigateToPlayerDashboard(Player player, int index) async {
-    if (_isDisposed || !mounted) return;
+  Widget _buildActionButtons(
+    BuildContext context,
+    TeamProvider provider,
+    Map<String, dynamic> teamData,
+    List<Player> players,
+  ) {
+    final theme = Theme.of(context);
 
-    try {
-      final updatedPlayer = await Navigator.push<Player>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PlayerDashboardScreen(player: player),
-        ),
-      );
-
-      if (updatedPlayer != null && !_isDisposed && index < players.length) {
-        _safeSetState(() {
-          players[index] = updatedPlayer;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error navigating to player dashboard: $e');
-    }
-  }
-
-  Widget _buildActionButtons() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16.0),
+      padding: const EdgeInsets.symmetric(vertical: 24.0),
       child: Column(
         children: [
           Row(
             children: [
               Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF15803D),
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 14,
-                      horizontal: 16,
-                    ),
-                    elevation: 2,
-                  ),
-                  icon: const Icon(Icons.person_add, color: Colors.white, size: 20),
-                  label: const Text(
-                    "Add Player",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.all(14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onPressed: _isLoading ? null : () => _showAddPlayerDialog(context),
+                  icon: const Icon(Icons.person_add),
+                  label: const Text("Add Player"),
+                  onPressed: provider.isLoading
+                      ? null
+                      : () => _showAddPlayerDialog(context, provider),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF15803D),
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 14,
-                      horizontal: 16,
-                    ),
-                    elevation: 2,
-                  ),
-                  icon: const Icon(Icons.edit, color: Colors.white, size: 20),
-                  label: const Text(
-                    "Edit Team",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                child: FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.all(14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onPressed: _isLoading ? null : () => _showEditTeamDialog(context),
+                  icon: const Icon(Icons.edit),
+                  label: const Text("Edit Team"),
+                  onPressed: provider.isLoading
+                      ? null
+                      : () => _showEditTeamDialog(
+                          context,
+                          provider,
+                          teamData,
+                          players,
+                        ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           TextButton.icon(
             style: TextButton.styleFrom(
-              foregroundColor: Colors.red.shade600,
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              foregroundColor: theme.colorScheme.error,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
-            icon: const Icon(Icons.delete, size: 20),
-            label: const Text(
-              "Delete Team",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            onPressed: _isLoading ? null : _deleteTeam,
+            icon: const Icon(Icons.delete_outline),
+            label: const Text("Delete Team"),
+            onPressed: provider.isLoading
+                ? null
+                : () => _deleteTeam(context, provider),
           ),
         ],
       ),
     );
   }
 
-  void _showAddPlayerDialog(BuildContext context) {
-    if (_isDisposed || !mounted) return;
+  Future<void> _deleteTeam(BuildContext context, TeamProvider provider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Team'),
+        content: const Text('Are you sure? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
 
+    if (confirmed == true) {
+      final success = await provider.deleteMyTeam();
+      if (success && context.mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Team deleted')));
+      } else if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(provider.error ?? 'Failed to delete team')),
+        );
+      }
+    }
+  }
+
+  void _showAddPlayerDialog(BuildContext context, TeamProvider provider) {
     final nameController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     final roles = ['Batsman', 'Bowler', 'All-rounder', 'Wicket-keeper'];
@@ -1189,303 +466,279 @@ class _TeamDashboardScreenState extends State<TeamDashboardScreen> {
 
     showDialog(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text(
-              "Add Player",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text("Add Player"),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: "Name",
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: 16),
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: "Role",
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.sports_cricket),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: selectedRole,
+                      isExpanded: true,
+                      isDense: true,
+                      items: roles
+                          .map(
+                            (r) => DropdownMenuItem(value: r, child: Text(r)),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => selectedRole = v),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            content: Form(
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Cancel"),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(ctx);
+                  final success = await provider.addPlayerToMyTeam(
+                    nameController.text.trim(),
+                    selectedRole!,
+                  );
+
+                  if (context.mounted) {
+                    if (success) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Player added successfully'),
+                        ),
+                      );
+                      provider.fetchMyTeam();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            provider.error ?? 'Failed to add player',
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                }
+              },
+              child: const Text("Add"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditTeamDialog(
+    BuildContext context,
+    TeamProvider provider,
+    Map<String, dynamic> teamData,
+    List<Player> players,
+  ) {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController(text: teamData['team_name']);
+    final locationController = TextEditingController(
+      text: teamData['team_location'],
+    );
+
+    // Ensure we handle potentially null logo
+    String tempLogoUrl =
+        teamData['team_logo_url'] ?? teamData['team_logo'] ?? '';
+
+    String? tempCaptainId = teamData['captain_player_id']?.toString();
+    String? tempViceCaptainId = teamData['vice_captain_player_id']?.toString();
+
+    // Clean up IDs if the players no longer exist
+    if (players.isNotEmpty) {
+      if (!players.any((p) => p.id == tempCaptainId)) {
+        tempCaptainId = null;
+      }
+      if (!players.any((p) => p.id == tempViceCaptainId)) {
+        tempViceCaptainId = null;
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text("Edit Team"),
+          content: SingleChildScrollView(
+            child: Form(
               key: formKey,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextFormField(
                     controller: nameController,
-                    textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(
-                      labelText: "Player Name",
+                      labelText: "Name",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
-                      ),
                     ),
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) {
-                        return 'Player name is required';
-                      }
-                      if (v.trim().length < 2) {
-                        return 'Name must be at least 2 characters';
-                      }
-                      return null;
-                    },
-                    style: const TextStyle(fontSize: 16),
-                    maxLength: 50,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedRole,
+                  TextFormField(
+                    controller: locationController,
                     decoration: const InputDecoration(
-                      labelText: "Role",
+                      labelText: "Location",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
-                      ),
                     ),
-                    items: roles
-                        .map(
-                          (r) => DropdownMenuItem(
-                            value: r,
-                            child: Text(r, style: const TextStyle(fontSize: 16)),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) => setState(() => selectedRole = value),
-                    validator: (v) => v == null ? 'Role is required' : null,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  nameController.dispose();
-                  Navigator.pop(dialogContext);
-                },
-                child: const Text(
-                  "Cancel",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
+                  const SizedBox(height: 16),
+
+                  ImageUploadWidget(
+                    label: 'Logo',
+                    currentImageUrl: _getFullImageUrl(tempLogoUrl),
+                    onUpload: (file) async {
+                      if (teamData['id'] == null) return null;
+                      // Assuming ApiService.uploadTeamLogo returns {imageUrl: "..."}
+                      final res = await ApiService().uploadTeamLogo(
+                        teamData['id'].toString(),
+                        file,
+                      );
+                      return res?['imageUrl'];
+                    },
+                    onImageUploaded: (url) =>
+                        setState(() => tempLogoUrl = url ?? ''),
+                    onImageRemoved: () => setState(() => tempLogoUrl = ''),
                   ),
-                ),
-                onPressed: () {
-                  if (formKey.currentState?.validate() != true) return;
-                  
-                  final name = nameController.text.trim();
-                  if (selectedRole == null) return;
-                  
-                  _addPlayer(name, selectedRole!);
-                  nameController.dispose();
-                  Navigator.pop(dialogContext);
-                },
-                child: const Text(
-                  "Add",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    ).then((_) {
-      // Ensure controller is disposed
-      try {
-        nameController.dispose();
-      } catch (e) {
-        debugPrint('Controller already disposed: $e');
-      }
-    });
-  }
 
-  void _showEditTeamDialog(BuildContext context) {
-    if (_isDisposed || !mounted) return;
-
-    final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController(text: teamName);
-    final locationController = TextEditingController(text: teamLocation);
-    final logoController = TextEditingController(text: teamLogoUrl);
-
-    String? tempCaptainId = captainPlayerId;
-    String? tempViceCaptainId = viceCaptainPlayerId;
-    String tempLogoUrl = teamLogoUrl;
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text(
-              "Edit Team",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            content: SingleChildScrollView(
-              child: Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: nameController,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(
-                        labelText: "Team Name",
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Team name is required';
-                        }
-                        if (value.trim().length < 3) {
-                          return 'Team name must be at least 3 characters';
-                        }
-                        return null;
-                      },
-                      maxLength: 50,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: locationController,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(
-                        labelText: "Team Location",
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Team location is required';
-                        }
-                        return null;
-                      },
-                      maxLength: 100,
-                    ),
-                    const SizedBox(height: 16),
-                    if (widget.teamId != null)
-                      ImageUploadWidget(
-                        label: 'Team Logo',
-                        currentImageUrl: tempLogoUrl.isNotEmpty ? tempLogoUrl : null,
-                        onImageUploaded: (imageUrl) {
-                          setDialogState(() {
-                            tempLogoUrl = imageUrl ?? '';
-                            logoController.text = imageUrl ?? '';
-                          });
-                        },
-                        onImageRemoved: () {
-                          setDialogState(() {
-                            tempLogoUrl = '';
-                            logoController.text = '';
-                          });
-                        },
-                      ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: tempCaptainId,
+                  const SizedBox(height: 16),
+                  if (players.isNotEmpty) ...[
+                    InputDecorator(
                       decoration: const InputDecoration(
                         labelText: "Captain",
                         border: OutlineInputBorder(),
                       ),
-                      items: players
-                          .map(
-                            (p) => DropdownMenuItem<String>(
-                              value: p.id,
-                              child: Text(
-                                p.displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setDialogState(() => tempCaptainId = v),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: tempCaptainId,
+                          isExpanded: true,
+                          isDense: true,
+                          hint: const Text("Select Captain"),
+                          items: players
+                              .map(
+                                (p) => DropdownMenuItem(
+                                  value: p.id,
+                                  child: Text(p.displayName),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => tempCaptainId = v),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: tempViceCaptainId,
+                    InputDecorator(
                       decoration: const InputDecoration(
                         labelText: "Vice Captain",
                         border: OutlineInputBorder(),
                       ),
-                      items: players
-                          .map(
-                            (p) => DropdownMenuItem<String>(
-                              value: p.id,
-                              child: Text(
-                                p.displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setDialogState(() => tempViceCaptainId = v),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: tempViceCaptainId,
+                          isExpanded: true,
+                          isDense: true,
+                          hint: const Text("Select Vice Captain"),
+                          items: players
+                              .map(
+                                (p) => DropdownMenuItem(
+                                  value: p.id,
+                                  child: Text(p.displayName),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) =>
+                              setState(() => tempViceCaptainId = v),
+                        ),
+                      ),
                     ),
-                  ],
-                ),
+                  ] else
+                    const Text(
+                      "Add players to assign Captain roles.",
+                      style: TextStyle(fontStyle: FontStyle.italic),
+                    ),
+                ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  nameController.dispose();
-                  locationController.dispose();
-                  logoController.dispose();
-                  Navigator.pop(dialogContext);
-                },
-                child: const Text(
-                  "Cancel",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-                onPressed: () {
-                  if (formKey.currentState?.validate() != true) return;
-
-                  if (tempCaptainId != null && tempCaptainId == tempViceCaptainId) {
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Cancel"),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  if (tempCaptainId != null &&
+                      tempCaptainId == tempViceCaptainId) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text(
-                          'Captain and Vice Captain must be different players.',
-                        ),
+                        content: Text('Captain & VC must be different'),
                       ),
                     );
                     return;
                   }
 
-                  _editTeam(
-                    nameController.text.trim(),
-                    locationController.text.trim(),
-                    captainId: tempCaptainId,
-                    viceCaptainId: tempViceCaptainId,
-                    logoUrl: tempLogoUrl.isNotEmpty ? tempLogoUrl : null,
-                  );
+                  Navigator.pop(ctx);
 
-                  nameController.dispose();
-                  locationController.dispose();
-                  logoController.dispose();
-                  Navigator.pop(dialogContext);
-                },
-                child: const Text(
-                  "Save",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          );
-        },
+                  // Calls Provider to update the team
+                  final success = await provider.updateMyTeam({
+                    'team_name': nameController.text.trim(),
+                    'team_location': locationController.text.trim(),
+                    'team_logo_url': tempLogoUrl, // Matches backend key
+                    'captain_player_id': tempCaptainId,
+                    'vice_captain_player_id': tempViceCaptainId,
+                  });
+
+                  if (context.mounted) {
+                    if (success) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Team updated')),
+                      );
+                      provider.fetchMyTeam();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(provider.error ?? 'Update failed'),
+                        ),
+                      );
+                    }
+                  }
+                }
+              },
+              child: const Text("Save"),
+            ),
+          ],
+        ),
       ),
-    ).then((_) {
-      // Ensure controllers are disposed
-      try {
-        nameController.dispose();
-        locationController.dispose();
-        logoController.dispose();
-      } catch (e) {
-        debugPrint('Controllers already disposed: $e');
-      }
-    });
+    );
   }
 }

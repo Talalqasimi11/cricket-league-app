@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/api_client.dart';
+import '../../../services/api_service.dart';
 import '../../../core/error_dialog.dart';
 import '../../../core/theme/theme_config.dart';
 import '../../../widgets/error_boundary.dart';
@@ -16,9 +18,11 @@ class _StatisticsScreenState extends State<StatisticsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _loading = true;
+
+  // Typed for safer access
   Map<String, dynamic> _overviewStats = {};
-  List<dynamic> _playerStats = [];
-  List<dynamic> _teamStats = [];
+  List<Map<String, dynamic>> _playerStats = [];
+  List<Map<String, dynamic>> _teamStats = [];
 
   @override
   void initState() {
@@ -34,7 +38,9 @@ class _StatisticsScreenState extends State<StatisticsScreen>
   }
 
   Future<void> _fetchAllStatistics() async {
+    if (!mounted) return;
     setState(() => _loading = true);
+
     try {
       final results = await Future.wait([
         ApiClient.instance.get('/api/stats/overview'),
@@ -42,30 +48,45 @@ class _StatisticsScreenState extends State<StatisticsScreen>
         ApiClient.instance.get('/api/stats/teams'),
       ]);
 
+      Map<String, dynamic> newOverview = _overviewStats;
+      List<Map<String, dynamic>> newPlayers = _playerStats;
+      List<Map<String, dynamic>> newTeams = _teamStats;
+
       if (results[0].statusCode == 200) {
         final data = jsonDecode(results[0].body) as Map<String, dynamic>;
-        setState(() => _overviewStats = data);
+        newOverview = data;
       }
-
       if (results[1].statusCode == 200) {
         final data = jsonDecode(results[1].body) as Map<String, dynamic>;
-        setState(() => _playerStats = data['players'] ?? []);
+        final players = (data['players'] as List?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+        newPlayers = players ?? [];
       }
-
       if (results[2].statusCode == 200) {
         final data = jsonDecode(results[2].body) as Map<String, dynamic>;
-        setState(() => _teamStats = data['teams'] ?? []);
+        final teams = (data['teams'] as List?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+        newTeams = teams ?? [];
       }
 
-      final failedRequests = results.where((r) => r.statusCode != 200);
-      if (failedRequests.isNotEmpty) {
-        if (mounted) {
-          await ErrorDialog.showApiError(
-            context,
-            response: failedRequests.first,
-            onRetry: _fetchAllStatistics,
-          );
-        }
+      if (!mounted) return;
+      setState(() {
+        _overviewStats = newOverview;
+        _playerStats = newPlayers;
+        _teamStats = newTeams;
+      });
+
+      final failed = results.where((r) => r.statusCode != 200);
+      if (failed.isNotEmpty && mounted) {
+        await ErrorDialog.showApiError(
+          context,
+          response: failed.first,
+          onRetry: _fetchAllStatistics,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -85,13 +106,13 @@ class _StatisticsScreenState extends State<StatisticsScreen>
     await _fetchAllStatistics();
   }
 
-  // Helper function to safely get initials
+  // Helper: initials
   String _getInitials(String? name) {
     if (name == null || name.trim().isEmpty) return '?';
-    return name.trim().substring(0, 1).toUpperCase();
+    return name.trim().characters.first.toUpperCase();
   }
 
-  // Helper function to safely convert to number
+  // Helper: number parsing
   num _toNumber(dynamic value, {num defaultValue = 0}) {
     if (value == null) return defaultValue;
     if (value is num) return value;
@@ -99,12 +120,16 @@ class _StatisticsScreenState extends State<StatisticsScreen>
     return defaultValue;
   }
 
-  // Helper function to safely format decimal
-  String _formatDecimal(dynamic value, int decimals, {String defaultValue = '0.0'}) {
+  // Helper: decimal formatting
+  String _formatDecimal(
+    dynamic value,
+    int decimals, {
+    String defaultValue = '0.0',
+  }) {
     try {
       final number = _toNumber(value);
       return number.toStringAsFixed(decimals);
-    } catch (e) {
+    } catch (_) {
       return defaultValue;
     }
   }
@@ -132,10 +157,7 @@ class _StatisticsScreenState extends State<StatisticsScreen>
           actions: [
             IconButton(
               onPressed: _fetchStatistics,
-              icon: Icon(
-                Icons.refresh,
-                color: theme.colorScheme.onSurface,
-              ),
+              icon: Icon(Icons.refresh, color: theme.colorScheme.onSurface),
               tooltip: 'Refresh Statistics',
             ),
           ],
@@ -147,7 +169,9 @@ class _StatisticsScreenState extends State<StatisticsScreen>
               Tab(text: 'Teams'),
             ],
             labelColor: theme.colorScheme.primary,
-            unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            unselectedLabelColor: theme.colorScheme.onSurface.withValues(
+              alpha: 0.6,
+            ),
             indicatorColor: theme.colorScheme.primary,
           ),
         ),
@@ -156,67 +180,27 @@ class _StatisticsScreenState extends State<StatisticsScreen>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    CircularProgressIndicator(
-                      color: theme.colorScheme.primary,
-                    ),
+                    CircularProgressIndicator(color: theme.colorScheme.primary),
                     const SizedBox(height: 16),
                     Text(
                       'Loading statistics...',
                       style: AppTypographyExtended.bodyMedium.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.6,
+                        ),
                       ),
                     ),
                   ],
                 ),
               )
-            : _overviewStats.isEmpty && _playerStats.isEmpty && _teamStats.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.query_stats,
-                          size: 64,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No statistics available',
-                          style: AppTypographyExtended.headlineSmall.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Statistics will appear once matches are played',
-                          style: AppTypographyExtended.bodyMedium.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton.icon(
-                          onPressed: _fetchStatistics,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Refresh'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildOverviewTab(),
-                      _buildPlayersTab(),
-                      _buildTeamsTab(),
-                    ],
-                  ),
+            : TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildOverviewTab(),
+                  _buildPlayersTab(),
+                  _buildTeamsTab(),
+                ],
+              ),
       ),
     );
   }
@@ -227,8 +211,10 @@ class _StatisticsScreenState extends State<StatisticsScreen>
     return RefreshIndicator(
       onRefresh: _fetchStatistics,
       child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          // Top Stats Row 1
           Row(
             children: [
               Expanded(
@@ -251,6 +237,7 @@ class _StatisticsScreenState extends State<StatisticsScreen>
             ],
           ),
           const SizedBox(height: 16),
+          // Top Stats Row 2
           Row(
             children: [
               Expanded(
@@ -274,68 +261,18 @@ class _StatisticsScreenState extends State<StatisticsScreen>
           ),
           const SizedBox(height: 24),
 
+          // Top Players Section (Preview)
           if (_playerStats.isNotEmpty) ...[
             const Text(
-              'Top Players',
+              'Top Performers',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             ..._playerStats.take(3).map((player) {
-              final playerMap = player as Map<String, dynamic>? ?? {};
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  dense: true,
-                  leading: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Colors.green.shade100,
-                    child: Text(
-                      _getInitials(playerMap['player_name'] as String?),
-                      style: const TextStyle(
-                        color: Colors.green,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  title: Text(
-                    playerMap['player_name']?.toString() ?? 'Unknown Player',
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                  subtitle: Text(
-                    'Runs: ${_toNumber(playerMap['total_runs'])}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  trailing: Text(
-                    '#${_playerStats.indexOf(player) + 1}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                  ),
-                ),
-              );
+              final rank = _playerStats.indexOf(player) + 1;
+              return _buildPlayerListItem(player, rank);
             }),
-            const SizedBox(height: 12),
           ],
-
-          const Text(
-            'Platform Activity',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: const BorderRadius.all(Radius.circular(12)),
-            ),
-            child: const Text(
-              'Match results and tournament updates will appear here once matches are completed.',
-              style: TextStyle(color: Colors.grey),
-            ),
-          ),
         ],
       ),
     );
@@ -345,111 +282,180 @@ class _StatisticsScreenState extends State<StatisticsScreen>
     return RefreshIndicator(
       onRefresh: _fetchStatistics,
       child: _playerStats.isEmpty
-          ? const Center(
-              child: Text('No player statistics available'),
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 160),
+                Center(child: Text('No player statistics available')),
+              ],
             )
           : ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               itemCount: _playerStats.length,
               itemBuilder: (context, index) {
-                try {
-                  final player = _playerStats[index] as Map<String, dynamic>? ?? {};
-                  final playerName = player['player_name']?.toString() ?? 'Unknown Player';
-                  final teamName = player['team_name']?.toString() ?? 'Unknown Team';
-                  final playerRole = player['player_role']?.toString() ?? 'Unknown Role';
-
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: Colors.green.shade100,
-                                child: Text(
-                                  _getInitials(playerName),
-                                  style: const TextStyle(
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      playerName,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    Text(
-                                      '$teamName • $playerRole',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                '#${index + 1}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _buildPlayerStat(
-                                'Runs',
-                                _toNumber(player['total_runs']).toString(),
-                              ),
-                              _buildPlayerStat(
-                                'Avg',
-                                _formatDecimal(player['batting_average'], 1),
-                              ),
-                              _buildPlayerStat(
-                                'SR',
-                                _formatDecimal(player['strike_rate'], 1),
-                              ),
-                              _buildPlayerStat(
-                                'Wickets',
-                                _toNumber(player['wickets_taken']).toString(),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                } catch (e) {
-                  // Handle individual item errors gracefully
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        'Error loading player #${index + 1}',
-                        style: TextStyle(color: Colors.red.shade700),
-                      ),
-                    ),
-                  );
-                }
+                return _buildPlayerListItem(_playerStats[index], index + 1);
               },
             ),
+    );
+  }
+
+  // ✅ Detailed Player Card with Real Image & Full Stats
+  Widget _buildPlayerListItem(Map<String, dynamic> player, int index) {
+    final playerName = player['player_name']?.toString() ?? 'Unknown Player';
+    final teamName = player['team_name']?.toString() ?? 'Unknown Team';
+    final playerRole = player['player_role']?.toString() ?? 'Role';
+
+    // ✅ FIX: Load image from backend url using shared ApiService helper
+    final imageUrl = ApiService().getImageUrl(
+      player['player_image_url']?.toString(),
+    );
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 1. Header: Avatar, Name, Rank
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.green.shade100,
+                  ),
+                  child: ClipOval(
+                    child: imageUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => const Center(
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Center(
+                              child: Text(
+                                _getInitials(playerName),
+                                style: const TextStyle(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              _getInitials(playerName),
+                              style: const TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        playerName,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '$teamName • $playerRole',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '#$index',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // 2. ✅ Detailed Stats Grid (Matches, Runs, Avg, SR, 100s, 50s, Wickets)
+            Wrap(
+              spacing: 16,
+              runSpacing: 12,
+              alignment: WrapAlignment.spaceBetween,
+              children: [
+                _buildMiniStat(
+                  'Matches',
+                  _toNumber(player['matches_played']).toString(),
+                ),
+                _buildMiniStat(
+                  'Runs',
+                  _toNumber(player['total_runs']).toString(),
+                ),
+                _buildMiniStat(
+                  'Avg',
+                  _formatDecimal(player['batting_average'], 1),
+                ),
+                _buildMiniStat('SR', _formatDecimal(player['strike_rate'], 1)),
+                _buildMiniStat(
+                  '100s',
+                  _toNumber(player['hundreds']).toString(),
+                ),
+                _buildMiniStat('50s', _toNumber(player['fifties']).toString()),
+                _buildMiniStat(
+                  'Wickets',
+                  _toNumber(
+                    player['wickets_taken'] ?? player['wickets'],
+                  ).toString(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper for the small stats grid inside player card
+  Widget _buildMiniStat(String label, String value) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+        ),
+      ],
     );
   }
 
@@ -457,126 +463,133 @@ class _StatisticsScreenState extends State<StatisticsScreen>
     return RefreshIndicator(
       onRefresh: _fetchStatistics,
       child: _teamStats.isEmpty
-          ? const Center(
-              child: Text('No team statistics available'),
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 160),
+                Center(child: Text('No team statistics available')),
+              ],
             )
           : ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               itemCount: _teamStats.length,
               itemBuilder: (context, index) {
-                try {
-                  final team = _teamStats[index] as Map<String, dynamic>? ?? {};
-                  final teamName = team['team_name']?.toString() ?? 'Unknown Team';
-                  final totalPlayers = _toNumber(team['total_players']);
+                final team = _teamStats[index];
+                final teamName =
+                    team['team_name']?.toString() ?? 'Unknown Team';
+                final totalPlayers = _toNumber(team['total_players']);
 
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: Colors.blue.shade100,
-                                child: const Icon(Icons.shield, color: Colors.blue),
+                // ✅ FIX: Load Real Team Logo from backend
+                final logoUrl = ApiService().getImageUrl(
+                  team['team_logo_url']?.toString() ??
+                      team['team_logo']?.toString(),
+                );
+
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.blue.shade50,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      teamName,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
+                              child: ClipOval(
+                                child: logoUrl.isNotEmpty
+                                    ? CachedNetworkImage(
+                                        imageUrl: logoUrl,
+                                        fit: BoxFit.cover,
+                                        placeholder: (context, url) =>
+                                            const Center(
+                                              child: SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              ),
+                                            ),
+                                        errorWidget: (context, url, error) =>
+                                            const Icon(
+                                              Icons.shield,
+                                              color: Colors.blue,
+                                            ),
+                                      )
+                                    : const Icon(
+                                        Icons.shield,
+                                        color: Colors.blue,
                                       ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    teamName,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                    Text(
-                                      '$totalPlayers players',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                        fontSize: 12,
-                                      ),
+                                  ),
+                                  Text(
+                                    '$totalPlayers players',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 12,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                '#${index + 1}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue,
-                                ),
+                            ),
+                            Text(
+                              '#${index + 1}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _buildTeamStat(
-                                'Matches',
-                                _toNumber(team['matches_played']).toString(),
-                              ),
-                              _buildTeamStat(
-                                'Won',
-                                _toNumber(team['matches_won']).toString(),
-                              ),
-                              _buildTeamStat(
-                                'Win %',
-                                '${_formatDecimal(team['win_percentage'], 1)}%',
-                              ),
-                              _buildTeamStat(
-                                'Trophies',
-                                _toNumber(team['trophies']).toString(),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildTeamStat(
+                              'Matches',
+                              _toNumber(team['matches_played']).toString(),
+                            ),
+                            _buildTeamStat(
+                              'Won',
+                              _toNumber(team['matches_won']).toString(),
+                            ),
+                            _buildTeamStat(
+                              'Win %',
+                              '${_formatDecimal(team['win_percentage'], 1)}%',
+                            ),
+                            _buildTeamStat(
+                              'Trophies',
+                              _toNumber(team['trophies']).toString(),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  );
-                } catch (e) {
-                  // Handle individual item errors gracefully
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        'Error loading team #${index + 1}',
-                        style: TextStyle(color: Colors.red.shade700),
-                      ),
-                    ),
-                  );
-                }
+                  ),
+                );
               },
             ),
-    );
-  }
-
-  Widget _buildPlayerStat(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.green,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey.shade600,
-          ),
-        ),
-      ],
     );
   }
 
@@ -593,16 +606,18 @@ class _StatisticsScreenState extends State<StatisticsScreen>
         ),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey.shade600,
-          ),
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
         ),
       ],
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -625,10 +640,7 @@ class _StatisticsScreenState extends State<StatisticsScreen>
           const SizedBox(height: 4),
           Text(
             title,
-            style: TextStyle(
-              color: color.withValues(alpha: 0.8),
-              fontSize: 12,
-            ),
+            style: TextStyle(color: color.withValues(alpha: 0.8), fontSize: 12),
             textAlign: TextAlign.center,
           ),
         ],

@@ -1,10 +1,9 @@
+// lib/features/tournaments/screens/tournament_create_screen.dart
 import 'package:flutter/material.dart';
 import 'dart:convert';
-import 'dart:io';
 import 'package:provider/provider.dart';
-import '../../../core/api_client.dart';
 import '../../../core/offline/offline_manager.dart';
-import '../../../models/pending_operation.dart';
+import '../providers/tournament_provider.dart';
 import 'tournament_team_registration_screen.dart';
 
 class CreateTournamentScreen extends StatefulWidget {
@@ -19,15 +18,11 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   final TextEditingController _tournamentNameController =
       TextEditingController();
   final TextEditingController _locationController = TextEditingController();
-  final TextEditingController _startDateController = TextEditingController();
-  final TextEditingController _endDateController = TextEditingController();
 
-  DateTime? _startDate;
-  DateTime? _endDate;
   String _selectedOvers = "10";
   bool _isSubmitting = false;
 
-  // Safe helpers
+  // ---------------- Safe helpers ----------------
   String _safeString(String? value, String defaultValue) {
     if (value == null || value.isEmpty) return defaultValue;
     return value;
@@ -39,13 +34,9 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
         throw const FormatException('Empty response body');
       }
       return jsonDecode(body);
-    } on FormatException catch (e) {
-      debugPrint('JSON decode error: $e');
-      debugPrint('Response body: $body');
-      throw FormatException('Invalid JSON response: ${e.message}');
     } catch (e) {
-      debugPrint('Unexpected decode error: $e');
-      rethrow;
+      debugPrint('JSON decode error: $e\nBody: $body');
+      throw const FormatException('Invalid JSON response');
     }
   }
 
@@ -59,95 +50,18 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    try {
-      return "${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}";
-    } catch (e) {
-      debugPrint('Error formatting date: $e');
-      return 'Invalid date';
-    }
-  }
-
   @override
   void dispose() {
     _tournamentNameController.dispose();
     _locationController.dispose();
-    _startDateController.dispose();
-    _endDateController.dispose();
     super.dispose();
-  }
-
-  Future<void> _pickDate(BuildContext context, bool isStart) async {
-    if (_isSubmitting || !mounted) return;
-
-    try {
-      final DateTime? picked = await showDatePicker(
-        context: context,
-        initialDate: isStart
-            ? (_startDate ?? DateTime.now())
-            : (_endDate ?? _startDate ?? DateTime.now()),
-        firstDate: DateTime(2024),
-        lastDate: DateTime(2100),
-      );
-
-      if (picked == null || !mounted) return;
-
-      setState(() {
-        if (isStart) {
-          _startDate = picked;
-          _startDateController.text = _formatDate(picked);
-
-          // If end date is before new start date, clear it
-          if (_endDate != null && _endDate!.isBefore(picked)) {
-            _endDate = null;
-            _endDateController.text = '';
-          }
-        } else {
-          _endDate = picked;
-          _endDateController.text = _formatDate(picked);
-        }
-      });
-    } catch (e) {
-      debugPrint('Error picking date: $e');
-      _showMessage('Failed to select date', isError: true);
-    }
-  }
-
-  bool _validateDates() {
-    if (_startDate == null) {
-      _showMessage('Please select a start date', isError: true);
-      return false;
-    }
-
-    if (_endDate != null) {
-      if (_endDate!.isBefore(_startDate!)) {
-        _showMessage('End date cannot be before start date', isError: true);
-        return false;
-      }
-
-      // Check if dates are the same
-      if (_endDate!.isAtSameMomentAs(_startDate!)) {
-        _showMessage('End date should be after start date', isError: true);
-        return false;
-      }
-    }
-
-    return true;
   }
 
   Future<void> _onSave() async {
     if (_isSubmitting || !mounted) return;
 
-    // Validate form
     final formState = _formKey.currentState;
-    if (formState == null || !formState.validate()) {
-      return;
-    }
-
-    // Validate dates
-    if (!_validateDates()) {
-      return;
-    }
+    if (formState == null || !formState.validate()) return;
 
     setState(() => _isSubmitting = true);
 
@@ -156,189 +70,63 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
       final location = _locationController.text.trim();
       final overs = int.tryParse(_selectedOvers) ?? 10;
 
-      if (tournamentName.isEmpty) {
-        _showMessage('Tournament name is required', isError: true);
-        return;
-      }
-
-      if (location.isEmpty) {
-        _showMessage('Location is required', isError: true);
-        return;
-      }
-
       final tournamentData = {
         'tournament_name': tournamentName,
-        'start_date': _startDate!.toIso8601String(),
-        'end_date': _endDate?.toIso8601String(),
         'location': location,
         'overs': overs,
+        'type': 'knockout', // fixed type
+        'start_date': DateTime.now().toIso8601String(),
       };
 
-      // Get offline manager safely
-      OfflineManager? offlineManager;
-      try {
-        offlineManager = Provider.of<OfflineManager>(context, listen: false);
-      } catch (e) {
-        debugPrint('Error getting offline manager: $e');
-      }
+      final provider = Provider.of<TournamentProvider>(context, listen: false);
+      final success = await provider.createTournament(tournamentData);
 
-      // Check if offline
-      if (offlineManager != null && !offlineManager.isOnline) {
-        await _handleOfflineCreation(offlineManager, tournamentData);
-        return;
-      }
+      if (!mounted) return;
 
-      // Online flow
-      await _handleOnlineCreation(tournamentData, tournamentName);
-    } catch (e, stackTrace) {
-      debugPrint('Error saving tournament: $e');
-      debugPrint('Stack trace: $stackTrace');
+      if (success) {
+        final offlineManager = Provider.of<OfflineManager>(
+          context,
+          listen: false,
+        );
+        if (!offlineManager.isOnline) {
+          _showMessage(
+            '✅ Tournament creation queued. Sync will happen when online.',
+          );
+          Navigator.pop(context);
+        } else {
+          // Try to find the new tournament to navigate
+          await provider.fetchTournaments();
+          final latest = provider.tournaments.isNotEmpty
+              ? provider.tournaments.last
+              : null;
 
-      if (mounted) {
-        final errorMessage = e is SocketException
-            ? 'No internet connection. Please check your network and try again.'
-            : 'Failed to create tournament: ${_getErrorMessage(e)}';
+          if (latest != null && latest.name == tournamentName) {
+            _showMessage('✅ Tournament created. Add teams next.');
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => TournamentTeamRegistrationScreen(
+                  tournamentName: tournamentName,
+                  tournamentId: latest.id,
+                ),
+              ),
+              result: true, // Signal success to refresh parent
+            );
+          } else {
+            _showMessage('✅ Tournament saved.');
+            Navigator.pop(context, true);
+          }
+        }
+      } else {
+        String errorMessage = provider.error ?? 'Failed to create tournament';
         _showMessage(errorMessage, isError: true);
       }
+    } catch (e) {
+      debugPrint('Error saving tournament: $e');
+      _showMessage('An error occurred. Please try again.', isError: true);
     } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
+      if (mounted) setState(() => _isSubmitting = false);
     }
-  }
-
-  Future<void> _handleOfflineCreation(
-    OfflineManager offlineManager,
-    Map<String, dynamic> tournamentData,
-  ) async {
-    try {
-      await offlineManager.queueOperation(
-        operationType: OperationType.create,
-        entityType: 'tournament',
-        entityId: 0,
-        data: tournamentData,
-      );
-
-      if (!mounted) return;
-
-      _showMessage('✅ Tournament creation queued for sync when online');
-
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      if (mounted) {
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      debugPrint('Error queuing offline operation: $e');
-      if (mounted) {
-        _showMessage('Failed to queue tournament creation', isError: true);
-      }
-    }
-  }
-
-  Future<void> _handleOnlineCreation(
-    Map<String, dynamic> tournamentData,
-    String tournamentName,
-  ) async {
-    try {
-      final resp = await ApiClient.instance.post(
-        '/api/tournaments',
-        body: tournamentData,
-      );
-
-      if (!mounted) return;
-
-      if (resp.statusCode == 201 || resp.statusCode == 200) {
-        await _handleSuccessResponse(resp, tournamentName);
-      } else {
-        await _handleErrorResponse(resp);
-      }
-    } catch (e) {
-      debugPrint('Error in online creation: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> _handleSuccessResponse(
-    dynamic resp,
-    String tournamentName,
-  ) async {
-    try {
-      final data = _safeJsonDecode(resp.body);
-
-      if (data is! Map<String, dynamic>) {
-        throw const FormatException('Invalid response format');
-      }
-
-      debugPrint('Tournament creation response: $data');
-
-      final tournamentId = _safeString(data['tournament_id']?.toString(), '');
-
-      if (tournamentId.isEmpty) {
-        _showMessage(
-          'Failed to get tournament ID. Please try again.',
-          isError: true,
-        );
-        return;
-      }
-
-      if (!mounted) return;
-
-      _showMessage('✅ Tournament created. Add teams next.');
-
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      if (!mounted) return;
-
-      await Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => TournamentTeamRegistrationScreen(
-            tournamentName: tournamentName,
-            tournamentId: tournamentId,
-          ),
-        ),
-      );
-    } catch (e) {
-      debugPrint('Error handling success response: $e');
-      if (mounted) {
-        _showMessage('Failed to process response', isError: true);
-      }
-    }
-  }
-
-  Future<void> _handleErrorResponse(dynamic resp) async {
-    try {
-      String errorMessage;
-
-      if (resp.statusCode == 400) {
-        try {
-          final data = _safeJsonDecode(resp.body);
-          errorMessage = data is Map<String, dynamic>
-              ? (data['error']?.toString() ?? 'Invalid tournament data')
-              : 'Invalid tournament data';
-        } catch (e) {
-          errorMessage = 'Invalid tournament data';
-        }
-      } else if (resp.statusCode == 401 || resp.statusCode == 403) {
-        errorMessage = 'Authentication failed. Please log in again.';
-      } else if (resp.statusCode >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else {
-        errorMessage = 'Failed to create tournament (${resp.statusCode})';
-      }
-
-      _showMessage(errorMessage, isError: true);
-    } catch (e) {
-      debugPrint('Error handling error response: $e');
-      _showMessage('An error occurred', isError: true);
-    }
-  }
-
-  String _getErrorMessage(dynamic error) {
-    if (error == null) return 'Unknown error';
-    final message = error.toString();
-    return message.replaceAll('Exception:', '').trim();
   }
 
   void _onCancel() {
@@ -346,22 +134,13 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
       _showMessage('Please wait for the current operation to complete');
       return;
     }
-
-    if (mounted) {
-      Navigator.pop(context);
-    }
+    if (mounted) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        if (_isSubmitting) {
-          _showMessage('Please wait for the current operation to complete');
-          return false;
-        }
-        return true;
-      },
+    return PopScope(
+      canPop: !_isSubmitting,
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
@@ -423,69 +202,9 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Start & End Dates
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: _isSubmitting
-                          ? null
-                          : () => _pickDate(context, true),
-                      child: AbsorbPointer(
-                        child: TextFormField(
-                          controller: _startDateController,
-                          decoration: InputDecoration(
-                            labelText: "Start Date",
-                            border: const OutlineInputBorder(),
-                            hintText: "Select start date",
-                            suffixIcon: Icon(
-                              Icons.calendar_today,
-                              color: _isSubmitting
-                                  ? Colors.grey
-                                  : Theme.of(context).primaryColor,
-                            ),
-                          ),
-                          validator: (value) {
-                            if (_startDate == null) {
-                              return "Select start date";
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: _isSubmitting
-                          ? null
-                          : () => _pickDate(context, false),
-                      child: AbsorbPointer(
-                        child: TextFormField(
-                          controller: _endDateController,
-                          decoration: InputDecoration(
-                            labelText: "End Date (Optional)",
-                            border: const OutlineInputBorder(),
-                            hintText: "Select end date",
-                            suffixIcon: Icon(
-                              Icons.calendar_today,
-                              color: _isSubmitting
-                                  ? Colors.grey
-                                  : Theme.of(context).primaryColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
               // Overs
               DropdownButtonFormField<String>(
-                value: _selectedOvers,
+                initialValue: _selectedOvers,
                 items: ["5", "10", "20", "50"]
                     .map(
                       (e) =>
@@ -505,17 +224,6 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-
-              // Tournament Type (fixed knockout)
-              const TextField(
-                enabled: false,
-                decoration: InputDecoration(
-                  labelText: "Tournament Type",
-                  hintText: "Knockout only",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 24),
 
               // Buttons
               Row(

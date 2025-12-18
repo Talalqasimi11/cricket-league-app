@@ -1,0 +1,15 @@
+1. Login...
+2. Create Tournament & Teams...
+   Tourney Created: 5
+   Teams Created: 5 6
+   Tournament Teams Created: 1 2
+3. Schedule Match...
+   Match ID: 2
+4. Calling Start Match API...
+   Status: 200
+   Response: { message: 'Match started, live scoring enabled', match_id: 1 }
+   TM Status: live
+   Matches Table Status: live
+   Innings Count: 1
+   Inning 1 Status: in_progress
+✅ PASS: Innings auto-started!

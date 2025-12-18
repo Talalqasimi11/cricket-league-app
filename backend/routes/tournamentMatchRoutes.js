@@ -6,15 +6,26 @@ const {
   getAllTournamentMatches,
   createTournamentMatches,
   getTournamentMatches,
+  getTournamentMatchById,
   updateTournamentMatch,
   startTournamentMatch,
   endTournamentMatch,
-  deleteTournamentMatch
+  deleteTournamentMatch,
+
+  // ... other imports
+  createFriendlyMatch, // Import this
+  createManualMatch // Import this
 } = require("../controllers/tournamentMatchController");
+// ... existing routes ...
+
+// ✅ New route for Friendly Matches
+router.post("/friendly", authMiddleware, createFriendlyMatch);
+router.post("/manual", authMiddleware, createManualMatch);
 
 // ✅ Routes
 router.get("/", getAllTournamentMatches); // public list across tournaments
 router.post("/create", authMiddleware, createTournamentMatches);
+router.get("/match/:id", validateSingleNumericParam('id'), getTournamentMatchById);
 router.get("/:tournament_id", validateSingleNumericParam('tournament_id'), getTournamentMatches);
 router.put("/update/:id", authMiddleware, validateSingleNumericParam('id'), updateTournamentMatch);
 router.put("/start/:id", authMiddleware, validateSingleNumericParam('id'), startTournamentMatch);

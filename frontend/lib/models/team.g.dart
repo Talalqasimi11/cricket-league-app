@@ -28,15 +28,17 @@ class TeamAdapter extends TypeAdapter<Team> {
       captainPhone: fields[8] as String?,
       ownerImage: fields[9] as String?,
       captainImage: fields[10] as String?,
-      createdAt: fields[11] as DateTime,
-      updatedAt: fields[12] as DateTime,
+      createdAt: fields[11] as DateTime?,
+      updatedAt: fields[12] as DateTime?,
+      matchesPlayed: fields[13] as int,
+      matchesWon: fields[14] as int,
     );
   }
 
   @override
   void write(BinaryWriter writer, Team obj) {
     writer
-      ..writeByte(13)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -62,7 +64,11 @@ class TeamAdapter extends TypeAdapter<Team> {
       ..writeByte(11)
       ..write(obj.createdAt)
       ..writeByte(12)
-      ..write(obj.updatedAt);
+      ..write(obj.updatedAt)
+      ..writeByte(13)
+      ..write(obj.matchesPlayed)
+      ..writeByte(14)
+      ..write(obj.matchesWon);
   }
 
   @override

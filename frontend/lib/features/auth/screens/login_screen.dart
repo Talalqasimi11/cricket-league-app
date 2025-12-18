@@ -4,9 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/api_client.dart';
 import '../../../core/auth_provider.dart';
+import '../../../core/error_dialog.dart';
 import '../../../core/secure_storage.dart';
 import '../../../core/icons.dart';
 import '../../../widgets/custom_button.dart';
+import '../../../core/error_handler.dart';
+// [Added] Import new helpers
+import '../../../core/utils/app_validators.dart';
+import '../../../core/theme/app_input_styles.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,52 +25,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _rememberMe = false;
-  String? _errorMessage;
   final _formKey = GlobalKey<FormState>();
 
   @override
   void initState() {
     super.initState();
     _loadSavedPhone();
-  }
-
-  /// Format phone number to E.164 format
-  String _formatPhoneNumber(String phone) {
-    // Remove all non-digit characters
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
-
-    // Pakistan phone number handling
-    if (digits.startsWith('92')) {
-      return digits; // Already in E.164 format
-    } else if (digits.startsWith('0')) {
-      return '92${digits.substring(1)}'; // Remove leading 0 and add 92
-    } else if (digits.length == 10) {
-      return '92$digits'; // Assume Pakistan and add country code
-    }
-    return digits;
-  }
-
-  /// Validate Pakistan phone number
-  String? _validatePhoneNumber(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Phone number is required';
-    }
-    final digits = value.replaceAll(RegExp(r'\D'), '');
-    if (digits.length < 10) {
-      return 'Please enter a valid phone number';
-    }
-    return null;
-  }
-
-  /// Validate password
-  String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Password is required';
-    }
-    if (value.length < 8) {
-      return 'Password must be at least 8 characters';
-    }
-    return null;
   }
 
   /// Load saved phone number if "Remember me" was checked
@@ -85,35 +50,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// Login function
   void _login() async {
+    if (_isLoading) return; // Prevent multiple submissions
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    final phone = _formatPhoneNumber(_phoneController.text.trim());
+    // [Fixed] Use shared validator helper
+    final phone = AppValidators.formatPhoneNumber(_phoneController.text.trim());
     final password = _passwordController.text.trim();
 
-    // Save phone if remember me is checked
     if (_rememberMe) {
-      try {
-        await SecureStorage.saveString(
-          'remembered_phone',
-          _phoneController.text,
-        );
-      } catch (e) {
-        debugPrint('Error saving phone: $e');
-      }
+      await SecureStorage.saveString(
+          'remembered_phone', _phoneController.text);
     } else {
-      try {
-        await SecureStorage.deleteString('remembered_phone');
-      } catch (e) {
-        debugPrint('Error clearing saved phone: $e');
-      }
+      await SecureStorage.deleteString('remembered_phone');
     }
 
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    setState(() => _isLoading = true);
 
     try {
       final response = await ApiClient.instance.post(
@@ -121,19 +74,15 @@ class _LoginScreenState extends State<LoginScreen> {
         body: {'phone_number': phone, 'password': password},
       );
 
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final token = data['token']?.toString();
         final refresh = data['refresh_token']?.toString();
 
         if (token == null || token.isEmpty) {
-          if (mounted) {
-            setState(() => _errorMessage = 'Invalid response: missing token');
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Login failed. Please try again.')),
-            );
-          }
-          return;
+          throw Exception('Invalid response from server: token is missing.');
         }
 
         await ApiClient.instance.setToken(token);
@@ -143,63 +92,47 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (!mounted) return;
 
-        // Update auth provider
-        final authProvider = context.read<AuthProvider>();
-        await authProvider.initializeAuth();
+        await context.read<AuthProvider>().initializeAuth();
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Login successful')),
-        );
         if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/home');
-      } else if (response.statusCode == 400) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final errorMsg = data['error'] ?? 'Invalid login credentials';
-        if (mounted) {
-          setState(() => _errorMessage = errorMsg);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errorMsg)),
-          );
-        }
-      } else if (response.statusCode == 401) {
-        if (mounted) {
-          setState(() => _errorMessage = 'Invalid phone number or password');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Invalid phone number or password')),
-          );
-        }
-      } else if (response.statusCode == 429) {
-        if (mounted) {
-          setState(() => _errorMessage = 'Too many login attempts. Please try again later.');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Too many login attempts. Please try again later.')),
-          );
-        }
-      } else if (response.statusCode >= 500) {
-        if (mounted) {
-          setState(() => _errorMessage = 'Server error. Please try again later.');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Server error. Please try again later.')),
-          );
-        }
-      } else {
-        if (mounted) {
-          setState(() => _errorMessage = 'Login failed. Please try again.');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Login failed (${response.statusCode})')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        final errorMessage = e is SocketException
-            ? 'No internet connection. Please check your network and try again.'
-            : 'Login failed. Please try again.';
-        setState(() => _errorMessage = errorMessage);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
+          const SnackBar(
+              content: Text('✅ Login successful'),
+              backgroundColor: Colors.green),
         );
+        Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        String message;
+        try {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          message = data['error'] ??
+              'Login failed. Please check your credentials.';
+        } catch (_) {
+          message =
+              'Login failed (Error ${response.statusCode}). Please try again.';
+        }
+
+        if (response.statusCode == 401) {
+          message = 'Invalid phone number or password.';
+        } else if (response.statusCode >= 500) {
+          message = 'Server error. Please try again later.';
+        }
+
+        ErrorDialog.show(context, message);
       }
+    } on ApiHttpException catch (e) {
+      if (!mounted) return;
+      String message = e.message;
+      if (e.statusCode == 429) {
+        message = 'Too many login attempts. Please try again later.';
+      }
+      ErrorDialog.show(context, message);
+    } catch (e) {
+      if (!mounted) return;
+      final errorMessage = e is SocketException
+          ? 'No internet connection. Please check your network.'
+          : 'An unexpected error occurred during login.';
+      ErrorDialog.show(context, errorMessage);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -266,33 +199,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 40),
 
-                // Error message
-                if (_errorMessage != null)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: theme.colorScheme.error),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: TextStyle(
-                        color: theme.colorScheme.onErrorContainer,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-
                 // Phone
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
-                  validator: _validatePhoneNumber,
-                  decoration: _inputDecoration(
-                    "Phone number (e.g., 03XX-XXXXXXX)",
-                    Icons.phone,
+                  // [Fixed] Use shared validator
+                  validator: AppValidators.validatePhoneNumber,
+                  // [Fixed] Use shared input decoration
+                  decoration: AppInputStyles.textFieldDecoration(
+                    context: context,
+                    hintText: "Phone number (e.g., 03XX-XXXXXXX)",
+                    prefixIcon: Icons.phone,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -301,10 +218,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
-                  validator: _validatePassword,
-                  decoration: _inputDecoration(
-                    "Password (min 8 characters)",
-                    Icons.lock,
+                  // [Fixed] Use shared validator
+                  validator: AppValidators.validatePassword,
+                  // [Fixed] Use shared input decoration
+                  decoration: AppInputStyles.textFieldDecoration(
+                    context: context,
+                    hintText: "Password (min 8 characters)",
+                    prefixIcon: Icons.lock,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -342,7 +262,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Login Button
                 PrimaryButton(
                   text: "Login",
-                  onPressed: _login,
+                  onPressed: _isLoading ? null : _login,
                   isLoading: _isLoading,
                   fullWidth: true,
                   size: ButtonSize.large,
@@ -352,7 +272,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Register Button
                 SecondaryButton(
                   text: "Register",
-                  onPressed: _navigateToRegister,
+                  onPressed: _isLoading ? null : _navigateToRegister,
                   fullWidth: true,
                   size: ButtonSize.large,
                 ),
@@ -360,35 +280,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  // Reusable input decoration
-  InputDecoration _inputDecoration(String hint, IconData icon) {
-    final theme = Theme.of(context);
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(
-        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-      ),
-      prefixIcon: Icon(
-        icon,
-        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-      ),
-      filled: true,
-      fillColor: theme.colorScheme.surfaceContainerHighest,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: theme.colorScheme.outline),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: theme.colorScheme.outline),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
       ),
     );
   }

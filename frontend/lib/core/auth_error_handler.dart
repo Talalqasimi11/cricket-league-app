@@ -18,7 +18,10 @@ class AuthErrorHandler {
 
     // Listen for auth errors and trigger logout
     _authErrorController?.stream.listen((event) {
-      _handleAuthError(context, event);
+      // [Fixed] Check if context is mounted before using it in an async callback
+      if (context.mounted) {
+        _handleAuthError(context, event);
+      }
     });
   }
 
@@ -31,16 +34,18 @@ class AuthErrorHandler {
   }
 
   /// Handle authentication error by triggering logout
-  static void _handleAuthError(BuildContext context, AuthErrorEvent event) async {
+  static void _handleAuthError(
+      BuildContext context, AuthErrorEvent event) async {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      
-      debugPrint('AuthErrorHandler: Triggering automatic logout due to: ${event.reason}');
-      
+
+      debugPrint(
+          'AuthErrorHandler: Triggering automatic logout due to: ${event.reason}');
+
       // Show a brief message about session expiry
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Your session has expired. Please log in again.'),
+          content: const Text('Your session has expired. Please log in again.'),
           backgroundColor: Colors.orange.shade700,
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.all(8),
@@ -50,13 +55,14 @@ class AuthErrorHandler {
 
       // Trigger logout
       await authProvider.logout();
-      
+
+      // [Fixed] Check if context is still mounted after the async logout gap
+      if (!context.mounted) return;
+
       // Navigate to login screen if not already there
       if (ModalRoute.of(context)?.settings.name != '/login') {
         Navigator.of(context).pushNamedAndRemoveUntil(
-          '/login', 
-          (route) => false
-        );
+            '/login', (route) => false);
       }
     } catch (e) {
       debugPrint('AuthErrorHandler: Error during logout: $e');

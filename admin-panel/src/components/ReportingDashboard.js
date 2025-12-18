@@ -23,11 +23,11 @@ const ReportingDashboard = ({ onToast }) => {
       setError('');
 
       // Fetch player stats
-      const playersRes = await api.get('/player-stats');
-      
+      const playersRes = await api.get('/stats/players');
+
       // Fetch teams
       const teamsRes = await api.get('/teams');
-      
+
       // Fetch tournaments
       const tournamentsRes = await api.get('/tournaments');
 
@@ -192,10 +192,10 @@ const ReportingDashboard = ({ onToast }) => {
             <div className="space-y-3">
               {['upcoming', 'live', 'completed', 'abandoned'].map((status) => {
                 const count = reportData.tournamentStats.filter(t => t.status === status).length;
-                const percentage = reportData.tournamentStats.length > 0 
+                const percentage = reportData.tournamentStats.length > 0
                   ? Math.round((count / reportData.tournamentStats.length) * 100)
                   : 0;
-                
+
                 return (
                   <div key={status} className="flex items-center">
                     <div className="flex-1">
@@ -205,12 +205,11 @@ const ReportingDashboard = ({ onToast }) => {
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
-                          className={`h-2 rounded-full transition-all ${
-                            status === 'upcoming' ? 'bg-blue-500' :
-                            status === 'live' ? 'bg-green-500' :
-                            status === 'completed' ? 'bg-gray-500' :
-                            'bg-red-500'
-                          }`}
+                          className={`h-2 rounded-full transition-all ${status === 'upcoming' ? 'bg-blue-500' :
+                              status === 'live' ? 'bg-green-500' :
+                                status === 'completed' ? 'bg-gray-500' :
+                                  'bg-red-500'
+                            }`}
                           style={{ width: `${percentage}%` }}
                         ></div>
                       </div>
@@ -316,12 +315,11 @@ const ReportingDashboard = ({ onToast }) => {
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">{tournament.tournament_name}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{tournament.location}</td>
                       <td className="px-4 py-3 text-sm">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          tournament.status === 'upcoming' ? 'bg-blue-100 text-blue-800' :
-                          tournament.status === 'live' ? 'bg-green-100 text-green-800' :
-                          tournament.status === 'completed' ? 'bg-gray-100 text-gray-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${tournament.status === 'upcoming' ? 'bg-blue-100 text-blue-800' :
+                            tournament.status === 'live' ? 'bg-green-100 text-green-800' :
+                              tournament.status === 'completed' ? 'bg-gray-100 text-gray-800' :
+                                'bg-red-100 text-red-800'
+                          }`}>
                           {tournament.status}
                         </span>
                       </td>

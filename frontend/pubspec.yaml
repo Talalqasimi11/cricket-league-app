@@ -40,6 +40,7 @@ dependencies:
   url_launcher: ^6.3.0
   connectivity_plus: ^6.0.3
   socket_io_client: ^2.0.3+1
+  permission_handler: ^11.0.1
   # web_socket_channel: ^2.4.0  # Removed web dependency
   hive: ^2.2.3
   hive_flutter: ^1.1.0
@@ -56,12 +57,15 @@ dependencies:
   pull_to_refresh: ^2.0.0
   flutter_svg: ^2.0.10+1
   custom_pop_up_menu: ^1.2.4
+  mime: ^1.0.4
+  http_parser: ^4.0.2
 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
   mockito: ^5.4.4
   build_runner: ^2.4.11
   hive_generator: ^2.0.1
@@ -83,6 +87,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/app_icon.png" # Ensure this file exists
+  min_sdk_android: 21
   # App assets
   assets: []
 

@@ -1,0 +1,13 @@
+{
+  "isDbDefined": true,
+  "dbKeys": [
+    "_events",
+    "_eventsCount",
+    "_maxListeners",
+    "pool",
+    "Promise"
+  ],
+  "dbProto": {},
+  "queryType": "function",
+  "executeType": "function"
+}

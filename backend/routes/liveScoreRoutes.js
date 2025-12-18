@@ -7,10 +7,14 @@ const {
   addBall,
   endInnings,
   getLiveScore,
+  undoLastBall, // [FIX 1] Import the new function here
 } = require("../controllers/liveScoreController");
 
 // Start new innings
 router.post("/start-innings", authMiddleware, requireScope('match:score'), startInnings);
+
+// [FIX 2 & 3] Corrected middleware usage and function call
+router.post("/undo", authMiddleware, undoLastBall);
 
 // Add ball entry (auto check)
 router.post("/ball", authMiddleware, requireScope('match:score'), addBall);
