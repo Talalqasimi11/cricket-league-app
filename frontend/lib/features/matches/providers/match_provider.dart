@@ -215,6 +215,8 @@ class MatchProvider extends ChangeNotifier {
               'match_date': data['match_date'],
               'location': data['venue'], // Map 'venue' to 'location' for DB
               'round': 'group_stage',
+              'team1_lineup': data['team1_lineup'],
+              'team2_lineup': data['team2_lineup'],
               // Fallbacks for display if IDs fail (optional)
               'team1_name': data['team1_name'],
               'team2_name': data['team2_name'],
@@ -295,6 +297,15 @@ class MatchProvider extends ChangeNotifier {
       if (!_isDisposed) {
         _setLoading(false);
       }
+    }
+  }
+
+  void updateMatchStatus(String id, MatchStatus newStatus) {
+    if (_isDisposed) return;
+    final index = _matches.indexWhere((m) => m.id == id);
+    if (index != -1) {
+      _matches[index] = _matches[index].copyWith(status: newStatus);
+      _safeNotifyListeners();
     }
   }
 
@@ -427,6 +438,70 @@ class MatchProvider extends ChangeNotifier {
     _filterStatus = null;
     _filterTournamentId = null;
     _safeNotifyListeners();
+  }
+
+  Future<void> fetchMyMatches() async {
+    if (_isDisposed) return;
+    _setLoading(true);
+    _error = null;
+
+    try {
+      final res = await ApiClient.instance.get('/api/matches/my');
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final List<dynamic> matchData = data['matches'] ?? [];
+        _matches = matchData.map((m) => MatchModel.fromLegacyMatch(m)).toList();
+
+        _matches.sort((a, b) {
+          if (a.scheduledAt == null) return 1;
+          if (b.scheduledAt == null) return -1;
+          return b.scheduledAt!.compareTo(
+            a.scheduledAt!,
+          ); // Newest first for "My Matches"
+        });
+
+        _safeNotifyListeners();
+      } else {
+        throw Exception('Failed to fetch your matches: ${res.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Fetch My Matches error: $e');
+      if (!_isDisposed) {
+        _error = _getErrorMessage(e);
+        _safeNotifyListeners();
+      }
+    } finally {
+      if (!_isDisposed) _setLoading(false);
+    }
+  }
+
+  Future<bool> deleteMatch(String id) async {
+    if (_isDisposed) return false;
+    _setLoading(true);
+    _error = null;
+
+    try {
+      final res = await ApiClient.instance.delete('/api/matches/$id');
+      if (res.statusCode == 200) {
+        _matches.removeWhere((m) => m.id == id);
+        _safeNotifyListeners();
+        return true;
+      } else {
+        final body = jsonDecode(res.body);
+        _error = body['error'] ?? 'Failed to delete match';
+        _safeNotifyListeners();
+        return false;
+      }
+    } catch (e) {
+      debugPrint('Delete Match error: $e');
+      if (!_isDisposed) {
+        _error = _getErrorMessage(e);
+        _safeNotifyListeners();
+      }
+      return false;
+    } finally {
+      if (!_isDisposed) _setLoading(false);
+    }
   }
 
   @override

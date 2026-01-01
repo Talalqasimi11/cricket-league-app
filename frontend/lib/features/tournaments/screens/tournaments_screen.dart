@@ -27,7 +27,9 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
   void initState() {
     super.initState();
     _loadUserId();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchTournamentsSafely());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _fetchTournamentsSafely(),
+    );
   }
 
   Future<void> _loadUserId() async {
@@ -36,7 +38,10 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final userId = int.tryParse(authProvider.userId ?? '');
       if (userId != null) {
-        Provider.of<TournamentProvider>(context, listen: false).setCurrentUserId(userId);
+        Provider.of<TournamentProvider>(
+          context,
+          listen: false,
+        ).setCurrentUserId(userId);
       }
     } catch (e) {
       debugPrint('Error loading user ID: $e');
@@ -48,17 +53,24 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
       if (!mounted) return;
       // Set initial filter based on default tab (0 -> Live)
       final provider = Provider.of<TournamentProvider>(context, listen: false);
-      
+
       // Ensure filter matches initial tab
       if (selectedTab == 0) {
         provider.setFilter('live');
-      } else if (selectedTab == 1) provider.setFilter('completed');
-      else if (selectedTab == 2) provider.setFilter('mine');
+      } else if (selectedTab == 1)
+        provider.setFilter('completed');
+      else if (selectedTab == 2)
+        provider.setFilter('mine');
 
       await provider.fetchTournaments();
     } catch (e) {
       debugPrint('Error fetching tournaments: $e');
-      if (mounted) _showSnack('Failed to load tournaments: $e', action: _fetchTournamentsSafely);
+      if (mounted) {
+        _showSnack(
+          'Failed to load tournaments: $e',
+          action: _fetchTournamentsSafely,
+        );
+      }
     }
   }
 
@@ -67,7 +79,9 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        action: action != null ? SnackBarAction(label: 'Retry', onPressed: action) : null,
+        action: action != null
+            ? SnackBarAction(label: 'Retry', onPressed: action)
+            : null,
       ),
     );
   }
@@ -84,20 +98,27 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => TournamentDetailsCreatorScreen(tournament: tournament),
+            builder: (_) =>
+                TournamentDetailsCreatorScreen(tournament: tournament),
           ),
         );
       } else {
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => TournamentDetailsViewerScreen(tournament: tournament),
+            builder: (_) =>
+                TournamentDetailsViewerScreen(tournament: tournament),
           ),
         );
       }
     } catch (e) {
       debugPrint('Error opening tournament: $e');
-      if (mounted) _showSnack('Error opening tournament: $e', action: () => _openTournament(tournament));
+      if (mounted) {
+        _showSnack(
+          'Error opening tournament: $e',
+          action: () => _openTournament(tournament),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoadingTournament = false);
     }
@@ -113,7 +134,10 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
             title: const Text('Tournaments'),
             centerTitle: true,
             actions: [
-              IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchTournamentsSafely),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _fetchTournamentsSafely,
+              ),
             ],
           ),
           body: Padding(
@@ -128,14 +152,20 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     // 0: Live, 1: Completed, 2: My Tournaments
                     if (index == 0) {
                       provider.setFilter('live');
-                    } else if (index == 1) provider.setFilter('completed');
-                    else if (index == 2) provider.setFilter('mine');
+                    } else if (index == 1)
+                      provider.setFilter('completed');
+                    else if (index == 2)
+                      provider.setFilter('mine');
                   },
                 ),
                 const SizedBox(height: 16),
                 Expanded(
                   child: provider.isLoading
-                      ? ListView.builder(itemCount: 3, itemBuilder: (_, __) => const Placeholder(fallbackHeight: 100))
+                      ? ListView.builder(
+                          itemCount: 3,
+                          itemBuilder: (_, __) =>
+                              const Placeholder(fallbackHeight: 100),
+                        )
                       : _buildTournamentsList(provider),
                 ),
                 if (authProvider.isAuthenticated) const SizedBox(height: 12),
@@ -158,12 +188,12 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
         itemCount: data.length,
         itemBuilder: (context, index) {
           final t = data[index];
-          final isOwner = provider.canEdit(t); 
-          
+          final isOwner = provider.canEdit(t);
+
           return TournamentCard(
             tournament: t,
             onTap: () => _openTournament(t),
-            isCreator: isOwner, 
+            isCreator: isOwner,
           );
         },
       ),
@@ -178,9 +208,18 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
               if (!mounted) return;
               final created = await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const CreateTournamentScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const CreateTournamentScreen(),
+                ),
               );
               if (created != null && mounted) {
+                // [Fix] Auto-switch to "Your Tournaments" tab
+                setState(() => selectedTab = 2);
+                Provider.of<TournamentProvider>(
+                  context,
+                  listen: false,
+                ).setFilter('mine');
+
                 await _fetchTournamentsSafely();
                 if (mounted) _showSnack('Tournament created successfully!');
               }
@@ -196,27 +235,38 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
 
   Widget _buildEmptyState() {
     // [CHANGED] Updated titles to match new tabs
-    final tabTitles = ['live tournaments', 'completed tournaments', 'your tournaments'];
+    final tabTitles = [
+      'live tournaments',
+      'completed tournaments',
+      'your tournaments',
+    ];
     final tabTitle = tabTitles[selectedTab];
-    
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(selectedTab == 2 ? Icons.edit_document : Icons.sports_cricket,
-              size: 64, color: Colors.grey[400]),
+          Icon(
+            selectedTab == 2 ? Icons.edit_document : Icons.sports_cricket,
+            size: 64,
+            color: Colors.grey[400],
+          ),
           const SizedBox(height: 16),
           Text(
             'No $tabTitle found',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.grey),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             selectedTab == 0
                 ? 'Live matches will appear here.'
                 : selectedTab == 1
-                    ? 'Past tournament results will appear here.'
-                    : 'Create a tournament to manage it here.',
+                ? 'Past tournament results will appear here.'
+                : 'Create a tournament to manage it here.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 14, color: Colors.grey),
           ),

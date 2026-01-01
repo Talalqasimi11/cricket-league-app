@@ -13,6 +13,7 @@ import 'live_match_scoring_screen.dart'; // [Added]
 
 enum MatchFilter {
   all('All'),
+  my('My Matches'),
   live('Live'),
   completed('Finished'),
   scheduled('Upcoming');
@@ -24,6 +25,8 @@ enum MatchFilter {
     switch (this) {
       case MatchFilter.all:
         return '';
+      case MatchFilter.my:
+        return 'my';
       case MatchFilter.live:
         return 'live';
       case MatchFilter.completed:
@@ -67,9 +70,14 @@ class _MatchesScreenState extends State<MatchesScreen>
     if (!mounted) return;
 
     final provider = context.read<MatchProvider>();
+    debugPrint('MatchesScreen: _fetchMatches called. Filter: $_selectedFilter');
     return _safeCall(() async {
       final status = _selectedFilter.statusKey;
-      await provider.fetchMatches(status: status.isEmpty ? null : status);
+      if (status == 'my') {
+        await provider.fetchMyMatches();
+      } else {
+        await provider.fetchMatches(status: status.isEmpty ? null : status);
+      }
     });
   }
 
@@ -400,6 +408,9 @@ class _MatchesScreenState extends State<MatchesScreen>
     switch (_selectedFilter) {
       case MatchFilter.all:
         return provider.matches;
+      case MatchFilter.my:
+        return provider
+            .matches; // Provider already stores filtered matches if status was 'my'
       case MatchFilter.live:
         return provider.getLiveMatches();
       case MatchFilter.completed:
@@ -485,7 +496,7 @@ class _MatchesScreenState extends State<MatchesScreen>
                     : null,
                 variant: (canResume || canStart)
                     ? ButtonVariant.primary
-                    : ButtonVariant.outline, // Highlight resume/start action
+                    : ButtonVariant.outline,
                 icon: (canResume || canStart)
                     ? Icons.edit
                     : isLive
@@ -495,9 +506,53 @@ class _MatchesScreenState extends State<MatchesScreen>
                     : Icons.schedule,
                 fullWidth: true,
               ),
+              if (isCreator ||
+                  context.read<AuthProvider>().hasScope('match:modify')) ...[
+                const SizedBox(height: 8),
+                CustomButton(
+                  text: 'Delete Match',
+                  onPressed: () => _confirmDelete(match),
+                  variant: ButtonVariant.danger,
+                  icon: Icons.delete_outline,
+                  fullWidth: true,
+                ),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _confirmDelete(MatchModel match) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Match'),
+        content: const Text(
+          'Are you sure you want to delete this match? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final success = await context.read<MatchProvider>().deleteMatch(
+                match.id,
+              );
+              if (success && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Match deleted successfully')),
+                );
+              }
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }

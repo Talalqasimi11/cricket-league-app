@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { adminAPI } from '../services/api';
+import LiveMatchView from './LiveMatchView';
 
-const MatchManagement = ({ onToast }) => {
+const MatchManagement = ({ onToast, onScoreMatch }) => {
   const [matches, setMatches] = useState([]);
   const [filteredMatches, setFilteredMatches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,7 +20,7 @@ const MatchManagement = ({ onToast }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const [actionLoading, setActionLoading] = useState(false);
-  
+
   // Progress Bar State (For Rate Limiting)
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
@@ -52,6 +53,10 @@ const MatchManagement = ({ onToast }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
+  // Live View Mode
+  const [viewMode, setViewMode] = useState('list'); // 'list' or 'live'
+  const [liveMatchId, setLiveMatchId] = useState(null);
+
   useEffect(() => {
     fetchMatches();
     fetchDropdownData();
@@ -69,7 +74,7 @@ const MatchManagement = ({ onToast }) => {
       setLoading(true);
       setError('');
       const response = await adminAPI.getAllMatches();
-      
+
       console.log('Matches API Response:', response.data);
 
       // Handle different API response structures
@@ -122,7 +127,7 @@ const MatchManagement = ({ onToast }) => {
 
   const applyFilters = () => {
     if (!matches) return;
-    
+
     let filtered = [...matches];
 
     if (searchTerm) {
@@ -207,16 +212,16 @@ const MatchManagement = ({ onToast }) => {
       setActionLoading(true);
       await adminAPI.updateMatch(selectedMatch.id, editForm);
       // Update locally
-      const updatedMatches = matches.map(m => 
+      const updatedMatches = matches.map(m =>
         m.id === selectedMatch.id ? { ...m, ...editForm } : m
       );
       setMatches(updatedMatches);
       setShowEditModal(false);
       if (onToast) onToast('Match updated', 'success');
     } catch (err) {
-        if (onToast) onToast(err.userMessage || 'Update failed', 'error');
+      if (onToast) onToast(err.userMessage || 'Update failed', 'error');
     } finally {
-        setActionLoading(false);
+      setActionLoading(false);
     }
   };
 
@@ -255,20 +260,20 @@ const MatchManagement = ({ onToast }) => {
 
     // Execute sequentially with DELAY to avoid server rate limits
     for (let i = 0; i < selectedMatches.length; i++) {
-        const matchId = selectedMatches[i];
-        try {
-          await adminAPI.deleteMatch(matchId);
-          successCount++;
-        } catch (e) {
-          console.error(`Failed to delete match ${matchId}:`, e);
-          failCount++;
-        }
+      const matchId = selectedMatches[i];
+      try {
+        await adminAPI.deleteMatch(matchId);
+        successCount++;
+      } catch (e) {
+        console.error(`Failed to delete match ${matchId}:`, e);
+        failCount++;
+      }
 
-        // Update progress bar
-        setProgress({ current: i + 1, total: selectedMatches.length });
+      // Update progress bar
+      setProgress({ current: i + 1, total: selectedMatches.length });
 
-        // WAIT 800ms before the next request
-        await delay(800); 
+      // WAIT 800ms before the next request
+      await delay(800);
     }
 
     setMatches(prev => prev.filter(m => !selectedMatches.includes(m.id)));
@@ -276,7 +281,7 @@ const MatchManagement = ({ onToast }) => {
     setSelectAll(false);
     setActionLoading(false);
     setProgress({ current: 0, total: 0 });
-    
+
     if (failCount > 0) {
       if (onToast) onToast(`Deleted ${successCount} matches. Failed: ${failCount}`, 'warning');
     } else {
@@ -301,6 +306,10 @@ const MatchManagement = ({ onToast }) => {
     };
     return colors[status?.toLowerCase()] || 'bg-gray-100 text-gray-800';
   };
+
+  if (viewMode === 'live' && liveMatchId) {
+    return <LiveMatchView matchId={liveMatchId} onBack={() => { setViewMode('list'); setLiveMatchId(null); }} onToast={onToast} />;
+  }
 
   if (loading) {
     return (
@@ -343,13 +352,13 @@ const MatchManagement = ({ onToast }) => {
       {/* Progress Bar for Bulk Actions */}
       {actionLoading && progress.total > 0 && (
         <div className="mb-4 bg-blue-50 border border-blue-100 rounded-lg p-4">
-            <div className="flex justify-between mb-1">
-                <span className="text-sm font-medium text-blue-700">Processing deletion...</span>
-                <span className="text-sm font-medium text-blue-700">{progress.current}/{progress.total}</span>
-            </div>
-            <div className="w-full bg-blue-200 rounded-full h-2.5">
-                <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${(progress.current / progress.total) * 100}%` }}></div>
-            </div>
+          <div className="flex justify-between mb-1">
+            <span className="text-sm font-medium text-blue-700">Processing deletion...</span>
+            <span className="text-sm font-medium text-blue-700">{progress.current}/{progress.total}</span>
+          </div>
+          <div className="w-full bg-blue-200 rounded-full h-2.5">
+            <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${(progress.current / progress.total) * 100}%` }}></div>
+          </div>
         </div>
       )}
 
@@ -421,7 +430,7 @@ const MatchManagement = ({ onToast }) => {
         {filteredMatches.length === 0 ? (
           <div className="p-10 text-center flex flex-col items-center">
             <svg className="h-12 w-12 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             <p className="text-gray-500 text-lg">No matches found</p>
             <p className="text-gray-400 text-sm">Try adjusting your search or create a new match.</p>
@@ -465,8 +474,8 @@ const MatchManagement = ({ onToast }) => {
                             {match.team1_name} <span className="text-gray-400 font-normal">vs</span> {match.team2_name}
                           </div>
                           <div className="text-xs text-gray-500 mt-1 flex items-center">
-                             <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                             {formatDate(match.match_date)}
+                            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            {formatDate(match.match_date)}
                           </div>
                           <div className="text-xs text-gray-400 mt-0.5">
                             {match.venue || 'No Venue Specified'}
@@ -484,13 +493,38 @@ const MatchManagement = ({ onToast }) => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button onClick={() => { setSelectedMatch(match); setShowDetailsModal(true); }} className="text-indigo-600 hover:text-indigo-900 mx-2">
-                         Details
+                        Details
                       </button>
-                      <button onClick={() => { 
-                          setSelectedMatch(match); 
-                          setEditForm({ status: match.status, overs: match.overs, winner_team_id: match.winner_team_id || '' }); 
-                          setShowEditModal(true); 
-                        }} className="text-blue-600 hover:text-blue-900 mx-2">
+                      <button
+                        onClick={() => { setLiveMatchId(match.id); setViewMode('live'); }}
+                        className={`mx-2 ${match.status === 'live' ? 'text-orange-600 hover:text-orange-800 font-bold flex items-center inline-flex' : 'text-gray-400 hover:text-indigo-600'}`}
+                      >
+                        {match.status === 'live' && <span className="mr-1 w-2 h-2 bg-orange-600 rounded-full animate-pulse inline-block"></span>}
+                        Monitor
+                      </button>
+
+                      {match.status === 'not_started' && (
+                        <button
+                          onClick={() => onScoreMatch(match.id)}
+                          className="text-green-600 hover:text-green-900 mx-2 font-medium"
+                        >
+                          Score
+                        </button>
+                      )}
+
+                      {match.status === 'live' && (
+                        <button
+                          onClick={() => onScoreMatch(match.id)}
+                          className="text-indigo-600 hover:text-indigo-900 mx-2 font-medium"
+                        >
+                          Resume
+                        </button>
+                      )}
+                      <button onClick={() => {
+                        setSelectedMatch(match);
+                        setEditForm({ status: match.status, overs: match.overs, winner_team_id: match.winner_team_id || '' });
+                        setShowEditModal(true);
+                      }} className="text-blue-600 hover:text-blue-900 mx-2">
                         Edit
                       </button>
                       <button onClick={() => { setSelectedMatch(match); setShowDeleteModal(true); }} className="text-red-600 hover:text-red-900 mx-2">
@@ -503,7 +537,7 @@ const MatchManagement = ({ onToast }) => {
             </table>
           </div>
         )}
-        
+
         {/* Internal Pagination */}
         {filteredMatches.length > 0 && (
           <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
@@ -537,7 +571,7 @@ const MatchManagement = ({ onToast }) => {
       </div>
 
       {/* --- MODALS --- */}
-      
+
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
@@ -548,60 +582,60 @@ const MatchManagement = ({ onToast }) => {
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4" id="modal-title">Create New Match</h3>
                 <div className="space-y-4">
-                   {/* Tournament */}
-                   <div>
-                     <label className="block text-sm font-medium text-gray-700">Tournament</label>
-                     <select className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                        value={createForm.tournament_id}
-                        onChange={(e) => setCreateForm({...createForm, tournament_id: e.target.value})}
-                     >
-                       <option value="">Friendly Match (No Tournament)</option>
-                       {tournaments.map(t => <option key={t.id} value={t.id}>{t.tournament_name}</option>)}
-                     </select>
-                   </div>
-                   {/* Teams */}
-                   <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Home Team</label>
-                        <select className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                           value={createForm.team1_id}
-                           onChange={(e) => setCreateForm({...createForm, team1_id: e.target.value})}
-                        >
-                          <option value="">Select Team</option>
-                          {teams.map(t => <option key={t.id} value={t.id}>{t.team_name}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Away Team</label>
-                        <select className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                           value={createForm.team2_id}
-                           onChange={(e) => setCreateForm({...createForm, team2_id: e.target.value})}
-                        >
-                          <option value="">Select Team</option>
-                          {teams.filter(t => t.id != createForm.team1_id).map(t => <option key={t.id} value={t.id}>{t.team_name}</option>)}
-                        </select>
-                      </div>
-                   </div>
-                   {/* Date & Venue */}
-                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Date & Time</label>
-                      <input type="datetime-local" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                         value={createForm.match_date}
-                         onChange={(e) => setCreateForm({...createForm, match_date: e.target.value})}
-                      />
-                   </div>
-                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Venue</label>
-                      <input type="text" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                         placeholder="Stadium Name"
-                         value={createForm.venue}
-                         onChange={(e) => setCreateForm({...createForm, venue: e.target.value})}
-                      />
-                   </div>
+                  {/* Tournament */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Tournament</label>
+                    <select className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      value={createForm.tournament_id}
+                      onChange={(e) => setCreateForm({ ...createForm, tournament_id: e.target.value })}
+                    >
+                      <option value="">Friendly Match (No Tournament)</option>
+                      {tournaments.map(t => <option key={t.id} value={t.id}>{t.tournament_name}</option>)}
+                    </select>
+                  </div>
+                  {/* Teams */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Home Team</label>
+                      <select className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        value={createForm.team1_id}
+                        onChange={(e) => setCreateForm({ ...createForm, team1_id: e.target.value })}
+                      >
+                        <option value="">Select Team</option>
+                        {teams.map(t => <option key={t.id} value={t.id}>{t.team_name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Away Team</label>
+                      <select className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        value={createForm.team2_id}
+                        onChange={(e) => setCreateForm({ ...createForm, team2_id: e.target.value })}
+                      >
+                        <option value="">Select Team</option>
+                        {teams.filter(t => t.id !== createForm.team1_id).map(t => <option key={t.id} value={t.id}>{t.team_name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {/* Date & Venue */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Date & Time</label>
+                    <input type="datetime-local" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      value={createForm.match_date}
+                      onChange={(e) => setCreateForm({ ...createForm, match_date: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Venue</label>
+                    <input type="text" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      placeholder="Stadium Name"
+                      value={createForm.venue}
+                      onChange={(e) => setCreateForm({ ...createForm, venue: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button type="button" 
+                <button type="button"
                   disabled={actionLoading}
                   className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm"
                   onClick={handleCreateMatch}
@@ -623,109 +657,109 @@ const MatchManagement = ({ onToast }) => {
       {showDeleteModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-             <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowDeleteModal(false)}></div>
-             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                  <div className="sm:flex sm:items-start">
-                    <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                      <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>
-                    </div>
-                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                      <h3 className="text-lg leading-6 font-medium text-gray-900">Delete Match</h3>
-                      <div className="mt-2">
-                        <p className="text-sm text-gray-500">Are you sure you want to delete this match? This action cannot be undone and will remove all scores and stats.</p>
-                      </div>
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowDeleteModal(false)}></div>
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>
+                  </div>
+                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">Delete Match</h3>
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500">Are you sure you want to delete this match? This action cannot be undone and will remove all scores and stats.</p>
                     </div>
                   </div>
                 </div>
-                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                  <button type="button" onClick={handleDeleteMatch} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">
-                    {actionLoading ? 'Deleting...' : 'Delete'}
-                  </button>
-                  <button type="button" onClick={() => setShowDeleteModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
-                    Cancel
-                  </button>
-                </div>
-             </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button type="button" onClick={handleDeleteMatch} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">
+                  {actionLoading ? 'Deleting...' : 'Delete'}
+                </button>
+                <button type="button" onClick={() => setShowDeleteModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* Edit Modal */}
       {showEditModal && (
-         <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowEditModal(false)}></div>
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-               <div className="bg-white px-4 pt-5 pb-4 sm:p-6">
-                 <h3 className="text-lg font-medium text-gray-900 mb-4">Update Match Status</h3>
-                 <div className="space-y-4">
-                   <div>
-                     <label className="block text-sm font-medium text-gray-700">Status</label>
-                     <select className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"
-                        value={editForm.status}
-                        onChange={(e) => setEditForm({...editForm, status: e.target.value})}
-                     >
-                        <option value="scheduled">Scheduled</option>
-                        <option value="live">Live</option>
-                        <option value="completed">Completed</option>
-                        <option value="abandoned">Abandoned</option>
-                     </select>
-                   </div>
-                   <div>
-                     <label className="block text-sm font-medium text-gray-700">Overs</label>
-                     <input type="number" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"
-                        value={editForm.overs}
-                        onChange={(e) => setEditForm({...editForm, overs: parseInt(e.target.value)})}
-                     />
-                   </div>
-                 </div>
-               </div>
-               <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                 <button type="button" onClick={handleUpdateMatch} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">
-                   {actionLoading ? 'Saving...' : 'Save Changes'}
-                 </button>
-                 <button type="button" onClick={() => setShowEditModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
-                   Cancel
-                 </button>
-               </div>
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Update Match Status</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Status</label>
+                    <select className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"
+                      value={editForm.status}
+                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                    >
+                      <option value="scheduled">Scheduled</option>
+                      <option value="live">Live</option>
+                      <option value="completed">Completed</option>
+                      <option value="abandoned">Abandoned</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Overs</label>
+                    <input type="number" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"
+                      value={editForm.overs}
+                      onChange={(e) => setEditForm({ ...editForm, overs: parseInt(e.target.value) })}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button type="button" onClick={handleUpdateMatch} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">
+                  {actionLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button type="button" onClick={() => setShowEditModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
-         </div>
+        </div>
       )}
 
       {/* Details Modal */}
       {showDetailsModal && selectedMatch && (
-         <div className="fixed inset-0 z-50 overflow-y-auto">
-           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-             <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowDetailsModal(false)}></div>
-             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-               <div className="bg-white px-4 pt-5 pb-4 sm:p-6">
-                 <h3 className="text-lg font-bold text-gray-900 mb-4">Match Details #{selectedMatch.id}</h3>
-                 <div className="grid grid-cols-2 gap-4 text-center mb-4">
-                    <div className="bg-gray-50 p-3 rounded">
-                      <p className="text-xs text-gray-500">HOME TEAM</p>
-                      <p className="font-bold text-lg">{selectedMatch.team1_name}</p>
-                    </div>
-                    <div className="bg-gray-50 p-3 rounded">
-                      <p className="text-xs text-gray-500">AWAY TEAM</p>
-                      <p className="font-bold text-lg">{selectedMatch.team2_name}</p>
-                    </div>
-                 </div>
-                 <div className="text-sm text-gray-600 space-y-2">
-                    <p><strong>Tournament:</strong> {selectedMatch.tournament_name || 'Friendly'}</p>
-                    <p><strong>Venue:</strong> {selectedMatch.venue || 'N/A'}</p>
-                    <p><strong>Date:</strong> {formatDate(selectedMatch.match_date)}</p>
-                 </div>
-               </div>
-               <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                 <button type="button" onClick={() => setShowDetailsModal(false)} className="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:ml-3 sm:w-auto sm:text-sm">
-                   Close
-                 </button>
-               </div>
-             </div>
-           </div>
-         </div>
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowDetailsModal(false)}></div>
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">Match Details #{selectedMatch.id}</h3>
+                <div className="grid grid-cols-2 gap-4 text-center mb-4">
+                  <div className="bg-gray-50 p-3 rounded">
+                    <p className="text-xs text-gray-500">HOME TEAM</p>
+                    <p className="font-bold text-lg">{selectedMatch.team1_name}</p>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded">
+                    <p className="text-xs text-gray-500">AWAY TEAM</p>
+                    <p className="font-bold text-lg">{selectedMatch.team2_name}</p>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-600 space-y-2">
+                  <p><strong>Tournament:</strong> {selectedMatch.tournament_name || 'Friendly'}</p>
+                  <p><strong>Venue:</strong> {selectedMatch.venue || 'N/A'}</p>
+                  <p><strong>Date:</strong> {formatDate(selectedMatch.match_date)}</p>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button type="button" onClick={() => setShowDetailsModal(false)} className="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:ml-3 sm:w-auto sm:text-sm">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

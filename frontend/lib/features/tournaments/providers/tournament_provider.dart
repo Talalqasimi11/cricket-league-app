@@ -65,14 +65,17 @@ class TournamentProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchTournaments() async {
+  Future<void> fetchTournaments({bool forceRefresh = false}) async {
     if (_isLoading) return;
     _setLoading(true);
     _error = null;
 
     try {
       final response = await RetryPolicy.execute(
-        apiCall: () => ApiClient.instance.get('/api/tournaments'),
+        apiCall: () => ApiClient.instance.get(
+          '/api/tournaments',
+          forceRefresh: forceRefresh,
+        ),
       );
 
       final decoded = jsonDecode(response.body);
@@ -204,7 +207,7 @@ class TournamentProvider extends ChangeNotifier {
       final response = await RetryPolicy.execute(apiCall: apiCall);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        await fetchTournaments();
+        await fetchTournaments(forceRefresh: true);
         return true;
       } else {
         _error = _extractErrorMessage(response.body, response.statusCode);

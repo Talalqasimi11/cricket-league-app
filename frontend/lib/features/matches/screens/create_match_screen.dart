@@ -30,7 +30,8 @@ enum MatchType {
 enum OverOption {
   ten('10 Overs', 10),
   twenty('20 Overs', 20),
-  fifty('50 Overs', 50);
+  fifty('50 Overs', 50),
+  custom('Custom', 0);
 
   const OverOption(this.label, this.value);
   final String label;
@@ -49,7 +50,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   // Form fields
-  MatchType? _matchType;
+  MatchType? _matchType = MatchType.friendly;
   OverOption? _selectedOvers;
   String? _selectedTeamAId;
   String? _selectedTeamBId;
@@ -59,6 +60,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   final TextEditingController _teamAController = TextEditingController();
   final TextEditingController _teamBController = TextEditingController();
   final TextEditingController _venueController = TextEditingController();
+  final TextEditingController _customOversController = TextEditingController();
 
   // Lineup data
   List<String>? _teamALineup;
@@ -81,6 +83,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
     _teamAController.dispose();
     _teamBController.dispose();
     _venueController.dispose();
+    _customOversController.dispose();
     super.dispose();
   }
 
@@ -159,6 +162,18 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       return false;
     }
 
+    if (_selectedOvers == OverOption.custom) {
+      final customValue = int.tryParse(_customOversController.text.trim());
+      if (customValue == null || customValue <= 0) {
+        _showErrorSnackBar('Please enter a valid number of overs');
+        return false;
+      }
+      if (customValue > 100) {
+        _showErrorSnackBar('Overs cannot exceed 100');
+        return false;
+      }
+    }
+
     return true;
   }
 
@@ -192,7 +207,9 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
         'team1_name': team1Name,
         'team2_name': team2Name,
         'tournament_id': _selectedTournamentId,
-        'overs': _selectedOvers!.value,
+        'overs': _selectedOvers == OverOption.custom
+            ? int.parse(_customOversController.text.trim())
+            : _selectedOvers!.value,
         'match_date': matchDateTime.toIso8601String(), // Auto-generated
         'venue': _venueController.text.trim(),
         'status': 'scheduled',
@@ -779,9 +796,35 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
             }).toList(),
             onChanged: _isLoading
                 ? null
-                : (value) => setState(() => _selectedOvers = value),
+                : (value) => setState(() {
+                    _selectedOvers = value;
+                    if (value != OverOption.custom) {
+                      _customOversController.clear();
+                    }
+                  }),
             validator: (value) => value == null ? 'Please select overs' : null,
           ),
+          if (_selectedOvers == OverOption.custom) ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _customOversController,
+              keyboardType: TextInputType.number,
+              decoration: AppInputStyles.textFieldDecoration(
+                context: context,
+                hintText: 'Enter Number of Overs',
+                prefixIcon: Icons.edit_calendar,
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Please enter overs';
+                }
+                final val = int.tryParse(value);
+                if (val == null || val <= 0) return 'Invalid number';
+                return null;
+              },
+              enabled: !_isLoading,
+            ),
+          ],
         ],
       ),
     );

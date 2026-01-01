@@ -11,6 +11,7 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
+import LiveScoring from './components/LiveScoring';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -18,6 +19,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [toast, setToast] = useState(null);
   const [appLoading, setAppLoading] = useState(true);
+  const [selectedMatchId, setSelectedMatchId] = useState(null);
 
   useEffect(() => {
     const initializeAuth = () => {
@@ -92,7 +94,12 @@ function App() {
       case 'tournaments':
         return <TournamentManagement {...commonProps} />;
       case 'matches':
-        return <MatchManagement {...commonProps} />;
+        return <MatchManagement {...commonProps} onScoreMatch={(id) => {
+          setSelectedMatchId(id);
+          setCurrentView('live-scoring');
+        }} />;
+      case 'live-scoring':
+        return <LiveScoring {...commonProps} matchId={selectedMatchId} onBack={() => setCurrentView('matches')} />;
       case 'system-health':
         return <SystemHealth {...commonProps} />;
       case 'reports':

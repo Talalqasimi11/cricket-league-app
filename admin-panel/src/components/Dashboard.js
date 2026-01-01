@@ -8,7 +8,8 @@ const Dashboard = ({ onToast, onViewChange }) => {
     totalAdmins: 0,
     totalTeams: 0,
     totalTournaments: 0,
-    totalMatches: 0
+    totalMatches: 0,
+    totalLiveMatches: 0
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -143,6 +144,19 @@ const Dashboard = ({ onToast, onViewChange }) => {
       ),
       color: 'bg-gradient-to-r from-red-500 to-red-600',
       bgColor: 'bg-red-50'
+    },
+    {
+      title: 'Live Matches',
+      value: stats.totalLiveMatches || 0,
+      view: 'matches',
+      icon: (
+        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+        </svg>
+      ),
+      color: 'bg-gradient-to-r from-rose-500 to-rose-600',
+      bgColor: 'bg-rose-50'
     }
   ];
 
@@ -235,6 +249,13 @@ const Dashboard = ({ onToast, onViewChange }) => {
             >
               <span className="block text-2xl mb-1">🏏</span>
               <span className="text-sm font-medium text-green-900">Manage Teams</span>
+            </div>
+            <div
+              onClick={() => onViewChange && onViewChange('matches')}
+              className="bg-rose-50 p-4 rounded-lg text-center cursor-pointer hover:bg-rose-100 transition-colors border border-rose-100"
+            >
+              <span className="block text-2xl mb-1">🔴</span>
+              <span className="text-sm font-medium text-rose-900">Live Monitoring</span>
             </div>
           </div>
         </div>

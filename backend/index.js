@@ -179,7 +179,7 @@ app.use(createRequestLogger({
 // Dynamic rate limiting for suspicious activity
 app.use(createDynamicRateLimit({
   windowMs: 60 * 1000, // 1 minute base window
-  maxRequests: 100, // 100 requests per minute before increasing window
+  maxRequests: 2000, // Increased for dashboard and live polling
   increaseFactor: 1.5,
   maxWindowMs: 15 * 60 * 1000 // Max 15 minute window
 }));
@@ -269,6 +269,8 @@ const ballByBallRoutes = require("./routes/ballByBallRoutes");
 app.use("/api/deliveries", ballByBallRoutes);
 app.use("/api/viewer/live-score", liveScoreViewerRoutes);
 const scorecardRoutes = require("./routes/scorecardRoutes");
+app.use("/api/viewer/scorecard", scorecardRoutes);
+
 app.use("/api/match-innings", matchInningsRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/feedback", feedbackRoutes);
@@ -414,15 +416,15 @@ const liveScoreNamespace = io.of('/live-score');
 liveScoreNamespace.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
-    if (!token) {
-      return next(new Error('Authentication error: No token provided'));
+    if (token) {
+      const decoded = require('./middleware/authMiddleware').verifyJWTToken(token);
+      socket.user = decoded;
     }
-    const decoded = require('./middleware/authMiddleware').verifyJWTToken(token);
-    socket.user = decoded;
     next();
   } catch (err) {
-    console.error('WebSocket Authentication Error:', err);
-    next(new Error('Invalid token'));
+    // If token is invalid, we still allow connection but don't set socket.user (view-only mode)
+    console.warn('WebSocket session could not be established (View-only mode):', err.message);
+    next();
   }
 });
 
@@ -454,7 +456,10 @@ liveScoreNamespace.on('connection', (socket) => {
   // Track subscribed matches for cleanup
   const subscribedMatches = new Set();
 
-  socket.on('subscribe', (matchId) => {
+  socket.on('subscribe', (payload) => {
+    // Handle both primitive and object payloads (for frontend compatibility)
+    const matchId = (payload && typeof payload === 'object') ? payload.matchId : payload;
+
     if (typeof matchId !== 'string' && typeof matchId !== 'number') {
       socket.emit('error', { message: 'Invalid match ID' });
       return;
@@ -463,19 +468,20 @@ liveScoreNamespace.on('connection', (socket) => {
     const roomName = `match:${matchId}`;
     socket.join(roomName);
     subscribedMatches.add(matchId);
-    console.log(`User ${socket.user.id} subscribed to match ${matchId}`);
+    console.log(`User ${socket.user?.id || 'guest'} subscribed to match ${matchId}`);
 
     // Notify client of successful subscription
     socket.emit('subscribed', { matchId });
   });
 
-  socket.on('unsubscribe', (matchId) => {
+  socket.on('unsubscribe', (payload) => {
+    const matchId = (payload && typeof payload === 'object') ? payload.matchId : payload;
     if (!matchId) return;
 
     const roomName = `match:${matchId}`;
     socket.leave(roomName);
     subscribedMatches.delete(matchId);
-    console.log(`User ${socket.user.id} unsubscribed from match ${matchId}`);
+    console.log(`User ${socket.user?.id || 'guest'} unsubscribed from match ${matchId}`);
   });
 
   socket.on('disconnect', (reason) => {
@@ -486,7 +492,7 @@ liveScoreNamespace.on('connection', (socket) => {
     });
     subscribedMatches.clear();
 
-    console.log(`User ${socket.user?.id} disconnected. Reason: ${reason}`);
+    console.log(`User ${socket.user?.id || 'guest'} disconnected. Reason: ${reason}`);
   });
 
   socket.on('error', (error) => {

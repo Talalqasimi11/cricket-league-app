@@ -149,13 +149,13 @@ class MatchModel {
       id: getProp('id') ?? '',
       teamA:
           getProp('teamA') ??
-          getProp('team1Name') ??
           getProp('team1_name') ??
+          getProp('team1Name') ??
           '',
       teamB:
           getProp('teamB') ??
-          getProp('team2Name') ??
           getProp('team2_name') ??
+          getProp('team2Name') ??
           '',
       status: MatchStatus.fromBackendValue(getProp('status') ?? 'scheduled'),
       scheduledAt: DateTime.tryParse(

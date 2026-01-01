@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'auth_provider.dart';
+import 'api_client.dart';
 
 /// Global authentication error handler that triggers automatic logout
 /// when token expiry is detected
@@ -18,9 +19,15 @@ class AuthErrorHandler {
 
     // Listen for auth errors and trigger logout
     _authErrorController?.stream.listen((event) {
-      // [Fixed] Check if context is mounted before using it in an async callback
       if (context.mounted) {
         _handleAuthError(context, event);
+      }
+    });
+
+    // Also listen to ApiClient's global auth failure stream
+    ApiClient.instance.onAuthFailure.listen((_) {
+      if (context.mounted) {
+        triggerAuthError(context, AuthErrorEvent(reason: 'API_AUTH_FAILURE'));
       }
     });
   }
@@ -35,12 +42,15 @@ class AuthErrorHandler {
 
   /// Handle authentication error by triggering logout
   static void _handleAuthError(
-      BuildContext context, AuthErrorEvent event) async {
+    BuildContext context,
+    AuthErrorEvent event,
+  ) async {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
       debugPrint(
-          'AuthErrorHandler: Triggering automatic logout due to: ${event.reason}');
+        'AuthErrorHandler: Triggering automatic logout due to: ${event.reason}',
+      );
 
       // Show a brief message about session expiry
       ScaffoldMessenger.of(context).showSnackBar(
@@ -61,8 +71,9 @@ class AuthErrorHandler {
 
       // Navigate to login screen if not already there
       if (ModalRoute.of(context)?.settings.name != '/login') {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-            '/login', (route) => false);
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/login', (route) => false);
       }
     } catch (e) {
       debugPrint('AuthErrorHandler: Error during logout: $e');

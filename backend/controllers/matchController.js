@@ -8,6 +8,7 @@ const getMatchData = async (whereClause, params) => {
   const sql = `
     SELECT 
       m.id, m.status, m.match_datetime as match_date, m.venue, m.overs as max_overs,
+      m.creator_id, m.team1_lineup, m.team2_lineup,
       
       -- Tournament Info
       tr.id as tournament_id, tr.tournament_name,
@@ -55,6 +56,14 @@ const getMatchData = async (whereClause, params) => {
     venue: row.venue,
     date: row.match_date,
     max_overs: row.max_overs,
+    creator_id: row.creator_id,
+    team1_lineup: row.team1_lineup ? JSON.parse(row.team1_lineup) : null,
+    team2_lineup: row.team2_lineup ? JSON.parse(row.team2_lineup) : null,
+
+    // FLATTEN TEAM NAMES for frontend compatibility
+    team1_name: row.team1_name,
+    team2_name: row.team2_name,
+
     tournament: {
       id: row.tournament_id,
       name: row.tournament_name
@@ -177,7 +186,7 @@ const getAllMatches = async (req, res) => {
  * 📌 Create Match (Friendly/Custom)
  */
 const createMatch = async (req, res) => {
-  const { team1_id, team2_id, match_datetime, venue, overs } = req.body;
+  const { team1_id, team2_id, match_datetime, venue, overs, team1_lineup, team2_lineup } = req.body;
 
   if (!team1_id || !team2_id || !match_datetime || !venue || !overs) {
     return res.status(400).json({ error: "All fields are required" });
@@ -186,9 +195,11 @@ const createMatch = async (req, res) => {
   try {
     const formattedDate = new Date(match_datetime).toISOString().slice(0, 19).replace('T', ' ');
     const [result] = await db.query(
-      `INSERT INTO matches (team1_id, team2_id, match_datetime, venue, overs, status) 
-       VALUES (?, ?, ?, ?, ?, 'not_started')`,
-      [team1_id, team2_id, formattedDate, venue, overs]
+      `INSERT INTO matches (team1_id, team2_id, match_datetime, venue, overs, status, creator_id, team1_lineup, team2_lineup) 
+       VALUES (?, ?, ?, ?, ?, 'not_started', ?, ?, ?)`,
+      [team1_id, team2_id, formattedDate, venue, overs, req.user.id,
+        team1_lineup ? JSON.stringify(team1_lineup) : null,
+        team2_lineup ? JSON.stringify(team2_lineup) : null]
     );
 
     const matchId = result.insertId;
@@ -202,11 +213,63 @@ const createMatch = async (req, res) => {
   }
 };
 
+/**
+ * 📌 Get My Matches
+ * Returns matches where the authenticated user is the owner of either team or the tournament creator
+ */
+const getMyMatches = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const whereClause = `
+      WHERE m.team1_id IN (SELECT id FROM teams WHERE owner_id = ?)
+         OR m.team2_id IN (SELECT id FROM teams WHERE owner_id = ?)
+         OR m.tournament_id IN (SELECT id FROM tournaments WHERE created_by = ?)
+         OR m.creator_id = ?
+    `;
+    const matches = await getMatchData(whereClause, [userId, userId, userId, userId]);
+    res.json({ matches });
+  } catch (err) {
+    logDatabaseError(req.log, "getMyMatches", err);
+    res.status(500).json({ error: "Server error fetching your matches" });
+  }
+};
+
+/**
+ * 📌 Delete Match
+ */
+const deleteMatch = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+
+  try {
+    // Check ownership/permission
+    const [match] = await db.query(`
+      SELECT m.id FROM matches m
+      LEFT JOIN teams t1 ON m.team1_id = t1.id
+      LEFT JOIN teams t2 ON m.team2_id = t2.id
+      LEFT JOIN tournaments tr ON m.tournament_id = tr.id
+      WHERE m.id = ? AND (t1.owner_id = ? OR t2.owner_id = ? OR tr.created_by = ? OR m.creator_id = ?)
+    `, [id, userId, userId, userId, userId]);
+
+    if (match.length === 0) {
+      return res.status(403).json({ error: "Unauthorized or match not found" });
+    }
+
+    await db.query("DELETE FROM matches WHERE id = ?", [id]);
+    res.json({ message: "Match deleted successfully" });
+  } catch (err) {
+    logDatabaseError(req.log, "deleteMatch", err);
+    res.status(500).json({ error: "Server error deleting match" });
+  }
+};
+
 module.exports = {
   getLiveMatches,
   getMatchById,
   getUpcomingMatches,
   getCompletedMatches,
   getAllMatches,
-  createMatch
+  createMatch,
+  getMyMatches,
+  deleteMatch
 };

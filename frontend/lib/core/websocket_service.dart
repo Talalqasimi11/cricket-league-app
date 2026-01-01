@@ -1,20 +1,9 @@
-
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'api_client.dart';
 
-
-enum WebSocketState {
-  disconnected,
-  connecting,
-  connected,
-  disposed,
-}
-
-
-
-
+enum WebSocketState { disconnected, connecting, connected, disposed }
 
 class WebSocketService {
   WebSocketService._();
@@ -92,13 +81,13 @@ class WebSocketService {
       developer.log('[WebSocket] Cannot connect - service disposed');
       return;
     }
-    
+
     // Don't reconnect if already connected to the same match
     if (_state == WebSocketState.connected && _currentMatchId == matchId) {
       developer.log('[WebSocket] Already connected to match $matchId');
       return;
     }
-    
+
     // Don't allow connection if currently connecting
     if (_state == WebSocketState.connecting) {
       developer.log('[WebSocket] Connection already in progress');
@@ -107,7 +96,9 @@ class WebSocketService {
 
     // Disconnect if connected to a different match
     if (_currentMatchId != null && _currentMatchId != matchId) {
-      developer.log('[WebSocket] Disconnecting from previous match $_currentMatchId');
+      developer.log(
+        '[WebSocket] Disconnecting from previous match $_currentMatchId',
+      );
       await disconnect();
     }
 
@@ -116,14 +107,17 @@ class WebSocketService {
 
     // Start connection timeout
     _cancelConnectionTimeout();
-    _connectionTimeoutTimer = Timer(const Duration(milliseconds: _connectionTimeout), () {
-      if (_state == WebSocketState.connecting) {
-        developer.log('[WebSocket] Connection timeout');
-        _setState(WebSocketState.disconnected);
-        onError?.call('Connection timeout after ${_connectionTimeout}ms');
-        _handleDisconnect();
-      }
-    });
+    _connectionTimeoutTimer = Timer(
+      const Duration(milliseconds: _connectionTimeout),
+      () {
+        if (_state == WebSocketState.connecting) {
+          developer.log('[WebSocket] Connection timeout');
+          _setState(WebSocketState.disconnected);
+          onError?.call('Connection timeout after ${_connectionTimeout}ms');
+          _handleDisconnect();
+        }
+      },
+    );
 
     try {
       // Get base URL
@@ -165,7 +159,7 @@ class WebSocketService {
           developer.log('[WebSocket] Connected to match $matchId');
           onConnected?.call();
           // Subscribe to match updates with proper payload format
-          _socket!.emit('subscribe', {'matchId': matchId});
+          _socket!.emit('subscribe', matchId);
         })
         ..onDisconnect((_) {
           _cancelConnectionTimeout();
@@ -226,33 +220,33 @@ class WebSocketService {
 
   Future<void> disconnect() async {
     developer.log('[WebSocket] Disconnecting...');
-    
+
     // Cancel all timers
     _cancelReconnectTimer();
     _cancelConnectionTimeout();
-    
+
     // Clear event handlers before disconnecting
     _socket?.clearListeners();
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
-    
+
     _setState(WebSocketState.disconnected);
     _currentMatchId = null;
     _reconnectAttempts = 0;
-    
+
     developer.log('[WebSocket] Disconnected successfully');
   }
 
   void dispose() {
     developer.log('[WebSocket] Disposing service...');
-    
+
     _setState(WebSocketState.disposed);
-    
+
     // Cancel all timers
     _cancelReconnectTimer();
     _cancelConnectionTimeout();
-    
+
     // Clear all callbacks to prevent memory leaks
     onScoreUpdate = null;
     onInningsEnded = null;
@@ -261,16 +255,16 @@ class WebSocketService {
     onDisconnected = null;
     onSubscribed = null;
     onSubscribeError = null;
-    
+
     // Disconnect socket
     _socket?.clearListeners();
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
-    
+
     _currentMatchId = null;
     _reconnectAttempts = 0;
-    
+
     developer.log('[WebSocket] Service disposed successfully');
   }
 
@@ -281,19 +275,24 @@ class WebSocketService {
       _socket!.emit('subscribe', {'matchId': matchId});
       _currentMatchId = matchId;
     } else {
-      developer.log('[WebSocket] Cannot subscribe - not connected (state: $_state)');
+      developer.log(
+        '[WebSocket] Cannot subscribe - not connected (state: $_state)',
+      );
     }
   }
 
   // Unsubscribe from current match
   Future<void> unsubscribeFromMatch() async {
-    if (_state == WebSocketState.connected && _socket != null && _currentMatchId != null) {
+    if (_state == WebSocketState.connected &&
+        _socket != null &&
+        _currentMatchId != null) {
       developer.log('[WebSocket] Unsubscribing from match $_currentMatchId');
       _socket!.emit('unsubscribe', {'matchId': _currentMatchId});
       _currentMatchId = null;
     } else {
-      developer.log('[WebSocket] Cannot unsubscribe - not connected or no active match');
+      developer.log(
+        '[WebSocket] Cannot unsubscribe - not connected or no active match',
+      );
     }
   }
 }
-

@@ -1,5 +1,6 @@
 const { db } = require("../config/db");
 const { logDatabaseError } = require("../utils/safeLogger");
+const { canScoreForInnings } = require("./liveScoreController");
 
 // ==========================================
 // 🏏 INNINGS MANAGEMENT CONTROLLER
@@ -32,7 +33,7 @@ const getInningsByMatch = async (req, res) => {
 
     if (innings.length === 0) {
       // Friendly 404 or empty array? Empty array is usually better for lists.
-      return res.json([]); 
+      return res.json([]);
     }
 
     res.json(innings);
@@ -58,7 +59,7 @@ const getInningById = async (req, res) => {
        FROM match_innings mi
        LEFT JOIN teams bt ON mi.batting_team_id = bt.id
        LEFT JOIN teams blt ON mi.bowling_team_id = blt.id
-       WHERE mi.id = ?`, 
+       WHERE mi.id = ?`,
       [id]
     );
 
@@ -80,8 +81,15 @@ const getInningById = async (req, res) => {
 const updateInnings = async (req, res) => {
   const { id } = req.params;
   const { runs, wickets, overs, overs_decimal, status, legal_balls } = req.body;
+  const userId = req.user.id;
 
   try {
+    // 0. Authorization Check
+    const authorized = await canScoreForInnings(userId, id);
+    if (!authorized) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
     // 1. Dynamic Query Builder
     const updates = [];
     const values = [];
@@ -91,9 +99,9 @@ const updateInnings = async (req, res) => {
     if (overs !== undefined) { updates.push("overs = ?"); values.push(overs); }
     if (overs_decimal !== undefined) { updates.push("overs_decimal = ?"); values.push(overs_decimal); }
     if (legal_balls !== undefined) { updates.push("legal_balls = ?"); values.push(legal_balls); }
-    if (status !== undefined) { 
-      updates.push("status = ?"); 
-      values.push(status); 
+    if (status !== undefined) {
+      updates.push("status = ?");
+      values.push(status);
     }
 
     if (updates.length === 0) {
@@ -126,17 +134,24 @@ const updateInnings = async (req, res) => {
  */
 const deleteInnings = async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   try {
+    // 0. Authorization Check
+    const authorized = await canScoreForInnings(userId, id);
+    if (!authorized) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
     // 1. Safety Check
     const [[check]] = await db.query(
-      "SELECT COUNT(*) as count FROM ball_by_ball WHERE inning_id = ?", 
+      "SELECT COUNT(*) as count FROM ball_by_ball WHERE inning_id = ?",
       [id]
     );
 
     if (check.count > 0) {
-      return res.status(400).json({ 
-        error: "Cannot delete innings with existing ball data. Delete the balls first or use a hard reset." 
+      return res.status(400).json({
+        error: "Cannot delete innings with existing ball data. Delete the balls first or use a hard reset."
       });
     }
 

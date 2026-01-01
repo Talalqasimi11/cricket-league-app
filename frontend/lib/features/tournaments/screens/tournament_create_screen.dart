@@ -203,25 +203,28 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
               const SizedBox(height: 16),
 
               // Overs
-              DropdownButtonFormField<String>(
+              TextFormField(
                 initialValue: _selectedOvers,
-                items: ["5", "10", "20", "50"]
-                    .map(
-                      (e) =>
-                          DropdownMenuItem(value: e, child: Text("$e Overs")),
-                    )
-                    .toList(),
-                onChanged: _isSubmitting
-                    ? null
-                    : (value) {
-                        if (value != null) {
-                          setState(() => _selectedOvers = value);
-                        }
-                      },
+                keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: "Number of Overs per Match",
                   border: OutlineInputBorder(),
+                  hintText: "Enter number of overs (e.g. 10, 20)",
                 ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return "Please enter overs";
+                  }
+                  final n = int.tryParse(value);
+                  if (n == null || n < 1 || n > 50) {
+                    return "Overs must be between 1 and 50";
+                  }
+                  return null;
+                },
+                onSaved: (value) {
+                  if (value != null) _selectedOvers = value;
+                },
+                onChanged: (value) => _selectedOvers = value,
               ),
               const SizedBox(height: 16),
 

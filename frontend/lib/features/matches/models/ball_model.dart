@@ -26,11 +26,11 @@ enum ExtraType {
 
   /// Converts to API-compatible string format.
   String get apiValue => switch (this) {
-        ExtraType.wide => 'wide',
-        ExtraType.noBall => 'no-ball',
-        ExtraType.bye => 'bye',
-        ExtraType.legBye => 'leg-bye',
-      };
+    ExtraType.wide => 'wide',
+    ExtraType.noBall => 'no-ball',
+    ExtraType.bye => 'bye',
+    ExtraType.legBye => 'leg-bye',
+  };
 }
 
 /// The method by which a batter is dismissed.
@@ -70,14 +70,14 @@ enum WicketType {
 
   /// Converts to API-compatible string format.
   String get apiValue => switch (this) {
-        WicketType.bowled => 'bowled',
-        WicketType.caught => 'caught',
-        WicketType.lbw => 'lbw',
-        WicketType.runOut => 'run-out',
-        WicketType.stumped => 'stumped',
-        WicketType.hitWicket => 'hit-wicket',
-        WicketType.retiredHurt => 'retired-hurt',
-      };
+    WicketType.bowled => 'bowled',
+    WicketType.caught => 'caught',
+    WicketType.lbw => 'lbw',
+    WicketType.runOut => 'run-out',
+    WicketType.stumped => 'stumped',
+    WicketType.hitWicket => 'hit-wicket',
+    WicketType.retiredHurt => 'retired-hurt',
+  };
 }
 
 /// Represents a single ball delivery in cricket.
@@ -139,12 +139,13 @@ class Ball {
     this.wicketType,
     this.outPlayerId,
     this.outPlayerName,
-  }) : isLegalBall = extras == null ||
-            (extras != ExtraType.wide && extras != ExtraType.noBall),
-        assert(sequenceNumber >= 0, 'sequenceNumber must be >= 0'),
-        assert(overNumber >= 0, 'overNumber must be >= 0'),
-        assert(ballNumber >= 1, 'ballNumber must be >= 1'),
-        assert(runs >= 0, 'runs cannot be negative');
+  }) : isLegalBall =
+           extras == null ||
+           (extras != ExtraType.wide && extras != ExtraType.noBall),
+       assert(sequenceNumber >= 0, 'sequenceNumber must be >= 0'),
+       assert(overNumber >= 0, 'overNumber must be >= 0'),
+       assert(ballNumber >= 1, 'ballNumber must be >= 1'),
+       assert(runs >= 0, 'runs cannot be negative');
 
   /// Approximate display notation "$overNumber.$ballNumber".
   ///
@@ -172,12 +173,13 @@ class Ball {
     Object? outPlayerId = _sentinel, // int? or null
     Object? outPlayerName = _sentinel, // String? or null
   }) {
-    final newExtras =
-        extras == _sentinel ? this.extras : extras as ExtraType?;
-    final newWicket =
-        wicketType == _sentinel ? this.wicketType : wicketType as WicketType?;
-    final newOutPlayerId =
-        outPlayerId == _sentinel ? this.outPlayerId : outPlayerId as int?;
+    final newExtras = extras == _sentinel ? this.extras : extras as ExtraType?;
+    final newWicket = wicketType == _sentinel
+        ? this.wicketType
+        : wicketType as WicketType?;
+    final newOutPlayerId = outPlayerId == _sentinel
+        ? this.outPlayerId
+        : outPlayerId as int?;
     final newOutPlayerName = outPlayerName == _sentinel
         ? this.outPlayerName
         : outPlayerName as String?;
@@ -220,7 +222,7 @@ class Ball {
         id: _s(json['id']) ?? '',
         matchId: _s(json['match_id']) ?? '',
         inningId: _s(json['inning_id']) ?? '',
-        sequenceNumber: _i(json['sequence_number']),
+        sequenceNumber: _i(json['sequence_number'] ?? json['sequence']),
         overNumber: _i(json['over_number']),
         ballNumber: _i(json['ball_number'], 1),
         batsmanId: _i(json['batsman_id']),
@@ -230,13 +232,18 @@ class Ball {
         runs: _i(json['runs']),
         extras: extrasValue,
         wicketType: wicketValue,
-        outPlayerId: json['out_player_id'] == null ? null : _i(json['out_player_id']),
+        outPlayerId: json['out_player_id'] == null
+            ? null
+            : _i(json['out_player_id']),
         outPlayerName: _s(json['out_player_name']),
       );
     } catch (e, stackTrace) {
       final raw = json.toString();
       final safe = raw.length <= 200 ? raw : raw.substring(0, 200);
-      throw FormatException('Ball.fromJson failed: $e\nJSON: $safe', stackTrace);
+      throw FormatException(
+        'Ball.fromJson failed: $e\nJSON: $safe',
+        stackTrace,
+      );
     }
   }
 
@@ -324,7 +331,8 @@ class Ball {
   @override
   String toString() {
     final sb = StringBuffer(
-        'Ball(seq:$sequenceNumber $overNumber.$ballNumber: $runs');
+      'Ball(seq:$sequenceNumber $overNumber.$ballNumber: $runs',
+    );
     if (extras != null) sb.write(' ${extras!.apiValue}');
     if (wicketType != null) sb.write(' ${wicketType!.apiValue}');
     sb.write(')');

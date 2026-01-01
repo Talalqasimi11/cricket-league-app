@@ -50,10 +50,10 @@ api.interceptors.response.use(
       console.warn('Unauthorized access. Logging out...');
       localStorage.removeItem('admin_token');
       localStorage.removeItem('admin_user');
-      
+
       // Only reload if we aren't already at login to prevent loops
       if (window.location.pathname !== '/login') {
-         window.location.href = '/'; 
+        window.location.href = '/';
       }
     }
 
@@ -68,15 +68,15 @@ api.interceptors.response.use(
     }
 
     // Extract readable error message
-    const errorMessage = 
-      error.response.data?.message || 
-      error.response.data?.error || 
-      error.userMessage || 
+    const errorMessage =
+      error.response.data?.message ||
+      error.response.data?.error ||
+      error.userMessage ||
       'Something went wrong.';
-    
+
     // Attach readable message to error object for UI to use
     error.userMessage = errorMessage;
-    
+
     console.error('API Error:', errorMessage);
     return Promise.reject(error);
   }
@@ -121,6 +121,16 @@ export const adminAPI = {
   createMatch: (matchData) => api.post('/admin/matches', matchData),
   updateMatch: (matchId, matchData) => api.put(`/admin/matches/${matchId}`, matchData),
   deleteMatch: (matchId) => api.delete(`/admin/matches/${matchId}`),
+
+  // Live Scoring
+  startInnings: (data) => api.post('/live/start-innings', data),
+  addBall: (data) => api.post('/live/ball', data),
+  setNewBatter: (data) => api.post('/live/batter', data),
+  undoLastBall: (data) => api.post('/live/undo', data),
+  endInnings: (data) => api.post('/live/end-innings', data),
+
+  // Live Score Data (for scoring and monitoring)
+  getLiveScoreView: (matchId) => api.get(`/live/${matchId}`),
 
   // Missing Endpoints referenced in App.js (Added placeholders to prevent crashes)
   getSystemHealth: () => api.get('/admin/system-health'),

@@ -12,13 +12,15 @@ const getDashboardStats = async (req, res) => {
       [adminRows],
       [teamRows],
       [tournRows],
-      [matchRows]
+      [matchRows],
+      [liveMatchRows]
     ] = await Promise.all([
       db.query("SELECT COUNT(*) as total FROM users"),
       db.query("SELECT COUNT(*) as total FROM users WHERE is_admin = TRUE"),
       db.query("SELECT COUNT(*) as total FROM teams"),
       db.query("SELECT COUNT(*) as total FROM tournaments"),
-      db.query("SELECT COUNT(*) as total FROM matches")
+      db.query("SELECT COUNT(*) as total FROM matches"),
+      db.query("SELECT COUNT(*) as total FROM matches WHERE status = 'live'")
     ]);
 
     res.json({
@@ -26,7 +28,8 @@ const getDashboardStats = async (req, res) => {
       totalAdmins: adminRows[0].total || 0,
       totalTeams: teamRows[0].total || 0,
       totalTournaments: tournRows[0].total || 0,
-      totalMatches: matchRows[0].total || 0
+      totalMatches: matchRows[0].total || 0,
+      totalLiveMatches: liveMatchRows[0].total || 0
     });
   } catch (err) {
     console.error("getDashboardStats: Unexpected error", { error: err.message });
@@ -357,8 +360,8 @@ const createMatch = async (req, res) => {
 
   try {
     const [result] = await db.query(
-      `INSERT INTO matches (tournament_id, team1_id, team2_id, match_datetime, venue, overs, status) 
-       VALUES (?, ?, ?, ?, ?, ?, 'upcoming')`,
+      `INSERT INTO matches (tournament_id, team1_id, team2_id, match_datetime, venue, status, overs) 
+       VALUES (?, ?, ?, ?, ?, 'not_started', ?)`,
       [tournament_id || null, team1_id, team2_id, match_date, venue, overs]
     );
 

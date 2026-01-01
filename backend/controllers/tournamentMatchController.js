@@ -108,31 +108,159 @@ const createTournamentMatches = async (req, res) => {
         return res.status(400).json({ error: "At least 2 teams required for auto draws" });
       }
 
-      // shuffle teams
-      const shuffled = teams.sort(() => 0.5 - Math.random());
+      // Shuffle teams
+      const shuffledTeams = teams.sort(() => 0.5 - Math.random());
+      const teamCount = shuffledTeams.length;
 
-      // auto pair teams into matches
-      for (let i = 0; i < shuffled.length; i += 2) {
-        if (shuffled[i + 1]) {
-          await conn.query(
+      // Calculate Bracket Size (Nearest Power of 2)
+      // e.g. 5 teams -> 8 slots (Quarter Finals)
+      // 3 teams -> 4 slots (Semi Finals)
+      let powerOf2 = 2;
+      while (powerOf2 < teamCount) {
+        powerOf2 *= 2;
+      }
+      const totalSlots = powerOf2;
+
+      // Determine rounds needed
+      // 8 slots -> 3 rounds (QF, SF, Final)
+      // 4 slots -> 2 rounds (SF, Final)
+      const totalRounds = Math.log2(totalSlots);
+
+      // We will generate matches from Final (Level 0) down to Round 1
+      // Level 0 = Final
+      // Level 1 = Semis
+      // ...
+      // Level N = Round 1
+
+      // Store match IDs by level/index to link parents
+      // matchesMap[level][index] = db_id
+      const matchesMap = {};
+
+      // 1. Generate Empty Matches Struct (Top-Down)
+      // i = 0 (Final) to totalRounds-1 (Round 1)
+      for (let level = 0; level < totalRounds; level++) {
+        matchesMap[level] = {};
+        const numMatches = Math.pow(2, level); // 1, 2, 4...
+
+        let roundName = "";
+        if (level === 0) roundName = "final";
+        else if (level === 1) roundName = "semi_final";
+        else if (level === 2 && totalRounds > 3) roundName = "quarter_final"; // Only accurate if 8+ slots
+        else roundName = `round_${totalRounds - level}`; // Generic fallback e.g. round_1
+
+        // Refined Round Naming based on slots from Root
+        // slots=4: L0(Final), L1(SF=Round1)
+        // slots=8: L0(Final), L1(SF), L2(QF=Round1)
+        if (totalSlots === 4) {
+          if (level === 0) roundName = 'final';
+          if (level === 1) roundName = 'semi_final';
+        } else if (totalSlots === 8) {
+          if (level === 0) roundName = 'final';
+          if (level === 1) roundName = 'semi_final';
+          if (level === 2) roundName = 'quarter_final';
+        } else if (totalSlots === 16) {
+          if (level === 0) roundName = 'final';
+          if (level === 1) roundName = 'semi_final';
+          if (level === 2) roundName = 'quarter_final';
+          if (level === 3) roundName = 'round_1'; // Round of 16
+        }
+
+        for (let mIndex = 0; mIndex < numMatches; mIndex++) {
+          // Find Parent ID (Next Match)
+          // Parent is in previous level (level-1). 
+          // Match i in Level L maps to Match floor(i/2) in Level L-1
+          let parentMatchId = null;
+          if (level > 0) {
+            const parentIndex = Math.floor(mIndex / 2);
+            parentMatchId = matchesMap[level - 1][parentIndex];
+          }
+
+          // Insert Match
+          const [ins] = await conn.query(
             `INSERT INTO tournament_matches 
-            (tournament_id, team1_id, team2_id, team1_tt_id, team2_tt_id, round, location, status) 
-            VALUES (?, ?, ?, ?, ?, ?, 'Unknown', 'upcoming')`,
-            [tournament_id, shuffled[i].team_id, shuffled[i + 1].team_id, shuffled[i].id, shuffled[i + 1].id, "round_1"]
+            (tournament_id, round, location, status, parent_match_id) 
+            VALUES (?, ?, 'Unknown', 'upcoming', ?)`,
+            [tournament_id, roundName, parentMatchId]
           );
-        } else {
-          // odd team out → auto-advance to next round
+
+          matchesMap[level][mIndex] = ins.insertId;
+        }
+      }
+
+      // 2. Populate Leaves (Bottom Level) with Teams
+      const bottomLevel = totalRounds - 1; // e.g. 3 rounds -> index 2
+      const bottomMatchesCount = Math.pow(2, bottomLevel); // e.g. 4 matches for 8 slots
+      const matchIds = matchesMap[bottomLevel];
+
+      // We have `totalSlots` (e.g. 8) vs `teamCount` (e.g. 6)
+      // First `totalSlots - teamCount` matches might get "Byes" if we arrange smartly,
+      // Or we just fill sequentially.
+      // Standard seeding: 1 vs 8, 2 vs 7... but random is fine.
+      // Fill slots sequentially:
+      // Match 0: Slot 1, Slot 2
+      // Match 1: Slot 3, Slot 4
+
+      let currentTeamIndex = 0;
+
+      for (let i = 0; i < bottomMatchesCount; i++) {
+        const matchId = matchIds[i];
+
+        // Slot 1
+        const team1 = shuffledTeams[currentTeamIndex++];
+        // Slot 2
+        const team2 = shuffledTeams[currentTeamIndex++];
+
+        // Update the match with these teams
+        await conn.query(
+          `UPDATE tournament_matches 
+           SET 
+             team1_id = ?, team1_tt_id = ?,
+             team2_id = ?, team2_tt_id = ?
+           WHERE id = ?`,
+          [
+            team1?.team_id || null, team1?.id || null,
+            team2?.team_id || null, team2?.id || null,
+            matchId
+          ]
+        );
+
+        // Handle Byes immediately? 
+        // If one team is missing, the other auto-wins.
+        if (team1 && !team2) {
+          // Team 1 Auto Win
           await conn.query(
-            `INSERT INTO tournament_matches 
-            (tournament_id, team1_id, team1_tt_id, round, location, status, winner_id) 
-            VALUES (?, ?, ?, ?, 'Unknown', 'finished', ?)`,
-            [tournament_id, shuffled[i].team_id, shuffled[i].id, "bye", shuffled[i].team_id]
+            `UPDATE tournament_matches 
+              SET status = 'finished', winner_id = ? 
+              WHERE id = ?`,
+            [team1.team_id, matchId]
           );
+          // Auto-Promote (Trigger manual promotion logic or call finalize?)
+          // Since we are in calculation phase, we can just update the parent immediately.
+          const [[currentMatch]] = await conn.query("SELECT parent_match_id FROM tournament_matches WHERE id = ?", [matchId]);
+          if (currentMatch.parent_match_id) {
+            // Find Parent
+            const [[parent]] = await conn.query("SELECT * FROM tournament_matches WHERE id = ?", [currentMatch.parent_match_id]);
+            let field = (parent.team1_id == null) ? 'team1' : 'team2';
+            // Check if slot 1 is taken
+            if (parent.team1_id && parent.team2_id) field = null; // Full
+
+            // We should be deterministic based on child index (Left child -> Team1, Right child -> Team2)
+            // Match i maps to parent floor(i/2). If i is even -> Team 1. If i is odd -> Team 2.
+            const isEvenChild = (i % 2 === 0);
+            const targetFieldPrefix = isEvenChild ? 'team1' : 'team2';
+
+            await conn.query(
+              `UPDATE tournament_matches 
+                  SET ${targetFieldPrefix}_id = ?, ${targetFieldPrefix}_tt_id = ? 
+                  WHERE id = ?`,
+              [team1.team_id, team1.id, currentMatch.parent_match_id]
+            );
+          }
         }
       }
 
       await conn.commit();
-      return res.json({ message: "Auto matches created successfully" });
+      return res.json({ message: "Auto matches (Full Bracket) created successfully" });
     }
 
     await conn.rollback();
@@ -306,17 +434,8 @@ const startTournamentMatch = async (req, res) => {
       return res.status(400).json({ error: "Match already started or finished" });
     }
 
-    // Validate match date against tournament start date
-    if (row.match_date) {
-      const matchDate = new Date(row.match_date);
-      const tournamentStartDate = new Date(row.tournament_start_date);
-
-      if (matchDate < tournamentStartDate) {
-        return res.status(400).json({
-          error: `Match cannot be started before tournament start date (${row.tournament_start_date})`
-        });
-      }
-    }
+    // [Modified] Removed restriction: Match can be started anytime regardless of tournament start date
+    // if (row.match_date) { ... }
 
     // Require registered teams for live match
     if (!row.team1_id || !row.team2_id) {
@@ -333,21 +452,28 @@ const startTournamentMatch = async (req, res) => {
     const oversDefault = tournament?.overs || 20;
 
     const [ins] = await db.query(
-      `INSERT INTO matches (team1_id, team2_id, overs, status, tournament_id, match_datetime, venue) VALUES (?, ?, ?, 'live', ?, ?, ?)`,
-      [row.team1_id, row.team2_id, oversDefault, row.tournament_id, new Date(), row.location || 'Unknown']
+      `INSERT INTO matches (team1_id, team2_id, overs, status, tournament_id, match_datetime, venue, creator_id, team1_lineup, team2_lineup) 
+       VALUES (?, ?, ?, 'live', ?, ?, ?, ?, ?, ?)`,
+      [
+        row.team1_id, row.team2_id, oversDefault, row.tournament_id, new Date(), row.location || 'Unknown',
+        row.created_by, row.team1_lineup, row.team2_lineup
+      ]
     );
 
     const createdMatchId = ins.insertId;
 
     await db.query(`UPDATE tournament_matches SET status = 'live', match_id = ? WHERE id = ? `, [createdMatchId, id]);
 
-    // ✅ Auto-start first innings (Assume Team 1 bats first for now)
+    // [Modified] Removed auto-start of first innings. 
+    // The frontend will now prompt for "Batting Team" and call /api/live/start-innings explicitly.
+    /*
     await db.query(
       `INSERT INTO match_innings 
        (match_id, team_id, batting_team_id, bowling_team_id, inning_number, runs, wickets, overs, status) 
        VALUES (?, ?, ?, ?, 1, 0, 0, 0, 'in_progress')`,
       [createdMatchId, row.team1_id, row.team1_id, row.team2_id]
     );
+    */
 
     res.json({ message: "Match started, live scoring enabled", match_id: createdMatchId });
   } catch (err) {
@@ -496,7 +622,7 @@ const deleteTournamentMatch = async (req, res) => {
  * 📌 Create Friendly Match (Standalone)
  */
 const createFriendlyMatch = async (req, res) => {
-  const { team1_id, team2_id, team1_name, team2_name, overs, match_date, venue } = req.body;
+  const { team1_id, team2_id, team1_name, team2_name, overs, match_date, venue, team1_lineup, team2_lineup } = req.body;
 
   // Basic validation
   if ((!team1_id && !team1_name) || (!team2_id && !team2_name)) {
@@ -523,14 +649,17 @@ const createFriendlyMatch = async (req, res) => {
 
     // Create Match in `matches` table directly (skipping tournament_matches)
     const [result] = await conn.query(
-      `INSERT INTO matches(team1_id, team2_id, overs, status, match_datetime, venue, tournament_id) 
-       VALUES(?, ?, ?, 'not_started', ?, ?, NULL)`,
+      `INSERT INTO matches(team1_id, team2_id, overs, status, match_datetime, venue, tournament_id, creator_id, team1_lineup, team2_lineup) 
+       VALUES(?, ?, ?, 'not_started', ?, ?, NULL, ?, ?, ?)`,
       [
         t1Id,
         t2Id,
         overs || 10,
         match_date ? new Date(match_date) : new Date(),
-        venue || 'Unknown' // ✅ Defaults to 'Unknown' location for temporary/friendly matches
+        venue || 'Unknown',
+        req.user.id,
+        team1_lineup ? JSON.stringify(team1_lineup) : null,
+        team2_lineup ? JSON.stringify(team2_lineup) : null
       ]
     );
 
@@ -562,7 +691,7 @@ const createFriendlyMatch = async (req, res) => {
  * Resolves team names to IDs automatically
  */
 const createManualMatch = async (req, res) => {
-  const { tournament_id, team1_name, team2_name, match_date, round } = req.body;
+  const { tournament_id, team1_name, team2_name, match_date, round, team1_lineup, team2_lineup } = req.body;
 
   if (!tournament_id || !team1_name || !team2_name) {
     return res.status(400).json({ error: "Tournament ID and Team Names are required" });
@@ -619,16 +748,18 @@ const createManualMatch = async (req, res) => {
 
     // 3. Insert into tournament_matches
     const [result] = await conn.query(
-      `INSERT INTO tournament_matches(tournament_id, team1_id, team1_tt_id, team2_id, team2_tt_id, round, match_date, location, status) 
-       VALUES(?, ?, ?, ?, ?, ?, ?, 'Unknown', 'upcoming')`,
+      `INSERT INTO tournament_matches(tournament_id, team1_id, team1_tt_id, team2_id, team2_tt_id, round, match_date, location, status, team1_lineup, team2_lineup) 
+       VALUES(?, ?, ?, ?, ?, ?, ?, 'Unknown', 'upcoming', ?, ?)`,
       [
         tournament_id,
         t1.team_id,
         t1.tt_id,
         t2.team_id,
         t2.tt_id,
-        round || 'Group Stage', // Default round if not provided
+        round || 'Group Stage',
         match_date || new Date(),
+        team1_lineup ? JSON.stringify(team1_lineup) : null,
+        team2_lineup ? JSON.stringify(team2_lineup) : null
       ]
     );
 

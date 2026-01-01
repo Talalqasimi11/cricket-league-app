@@ -7,20 +7,25 @@ const { logDatabaseError } = require("../utils/safeLogger"); // Assuming this ex
 const getLiveScoreViewer = async (req, res) => {
   const { match_id } = req.params;
 
-  // 1. Validation
   if (!match_id) return res.status(400).json({ error: "Match ID is required" });
   const matchIdNum = parseInt(match_id, 10);
   if (isNaN(matchIdNum) || matchIdNum <= 0) return res.status(400).json({ error: "Invalid match ID" });
 
   try {
+    // 1. Fetch Match Details
+    const [matchDetails] = await db.query(
+      "SELECT id, team1_id, team2_id, overs, status, target_score FROM matches WHERE id = ?",
+      [matchIdNum]
+    );
+    if (!matchDetails.length) return res.status(404).json({ error: "Match not found" });
+
     // 2. Fetch Innings & Ball-by-Ball Data (Concurrent)
     const [inningsResult, ballsResult, playersResult] = await Promise.all([
       db.query(
         `SELECT mi.id, mi.inning_number, mi.batting_team_id, mi.bowling_team_id, 
-                mi.runs, mi.wickets, mi.overs, mi.overs_decimal, mi.status,
+                mi.runs, mi.wickets, mi.overs, mi.overs_decimal, mi.legal_balls, mi.status,
                 bt.team_name AS batting_team_name,
-                blt.team_name AS bowling_team_name,
-                CASE WHEN mi.overs_decimal > 0 THEN ROUND(mi.runs / mi.overs_decimal, 2) ELSE 0 END AS current_run_rate
+                blt.team_name AS bowling_team_name
          FROM match_innings mi
          LEFT JOIN teams bt ON mi.batting_team_id = bt.id
          LEFT JOIN teams blt ON mi.bowling_team_id = blt.id
@@ -29,7 +34,8 @@ const getLiveScoreViewer = async (req, res) => {
         [matchIdNum]
       ),
       db.query(
-        `SELECT b.id, b.over_number, b.ball_number, b.runs, b.extras, b.wicket_type,
+        `SELECT b.id, b.inning_id, b.over_number, b.ball_number, b.runs, b.extras, b.wicket_type,
+                b.batsman_id, b.bowler_id, b.out_player_id,
                 bats.player_name AS batsman_name,
                 bowl.player_name AS bowler_name,
                 outp.player_name AS out_player_name
@@ -38,7 +44,7 @@ const getLiveScoreViewer = async (req, res) => {
          LEFT JOIN players bowl ON b.bowler_id = bowl.id
          LEFT JOIN players outp ON b.out_player_id = outp.id
          WHERE b.match_id = ?
-         ORDER BY b.id ASC`,
+         ORDER BY b.sequence ASC`,
         [matchIdNum]
       ),
       db.query(
@@ -55,103 +61,118 @@ const getLiveScoreViewer = async (req, res) => {
     const balls = ballsResult[0];
     const players = playersResult[0];
 
-    // 3. Calculate Contextual Data (Current State)
-    const currentInning = innings.find(inn => inn.status === 'in_progress');
+    // 3. Derived Summary Stats (CRR, RRR, Partnership)
+    let crr = "0.00";
+    let rrr = "0.00";
+    let partnership = { runs: 0, balls: 0 };
     let currentBatsmen = [];
     let currentBowler = null;
-    let last12Balls = [];
-    let partnership = { runs: 0, balls: 0 };
+    let recentBalls = [];
 
-    if (currentInning) {
-      // Fetch Current Context concurrently
-      const [batsmenRes, bowlerRes, recentBallsRes] = await Promise.all([
-        db.query(
-          `SELECT DISTINCT b.batsman_id, p.player_name, pms.runs, pms.balls_faced
-           FROM ball_by_ball b
-           JOIN players p ON b.batsman_id = p.id
-           LEFT JOIN player_match_stats pms ON b.batsman_id = pms.player_id AND pms.match_id = ?
-           WHERE b.inning_id = ? AND b.batsman_id IS NOT NULL
-           ORDER BY b.id DESC LIMIT 2`,
-          [matchIdNum, currentInning.id]
-        ),
-        db.query(
-          `SELECT b.bowler_id, p.player_name, pms.balls_bowled, pms.runs_conceded, pms.wickets
-           FROM ball_by_ball b
-           JOIN players p ON b.bowler_id = p.id
-           LEFT JOIN player_match_stats pms ON b.bowler_id = pms.player_id AND pms.match_id = ?
-           WHERE b.inning_id = ? AND b.bowler_id IS NOT NULL
-           ORDER BY b.id DESC LIMIT 1`,
-          [matchIdNum, currentInning.id]
-        ),
-        db.query(
-          `SELECT b.runs, b.extras, b.wicket_type
-           FROM ball_by_ball b
-           WHERE b.inning_id = ?
-           ORDER BY b.id DESC LIMIT 12`,
-          [currentInning.id]
-        )
-      ]);
+    const activeInning = innings.find(i => i.status === 'in_progress') || innings[innings.length - 1];
 
-      currentBatsmen = batsmenRes[0] || [];
-      currentBowler = bowlerRes[0].length > 0 ? bowlerRes[0][0] : null;
-      last12Balls = (recentBallsRes[0] || []).reverse();
+    if (activeInning) {
+      // Calculate CRR
+      if (activeInning.legal_balls > 0) {
+        crr = ((activeInning.runs / activeInning.legal_balls) * 6).toFixed(2);
+      }
 
-      // Calculate Partnership (Run accumulation for current pair)
-      if (currentBatsmen.length >= 2) {
-        const [partnershipRes] = await db.query(
-          `SELECT COUNT(*) as balls, SUM(runs) as runs
-           FROM ball_by_ball 
-           WHERE inning_id = ? AND batsman_id IN (?, ?)
-           -- Note: Basic partnership logic; ideally track partnerships table for accuracy
-           ORDER BY id DESC LIMIT 50`, 
-          [currentInning.id, currentBatsmen[0].batsman_id, currentBatsmen[1].batsman_id]
-        );
-        partnership = {
-          runs: partnershipRes[0]?.runs || 0,
-          balls: partnershipRes[0]?.balls || 0
-        };
+      // Calculate RRR (if 2nd innings and target exists)
+      if (activeInning.inning_number === 2 && matchDetails[0].target_score) {
+        const target = matchDetails[0].target_score;
+        const runsToWin = target - activeInning.runs;
+        const totalOvers = matchDetails[0].overs * 6;
+        const remainingBalls = Math.max(0, totalOvers - activeInning.legal_balls);
+        if (remainingBalls > 0 && runsToWin > 0) { // Only calculate if runs are needed and balls remain
+          rrr = ((runsToWin / remainingBalls) * 6).toFixed(2);
+        } else if (runsToWin <= 0) { // Target achieved
+          rrr = "0.00";
+        }
+      }
+
+      // Calculate Recent Balls (Last 12)
+      recentBalls = balls
+        .filter(b => b.inning_id === activeInning.id)
+        .slice(-12);
+
+      // Current Batsmen & Bowler
+      // Logic: From last few balls or match_innings active player IDs
+      // For Viewer, we can fetch active pair from match_innings if we have columns
+      const [[inningState]] = await db.query(
+        "SELECT current_striker_id, current_non_striker_id, current_bowler_id FROM match_innings WHERE id = ?",
+        [activeInning.id]
+      );
+
+      if (inningState) {
+        const { current_striker_id, current_non_striker_id, current_bowler_id } = inningState;
+
+        // Map to full objects from players matched result
+        if (current_striker_id) {
+          const striker = players.find(p => p.player_id === current_striker_id);
+          if (striker) currentBatsmen.push(striker);
+        }
+        if (current_non_striker_id) {
+          const nonStriker = players.find(p => p.player_id === current_non_striker_id);
+          if (nonStriker) currentBatsmen.push(nonStriker);
+        }
+        if (current_bowler_id) {
+          currentBowler = players.find(p => p.player_id === current_bowler_id);
+        }
+
+        // Calculate current partnership
+        // Iterate backwards through balls of the active inning
+        let tempPartnershipRuns = 0;
+        let tempPartnershipBalls = 0;
+        let lastWicketBallIndex = -1;
+
+        for (let i = balls.length - 1; i >= 0; i--) {
+          const ball = balls[i];
+          if (ball.inning_id !== activeInning.id) continue; // Only consider balls from the active inning
+
+          if (ball.wicket_type && ball.out_player_id !== null) {
+            lastWicketBallIndex = i;
+            break; // Found the last wicket, partnership started after this
+          }
+        }
+
+        // Now iterate from the ball after the last wicket (or start of inning)
+        for (let i = balls.length - 1; i > lastWicketBallIndex; i--) {
+          const ball = balls[i];
+          if (ball.inning_id !== activeInning.id) continue;
+
+          // Only count runs and balls if the current batsmen were involved
+          const isCurrentBatsman = (currentBatsmen.some(b => b.player_id === ball.batsman_id) || currentBatsmen.some(b => b.player_id === ball.out_player_id));
+
+          if (isCurrentBatsman) {
+            tempPartnershipRuns += ball.runs;
+            if (!['wide', 'no-ball'].includes(ball.extras)) {
+              tempPartnershipBalls += 1;
+            }
+          }
+        }
+        partnership = { runs: tempPartnershipRuns, balls: tempPartnershipBalls };
       }
     }
 
-    // 4. Calculate Required Run Rate (if applicable)
-    if (innings.length > 1) {
-      const firstInning = innings.find(i => i.inning_number === 1);
-      const chasingInning = innings.find(i => i.inning_number === 2);
-      
-      if (firstInning && chasingInning) {
-        const target = firstInning.runs + 1;
-        const runsNeeded = Math.max(0, target - chasingInning.runs);
-        
-        // Assuming T20 (20 overs) or ODI (50 overs) - defaulting to T20 logic if not specified
-        // You might want to fetch max_overs from matches table if variable
-        const totalOvers = 20; 
-        const ballsRem = (totalOvers * 6) - (chasingInning.overs * 6 + Math.round((chasingInning.overs_decimal % 1) * 10));
-        
-        // Attach derived RRR to the chasing inning object
-        chasingInning.required_run_rate = ballsRem > 0 
-          ? ((runsNeeded / ballsRem) * 6).toFixed(2) 
-          : 0;
-        chasingInning.target = target;
-        chasingInning.runs_needed = runsNeeded;
-        chasingInning.balls_remaining = ballsRem;
-      }
-    }
-
-    // 5. Response
-    res.json({ 
-      innings, 
-      balls, 
+    // 4. Response
+    res.json({
+      ...matchDetails[0],
+      innings,
+      balls,
       players,
+      stats: {
+        crr,
+        rrr,
+        partnership
+      },
       currentContext: {
         batsmen: currentBatsmen,
         bowler: currentBowler,
-        recentBalls: last12Balls,
-        partnership
+        recentBalls
       }
     });
 
   } catch (err) {
-    // Use safe logger if available, else console
     if (typeof logDatabaseError === 'function') {
       logDatabaseError(req.log, "getLiveScoreViewer", err, { matchId: matchIdNum });
     } else {

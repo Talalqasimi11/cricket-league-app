@@ -144,6 +144,56 @@
             "date": 1766064848354,
             "name": "logs\\security-2025-12-18.log",
             "hash": "b01c388c2b18cbd24381cb4b7d9763ef337bc82e2c0dd221d25ad05903bcbd91"
+        },
+        {
+            "date": 1766151238835,
+            "name": "logs\\security-2025-12-19.log",
+            "hash": "9e14ca7b00f33aeb84ec6a3ffcbcc88dc0cfcac40dff23f8e7acd7880fdd5d59"
+        },
+        {
+            "date": 1766237399990,
+            "name": "logs\\security-2025-12-20.log",
+            "hash": "13d32872b26e09abe4029334a681a009399297adad4d502c31758f9aa0831610"
+        },
+        {
+            "date": 1766323981613,
+            "name": "logs\\security-2025-12-21.log",
+            "hash": "76e06de79d5db2984dcb733c70281f227b51b462cd514fe0a414f0b8ef1d697b"
+        },
+        {
+            "date": 1766386988560,
+            "name": "logs\\security-2025-12-22.log",
+            "hash": "aaccf16a8f047d6cfde2beb28d0ef9601691f9ea212aece051569a52a80419ed"
+        },
+        {
+            "date": 1766497216399,
+            "name": "logs\\security-2025-12-23.log",
+            "hash": "bea3b1e4b01db9a9726f652be0f2ce06db76eeed26276b3c89c0cc4c8e7516aa"
+        },
+        {
+            "date": 1766565281070,
+            "name": "logs\\security-2025-12-24.log",
+            "hash": "10c37abb0183314de5fdcb42fa7a51f96eb0becb2811d648471bbd4084669c4e"
+        },
+        {
+            "date": 1766821449476,
+            "name": "logs\\security-2025-12-27.log",
+            "hash": "7ece9864a5f5cb8899d24b457cfc7c568755f79406515bee163751e69e75cdf1"
+        },
+        {
+            "date": 1766899523624,
+            "name": "logs\\security-2025-12-28.log",
+            "hash": "3a71123a4cb92b0c9069429215aa54abc2fb9dcc74fa7d99258d64be86a430f1"
+        },
+        {
+            "date": 1767070386746,
+            "name": "logs\\security-2025-12-30.log",
+            "hash": "484eaab3e26a5a7a42db501a45f861e1f2c23181bedb71f93982fa559b3e25d0"
+        },
+        {
+            "date": 1767246063594,
+            "name": "logs\\security-2026-01-01.log",
+            "hash": "5a6d3608c4b7cf5b120f2831d8e821dd02660b7e55ff7b21da69a342c9929213"
         }
     ],
     "hashType": "sha256"

@@ -202,33 +202,49 @@ const speedLimiters = {
 const createDynamicRateLimit = (options = {}) => {
   const {
     windowMs = 60 * 1000,
-    maxRequests = 100,
+    maxRequests = 5000, // Increased default
     increaseFactor = 1.5,
     maxWindowMs = 15 * 60 * 1000
   } = options;
 
-  let currentWindowMs = windowMs;
-  const requestCounts = new Map();
+  const userStates = new Map();
 
   return (req, res, next) => {
+    // Skip OPTIONS requests early
+    if (req.method.toUpperCase() === 'OPTIONS') {
+      return next();
+    }
+
     const key = defaultKeyGenerator(req);
     const now = Date.now();
 
-    for (const [storedKey, data] of requestCounts.entries()) {
-      if (now - data.resetTime > currentWindowMs) {
-        requestCounts.delete(storedKey);
+    // Clean up old entries periodically
+    if (Math.random() < 0.05) { // 5% chance to clean up on any request
+      for (const [k, state] of userStates.entries()) {
+        if (now - state.resetTime > state.currentWindowMs) {
+          userStates.delete(k);
+        }
       }
     }
 
-    const userData = requestCounts.get(key) || { count: 0, resetTime: now };
+    let state = userStates.get(key);
 
-    if (userData.count >= maxRequests) {
-      currentWindowMs = Math.min(currentWindowMs * increaseFactor, maxWindowMs);
+    if (!state || (now - state.resetTime > state.currentWindowMs)) {
+      state = {
+        count: 0,
+        resetTime: now,
+        currentWindowMs: windowMs
+      };
+    }
+
+    if (state.count >= maxRequests) {
+      state.currentWindowMs = Math.min(state.currentWindowMs * increaseFactor, maxWindowMs);
+      state.resetTime = now; // Reset the window start time to "now" to penalize further
 
       logger.warn("Dynamic rate limit exceeded", {
         key,
-        count: userData.count,
-        newWindow: currentWindowMs,
+        count: state.count,
+        newWindow: state.currentWindowMs,
         path: req.path,
         method: req.method,
         security: true,
@@ -238,26 +254,25 @@ const createDynamicRateLimit = (options = {}) => {
       return res.status(429).json({
         success: false,
         error: {
-          message: "Rate limit exceeded. Window increased due to repeated violations.",
+          message: "Rate limit exceeded. Please slow down.",
           code: "DYNAMIC_RATE_LIMIT_EXCEEDED",
           type: "rate_limit",
-          retryAfter: Math.ceil(currentWindowMs / 1000)
+          retryAfter: Math.ceil(state.currentWindowMs / 1000)
         }
       });
     }
 
-    userData.count++;
-    userData.resetTime = now;
-    requestCounts.set(key, userData);
+    state.count++;
+    userStates.set(key, state);
 
-    const remaining = Math.max(0, maxRequests - userData.count);
-    const resetTime = userData.resetTime + currentWindowMs;
+    const remaining = Math.max(0, maxRequests - state.count);
+    const resetTime = state.resetTime + state.currentWindowMs;
 
     res.set({
       "X-RateLimit-Limit": maxRequests,
       "X-RateLimit-Remaining": remaining,
       "X-RateLimit-Reset": Math.ceil(resetTime / 1000),
-      "X-RateLimit-Window": `${currentWindowMs}ms`
+      "X-RateLimit-Window": `${state.currentWindowMs}ms`
     });
 
     next();

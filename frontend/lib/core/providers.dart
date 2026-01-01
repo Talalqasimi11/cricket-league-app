@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../features/matches/providers/live_match_provider.dart';
 import '../features/tournaments/providers/tournament_provider.dart';
+import '../features/tournaments/providers/tournament_stats_provider.dart';
 import 'auth_provider.dart';
 import 'database/hive_service.dart';
 import 'offline/offline_manager.dart';
@@ -73,7 +74,9 @@ class _AppProvidersState extends State<AppProviders> {
         ChangeNotifierProvider(create: (_) => LiveMatchProvider()),
         Provider<OfflineManager>.value(value: _offlineManager),
         Provider<CacheManager>.value(value: CacheManager.instance),
+        Provider<CacheManager>.value(value: CacheManager.instance),
         Provider<HiveService>.value(value: HiveService()),
+        ChangeNotifierProvider(create: (_) => TournamentStatsProvider()),
       ],
       child: widget.child,
     );

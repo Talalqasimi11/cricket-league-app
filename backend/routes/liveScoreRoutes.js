@@ -7,7 +7,8 @@ const {
   addBall,
   endInnings,
   getLiveScore,
-  undoLastBall, // [FIX 1] Import the new function here
+  undoLastBall,
+  setNewBatter
 } = require("../controllers/liveScoreController");
 
 // Start new innings
@@ -19,11 +20,14 @@ router.post("/undo", authMiddleware, undoLastBall);
 // Add ball entry (auto check)
 router.post("/ball", authMiddleware, requireScope('match:score'), addBall);
 
+// Set New Batter
+router.post("/batter", authMiddleware, requireScope('match:score'), setNewBatter);
+
 // Manually end innings
 router.post("/end-innings", authMiddleware, requireScope('match:score'), endInnings);
 
 // Get live score with rate limiting
-router.get("/:match_id", rateLimiter(100, 15), getLiveScore);
+router.get("/:match_id", getLiveScore);
 
 // Optional alias routes for consolidation
 router.post('/deliveries', authMiddleware, requireScope('match:score'), addBall);

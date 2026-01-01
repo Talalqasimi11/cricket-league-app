@@ -1,22 +1,19 @@
-const mysql = require("mysql2/promise");
-require("dotenv").config();
-
-const dbConfig = {
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASS,
-    database: process.env.DB_NAME,
-};
+const { db } = require("./config/db");
 
 async function checkSchema() {
     try {
-        const connection = await mysql.createConnection(dbConfig);
-        const [rows] = await connection.execute("DESCRIBE matches");
-        console.log("Matches Table Schema:");
-        rows.forEach(r => console.log(r.Field));
-        await connection.end();
-    } catch (err) {
-        console.error("Error:", err);
+        console.log("Checking indices for 'player_match_stats'...");
+        const [rows] = await db.query("SHOW INDEX FROM player_match_stats");
+        console.log(JSON.stringify(rows, null, 2));
+
+        // Also check table structure
+        const [cols] = await db.query("DESCRIBE player_match_stats");
+        console.log("Columns:", JSON.stringify(cols, null, 2));
+
+        process.exit(0);
+    } catch (e) {
+        console.error("Error:", e);
+        process.exit(1);
     }
 }
 

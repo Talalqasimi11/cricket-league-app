@@ -819,8 +819,8 @@ class _TournamentDetailsCreatorScreenState
             match: m,
             onEdit: isUpcoming ? () => _handleEditMatch(index, m) : null,
             onDelete: isUpcoming ? () => _deleteMatch(m) : null,
-            // [CHANGED] Removed onStart to hide the button from list view
-            onStart: null,
+            // [CHANGED] Re-enabled Start button for upcoming matches
+            onStart: isUpcoming ? () => _handleStartMatch(m) : null,
             onViewDetails: () => _navigateToMatchDetails(m),
           );
         },
@@ -1148,7 +1148,19 @@ class MatchCard extends StatelessWidget {
                     child: const Text("Details"),
                   ),
                 ),
-                // [CHANGED] Removed the "Start" button here
+                if (onStart != null) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: onStart,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text("Start"),
+                    ),
+                  ),
+                ],
               ],
             ),
           ],

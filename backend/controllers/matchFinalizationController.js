@@ -1,15 +1,14 @@
 const { db } = require("../config/db");
 const { logDatabaseError } = require("../utils/safeLogger");
 
+const { canScoreForMatch } = require("./liveScoreController");
+
 /**
  * 📌 Finalize Match
  * Decides winner, updates tournament standings, and persists cumulative player stats.
  */
-const finalizeMatch = async (req, res) => {
-  const { match_id } = req.body;
-
-  if (!match_id) return res.status(400).json({ error: "Match ID is required" });
-
+// Internal function for reuse
+const finalizeMatchInternal = async (match_id) => {
   let conn;
   try {
     // Start transaction
@@ -21,12 +20,12 @@ const finalizeMatch = async (req, res) => {
 
     if (!match) {
       await conn.rollback();
-      return res.status(404).json({ error: "Match not found" });
+      throw { status: 404, message: "Match not found" };
     }
 
     if (match.status === "completed") {
       await conn.rollback();
-      return res.status(400).json({ error: "Match already finalized" });
+      throw { status: 400, message: "Match already finalized" };
     }
 
     // 2️⃣ Calculate Scores
@@ -60,22 +59,23 @@ const finalizeMatch = async (req, res) => {
     );
 
     // 4️⃣ Update Global Team Stats (Main `teams` table)
-    // Increment matches_played for both
-    await conn.query(
-      "UPDATE teams SET matches_played = matches_played + 1 WHERE id IN (?, ?)",
-      [match.team1_id, match.team2_id]
-    );
-
-    // Increment matches_won for winner
-    if (winnerTeamId) {
-      await conn.query(
-        "UPDATE teams SET matches_won = matches_won + 1 WHERE id = ?",
-        [winnerTeamId]
-      );
-    }
-
-    // 5️⃣ Update Tournament Standings (if part of tournament)
+    // Only if it's a tournament match
     if (match.tournament_id) {
+      // Increment matches_played for both
+      await conn.query(
+        "UPDATE teams SET matches_played = matches_played + 1 WHERE id IN (?, ?)",
+        [match.team1_id, match.team2_id]
+      );
+
+      // Increment matches_won for winner
+      if (winnerTeamId) {
+        await conn.query(
+          "UPDATE teams SET matches_won = matches_won + 1 WHERE id = ?",
+          [winnerTeamId]
+        );
+      }
+
+      // 5️⃣ Update Tournament Standings (if part of tournament)
       const teams = [match.team1_id, match.team2_id];
       for (const teamId of teams) {
         await conn.query(
@@ -94,58 +94,39 @@ const finalizeMatch = async (req, res) => {
           ]
         );
       }
-    }
 
-    // 6️⃣ Update Cumulative Player Stats
-    // We fetch current match stats and merge them into the players' lifetime stats
-    const [matchStats] = await conn.query(
-      "SELECT * FROM player_match_stats WHERE match_id = ?",
-      [match_id]
-    );
-
-    for (const stat of matchStats) {
-      const runs = stat.runs || 0;
-      const balls = stat.balls_faced || 0;
-      const wickets = stat.wickets || 0;
-      const hundreds = runs >= 100 ? 1 : 0;
-      const fifties = (runs >= 50 && runs < 100) ? 1 : 0;
-
-      // Complex update for averages
-      // Formula: NewAvg = (CurrentRuns + NewRuns) / (CurrentInnings + 1)
-      // Note: matches_played in `players` table acts as innings count for simplicity here
-
-      await conn.query(
-        `UPDATE players 
-         SET 
-           matches_played = matches_played + 1,
-           runs = runs + ?,
-           wickets = wickets + ?,
-           hundreds = hundreds + ?,
-           fifties = fifties + ?,
-           
-           -- Recalculate Batting Average
-           batting_average = CASE 
-             WHEN (matches_played + 1) > 0 
-             THEN (runs + ?) / (matches_played + 1)
-             ELSE 0 
-           END,
-
-           -- Recalculate Strike Rate
-           strike_rate = CASE 
-             -- We need cumulative balls faced. Since we don't store cumulative balls, 
-             -- we approximate or you need a cumulative_balls column. 
-             -- For now, let's update it based on standard formula if we tracked cumulative balls.
-             -- Assuming we don't track cumulative balls, we might skip this or estimate.
-             -- Better approach: Just update raw counts, calculate average/SR on read time.
-             -- But based on your schema request:
-             WHEN (runs + ?) > 0 
-             THEN strike_rate -- Placeholder: Ideally you store total_balls_faced in players table
-             ELSE strike_rate
-           END
-
-         WHERE id = ?`,
-        [runs, wickets, hundreds, fifties, runs, runs, stat.player_id]
+      // 6️⃣ Update Cumulative Player Stats
+      // We fetch current match stats and merge them into the players' lifetime stats
+      const [matchStats] = await conn.query(
+        "SELECT * FROM player_match_stats WHERE match_id = ?",
+        [match_id]
       );
+
+      for (const stat of matchStats) {
+        const runs = stat.runs || 0;
+        const wickets = stat.wickets || 0;
+        const hundreds = runs >= 100 ? 1 : 0;
+        const fifties = (runs >= 50 && runs < 100) ? 1 : 0;
+
+        await conn.query(
+          `UPDATE players 
+           SET 
+             matches_played = matches_played + 1,
+             runs = runs + ?,
+             wickets = wickets + ?,
+             hundreds = hundreds + ?,
+             fifties = fifties + ?,
+             
+             -- Recalculate Batting Average
+             batting_average = CASE 
+               WHEN (matches_played + 1) > 0 
+               THEN (runs + ?) / (matches_played + 1)
+               ELSE 0 
+             END
+           WHERE id = ?`,
+          [runs, wickets, hundreds, fifties, runs, stat.player_id]
+        );
+      }
     }
 
     // 7️⃣ Archive Temporary Players
@@ -158,24 +139,90 @@ const finalizeMatch = async (req, res) => {
       [match.team1_id, match.team2_id]
     );
 
+    // 8️⃣ Sync Tournament Match Status & Promote Winner
+    // If this was a tournament match, ensure the bracket reflects it is finished.
+    if (match.tournament_id) {
+      await conn.query(
+        "UPDATE tournament_matches SET status = 'finished', winner_id = ? WHERE match_id = ?",
+        [winnerTeamId, match_id]
+      );
+
+      // --- Promotion Logic ---
+      const [[currentMatch]] = await conn.query(
+        "SELECT id, parent_match_id FROM tournament_matches WHERE match_id = ?",
+        [match_id]
+      );
+
+      if (currentMatch && currentMatch.parent_match_id) {
+        // Determine which slot in the parent match to fill (Team 1 or Team 2)
+        // Based on ID order of siblings
+        const [siblings] = await conn.query(
+          "SELECT id FROM tournament_matches WHERE parent_match_id = ? ORDER BY id ASC",
+          [currentMatch.parent_match_id]
+        );
+
+        const isFirstChild = (siblings.length > 0 && siblings[0].id === currentMatch.id);
+        const targetPrefix = isFirstChild ? 'team1' : 'team2';
+
+        // Find Team TT ID to ensure consistency
+        const [[wonTeamTT]] = await conn.query(
+          "SELECT id FROM tournament_teams WHERE tournament_id = ? AND team_id = ?",
+          [match.tournament_id, winnerTeamId]
+        );
+        const winnerTTId = wonTeamTT ? wonTeamTT.id : null;
+
+        await conn.query(
+          `UPDATE tournament_matches 
+             SET ${targetPrefix}_id = ?, ${targetPrefix}_tt_id = ? 
+             WHERE id = ?`,
+          [winnerTeamId, winnerTTId, currentMatch.parent_match_id]
+        );
+
+        console.log(`[Tournament] Promoted Team ${winnerTeamId} to Match ${currentMatch.parent_match_id} (${targetPrefix})`);
+      }
+    }
+
     await conn.commit();
 
-    res.json({
+    return {
+      success: true,
       message: "✅ Match finalized successfully",
       winner_id: winnerTeamId,
       score_summary: {
         [match.team1_id]: team1Runs,
         [match.team2_id]: team2Runs
       }
-    });
+    };
 
   } catch (err) {
     if (conn) await conn.rollback();
-    logDatabaseError(req.log, "finalizeMatch", err, { match_id });
-    res.status(500).json({ error: "Server error finalizing match" });
+    console.error("Error in finalizeMatchInternal:", err);
+    throw err;
   } finally {
     if (conn) conn.release();
   }
 };
 
-module.exports = { finalizeMatch };
+const finalizeMatch = async (req, res) => {
+  const { match_id } = req.body;
+  const userId = req.user.id;
+
+  if (!match_id) return res.status(400).json({ error: "Match ID is required" });
+
+  // 0️⃣ Authorization Check
+  const authorized = await canScoreForMatch(userId, match_id);
+  if (!authorized) {
+    return res.status(403).json({ error: "Unauthorized: You don't have permission to finalize this match" });
+  }
+
+  try {
+    const result = await finalizeMatchInternal(match_id);
+    res.json(result);
+  } catch (err) {
+    const status = err.status || 500;
+    logDatabaseError(req.log, "finalizeMatch", err, { match_id });
+    res.status(status).json({ error: err.message || "Server error finalizing match" });
+  }
+};
+
+module.exports = { finalizeMatch, finalizeMatchInternal };
