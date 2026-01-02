@@ -26,6 +26,7 @@ const tournamentMatchRoutes = require("./routes/tournamentMatchRoutes"); // ✅ 
 const liveScoreRoutes = require("./routes/liveScoreRoutes");
 const { setIo } = require("./controllers/liveScoreController"); // ✅ Import setIo
 const liveScoreViewerRoutes = require("./routes/liveScoreViewerRoutes");
+const activityRoutes = require("./routes/activityRoutes"); // [NEW]
 const matchInningsRoutes = require("./routes/matchInningsRoutes");
 const playerStatsRoutes = require("./routes/playerStatsRoutes");
 const teamTournamentSummaryRoutes = require("./routes/teamTournamentSummaryRoutes");
@@ -270,6 +271,7 @@ app.use("/api/deliveries", ballByBallRoutes);
 app.use("/api/viewer/live-score", liveScoreViewerRoutes);
 const scorecardRoutes = require("./routes/scorecardRoutes");
 app.use("/api/viewer/scorecard", scorecardRoutes);
+app.use("/api/activity", activityRoutes); // [NEW] Activity User Monitoring
 
 app.use("/api/match-innings", matchInningsRoutes);
 app.use("/api/stats", statsRoutes);

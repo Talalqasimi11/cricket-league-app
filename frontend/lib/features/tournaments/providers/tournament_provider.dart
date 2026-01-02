@@ -127,8 +127,8 @@ class TournamentProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
-        _tournaments.removeWhere((t) => t.id == id);
-        notifyListeners();
+        // Force refresh to clear cache and get updated list
+        await fetchTournaments(forceRefresh: true);
         return true;
       } else {
         _error = _extractErrorMessage(response.body, response.statusCode);

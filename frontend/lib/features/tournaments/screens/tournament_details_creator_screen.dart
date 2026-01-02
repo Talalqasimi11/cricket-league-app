@@ -5,9 +5,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../services/api_service.dart';
 import '../models/tournament_model.dart' as local;
 
-// Alias the Detailed Match Model used by Bracket & Scoring
-import '../../matches/models/match_model.dart' as detailed;
-
 import '../../matches/screens/live_match_scoring_screen.dart';
 import '../../matches/screens/scorecard_screen.dart';
 import '../screens/tournament_team_registration_screen.dart';
@@ -830,43 +827,30 @@ class _TournamentDetailsCreatorScreenState
 
   Widget _buildBracketTab() {
     if (_matches.isEmpty) {
-      return const Center(child: Text('Add matches to generate bracket'));
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('No matches found.'),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _handleGenerateBracket,
+              icon: const Icon(Icons.account_tree),
+              label: const Text('Auto-Generate Bracket'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
-    final bracketMatches = _matches.map((m) {
-      final dynamic dynMatch = m;
-      String roundVal = 'round_1';
-      try {
-        roundVal = dynMatch.round ?? 'round_1';
-      } catch (_) {}
-
-      return detailed.MatchModel(
-        id: m.id,
-        teamA: m.teamA,
-        teamB: m.teamB,
-        status: detailed.MatchStatus.fromBackendValue(m.status),
-        scheduledAt: m.scheduledAt,
-        creatorId: '',
-        tournamentId: int.tryParse(_tournament.id),
-        round: roundVal,
-        runs: 0,
-        wickets: 0,
-        overs: 0.0,
-      );
-    }).toList();
-
     return TournamentBracketWidget(
-      matches: bracketMatches,
-      onMatchTap: (detailedMatch) {
-        try {
-          final originalMatch = _matches.firstWhere(
-            (m) => m.id == detailedMatch.id,
-          );
-          _navigateToMatchDetails(originalMatch);
-        } catch (e) {
-          debugPrint('Match not found in local list: ${detailedMatch.id}');
-        }
-      },
+      matches: _matches,
+      onMatchTap: (m) => _showMatchOptions(m),
+      tournamentWinner: _tournament.winnerName,
     );
   }
 
@@ -995,6 +979,87 @@ class _TournamentDetailsCreatorScreenState
     } else {
       _showUpcomingMatchDialog(match);
     }
+  }
+
+  Future<void> _handleGenerateBracket() async {
+    try {
+      final response = await ApiClient.instance.post(
+        '/api/tournament-matches/generate-bracket/${_tournament.id}',
+        body: {},
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        _showMessage("Bracket generated successfully!");
+        _refreshTournamentData();
+      } else {
+        String errorMessage = 'Failed to generate bracket';
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map && body.containsKey('error')) {
+            errorMessage = body['error'];
+          }
+        } catch (_) {}
+        _showMessage(errorMessage, isError: true);
+      }
+    } catch (e) {
+      _showMessage('Error generating bracket: $e', isError: true);
+    }
+  }
+
+  void _showMatchOptions(local.MatchModel match) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        final isUpcoming = match.isUpcoming;
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.info),
+                title: const Text('View Details'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToMatchDetails(match);
+                },
+              ),
+              if (isUpcoming && match.teamAId != null && match.teamBId != null)
+                ListTile(
+                  leading: const Icon(Icons.play_arrow, color: Colors.green),
+                  title: const Text('Start Match'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _handleStartMatch(match);
+                  },
+                ),
+              if (isUpcoming) ...[
+                ListTile(
+                  leading: const Icon(Icons.edit, color: Colors.blue),
+                  title: const Text('Edit Match'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    // Find index if needed, or just pass match
+                    final idx = _matches.indexWhere((m) => m.id == match.id);
+                    if (idx != -1) _handleEditMatch(idx, match);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete, color: Colors.red),
+                  title: const Text('Delete Match'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _deleteMatch(match);
+                  },
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _showUpcomingMatchDialog(local.MatchModel match) {

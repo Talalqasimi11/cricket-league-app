@@ -48,7 +48,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
     }
   }
 
-  Future<void> _fetchTournamentsSafely() async {
+  Future<void> _fetchTournamentsSafely({bool forceRefresh = false}) async {
     try {
       if (!mounted) return;
       // Set initial filter based on default tab (0 -> Live)
@@ -62,13 +62,13 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
       else if (selectedTab == 2)
         provider.setFilter('mine');
 
-      await provider.fetchTournaments();
+      await provider.fetchTournaments(forceRefresh: forceRefresh);
     } catch (e) {
       debugPrint('Error fetching tournaments: $e');
       if (mounted) {
         _showSnack(
           'Failed to load tournaments: $e',
-          action: _fetchTournamentsSafely,
+          action: () => _fetchTournamentsSafely(forceRefresh: true),
         );
       }
     }
@@ -136,7 +136,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.refresh),
-                onPressed: _fetchTournamentsSafely,
+                onPressed: () => _fetchTournamentsSafely(forceRefresh: true),
               ),
             ],
           ),
@@ -183,7 +183,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
     if (data.isEmpty) return _buildEmptyState();
 
     return RefreshIndicator(
-      onRefresh: _fetchTournamentsSafely,
+      onRefresh: () => _fetchTournamentsSafely(forceRefresh: true),
       child: ListView.builder(
         itemCount: data.length,
         itemBuilder: (context, index) {
@@ -220,7 +220,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                   listen: false,
                 ).setFilter('mine');
 
-                await _fetchTournamentsSafely();
+                await _fetchTournamentsSafely(forceRefresh: true);
                 if (mounted) _showSnack('Tournament created successfully!');
               }
             },

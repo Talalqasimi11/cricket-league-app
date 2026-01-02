@@ -260,3 +260,39 @@ CREATE TABLE IF NOT EXISTS `player_match_stats` (
 
 -- Re-enable foreign key checks
 SET FOREIGN_KEY_CHECKS = 1;
+ 
+ c o n s t   {   d b   }   =   r e q u i r e ( ' . / c o n f i g / d b ' ) ;  
+  
+ a s y n c   f u n c t i o n   c r e a t e T a b l e ( )   {  
+         t r y   {  
+                 c o n s o l e . l o g ( " C r e a t i n g   t e a m _ t o u r n a m e n t _ s u m m a r y   t a b l e . . . " ) ;  
+                 c o n s t   s q l   =   `  
+                         C R E A T E   T A B L E   I F   N O T   E X I S T S   \ ` t e a m _ t o u r n a m e n t _ s u m m a r y \ `   (  
+                             \ ` i d \ `   i n t   N O T   N U L L   A U T O _ I N C R E M E N T ,  
+                             \ ` t o u r n a m e n t _ i d \ `   i n t   N O T   N U L L ,  
+                             \ ` t e a m _ i d \ `   i n t   N O T   N U L L ,  
+                             \ ` m a t c h e s _ p l a y e d \ `   i n t   D E F A U L T   ' 0 ' ,  
+                             \ ` m a t c h e s _ w o n \ `   i n t   D E F A U L T   ' 0 ' ,  
+                             \ ` p o i n t s \ `   i n t   D E F A U L T   ' 0 ' ,  
+                             \ ` n r r \ `   d e c i m a l ( 1 0 , 3 )   D E F A U L T   ' 0 . 0 0 0 ' ,  
+                             \ ` c r e a t e d _ a t \ `   t i m e s t a m p   N U L L   D E F A U L T   C U R R E N T _ T I M E S T A M P ,  
+                             \ ` u p d a t e d _ a t \ `   t i m e s t a m p   N U L L   D E F A U L T   C U R R E N T _ T I M E S T A M P   O N   U P D A T E   C U R R E N T _ T I M E S T A M P ,  
+                             P R I M A R Y   K E Y   ( \ ` i d \ ` ) ,  
+                             U N I Q U E   K E Y   \ ` u n i q u e _ s u m m a r y \ `   ( \ ` t o u r n a m e n t _ i d \ ` ,   \ ` t e a m _ i d \ ` ) ,  
+                             F O R E I G N   K E Y   ( \ ` t o u r n a m e n t _ i d \ ` )   R E F E R E N C E S   \ ` t o u r n a m e n t s \ `   ( \ ` i d \ ` )   O N   D E L E T E   C A S C A D E ,  
+                             F O R E I G N   K E Y   ( \ ` t e a m _ i d \ ` )   R E F E R E N C E S   \ ` t e a m s \ `   ( \ ` i d \ ` )   O N   D E L E T E   C A S C A D E  
+                         )   E N G I N E = I n n o D B   D E F A U L T   C H A R S E T = u t f 8 m b 4   C O L L A T E = u t f 8 m b 4 _ u n i c o d e _ c i ;  
+                 ` ;  
+  
+                 a w a i t   d b . q u e r y ( s q l ) ;  
+                 c o n s o l e . l o g ( " ‚ S&   T a b l e   c r e a t e d   s u c c e s s f u l l y . " ) ;  
+  
+         }   c a t c h   ( e )   {  
+                 c o n s o l e . e r r o r ( " ‚ ù R  E r r o r   c r e a t i n g   t a b l e : " ,   e . m e s s a g e ) ;  
+         }   f i n a l l y   {  
+                 p r o c e s s . e x i t ( ) ;  
+         }  
+ }  
+  
+ c r e a t e T a b l e ( ) ;  
+ 

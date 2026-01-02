@@ -12,6 +12,7 @@ import Header from './components/Header';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import LiveScoring from './components/LiveScoring';
+import ActivityMonitor from './pages/ActivityMonitor'; // [NEW]
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -104,6 +105,8 @@ function App() {
         return <SystemHealth {...commonProps} />;
       case 'reports':
         return <ReportingDashboard {...commonProps} />;
+      case 'activity': // [NEW]
+        return <ActivityMonitor {...commonProps} />;
       default:
         return <Dashboard {...commonProps} />;
     }

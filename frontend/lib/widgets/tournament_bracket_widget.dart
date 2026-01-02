@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 // Assuming MatchModel and MatchStatus are defined here:
-import '../features/matches/models/match_model.dart';
+import '../features/tournaments/models/tournament_model.dart';
 
 // --- CONSTANTS FOR BRACKET LAYOUT ---
 const double _connectorWidth = 100.0;
@@ -12,11 +12,13 @@ const double _titleHeight = 55.0; // Increased to account for Text + Spacing
 class TournamentBracketWidget extends StatelessWidget {
   final List<MatchModel> matches;
   final void Function(MatchModel)? onMatchTap;
+  final String? tournamentWinner; // [ADDED]
 
   const TournamentBracketWidget({
     super.key,
     required this.matches,
     this.onMatchTap,
+    this.tournamentWinner,
   });
 
   @override
@@ -41,34 +43,43 @@ class TournamentBracketWidget extends StatelessWidget {
             builder: (context) {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
-                children: List.generate(roundKeys.length, (index) {
-                  final roundName = roundKeys[index];
-                  final list = rounds[roundName]!;
-                  final isLast = index == roundKeys.length - 1;
+                children: [
+                  ...List.generate(roundKeys.length, (index) {
+                    final roundName = roundKeys[index];
+                    final list = rounds[roundName]!;
+                    final isLast = index == roundKeys.length - 1;
 
-                  // Calculate the max height needed for the current round to center it
-                  final maxMatchesInRound = _calculateMaxMatches(rounds);
-                  final roundMaxHeight = _calculateRoundHeight(
-                    maxMatchesInRound,
-                  );
+                    // Calculate the max height needed for the current round to center it
+                    final maxMatchesInRound = _calculateMaxMatches(rounds);
+                    final roundMaxHeight = _calculateRoundHeight(
+                      maxMatchesInRound,
+                    );
 
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _RoundColumn(
-                        title: _getRoundDisplayName(roundName),
-                        matches: list,
-                        onTap: onMatchTap,
-                        roundMaxHeight: roundMaxHeight, // Pass max height
-                      ),
-                      if (!isLast)
-                        _BetweenRoundsConnector(
-                          leftCount: list.length,
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        _RoundColumn(
+                          title: _getRoundDisplayName(roundName),
+                          matches: list,
+                          onTap: onMatchTap,
                           roundMaxHeight: roundMaxHeight, // Pass max height
                         ),
-                    ],
-                  );
-                }),
+                        if (!isLast)
+                          _BetweenRoundsConnector(
+                            leftCount: list.length,
+                            roundMaxHeight: roundMaxHeight, // Pass max height
+                          ),
+                        // Connector to Winner if last round and winner exists
+                        if (isLast && tournamentWinner != null)
+                          _WinnerConnector(roundMaxHeight: roundMaxHeight),
+                      ],
+                    );
+                  }),
+
+                  // Tournament Winner Column
+                  if (tournamentWinner != null)
+                    _WinnerColumn(winnerName: tournamentWinner!),
+                ],
               );
             },
           ),
@@ -97,7 +108,7 @@ class TournamentBracketWidget extends StatelessWidget {
     final map = <String, List<MatchModel>>{};
 
     for (var m in matches) {
-      final r = _normalizeRound(m.round);
+      final r = _normalizeRound(m.round ?? 'round_1');
       map.putIfAbsent(r, () => []).add(m);
     }
 
@@ -256,25 +267,69 @@ class _MatchCard extends StatelessWidget {
               ),
 
             // Team A
-            Text(
-              match.teamA,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+            _TeamName(
+              name: match.teamA,
+              isWinner: match.winner != null && match.winner == match.teamA,
             ),
 
             const Divider(height: 1, color: Colors.black12),
 
             // Team B
-            Text(
-              match.teamB,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+            _TeamName(
+              name: match.teamB,
+              isWinner: match.winner != null && match.winner == match.teamB,
             ),
+
+            // Match Winner Display (if completed but simple match winner text)
+            if (match.isCompleted && match.winner != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  "Winner: ${match.winner}",
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TeamName extends StatelessWidget {
+  final String name;
+  final bool isWinner;
+
+  const _TeamName({required this.name, this.isWinner = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (isWinner)
+          const Padding(
+            padding: EdgeInsets.only(right: 4),
+            child: Icon(Icons.emoji_events, size: 14, color: Colors.amber),
+          ),
+        Flexible(
+          child: Text(
+            name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: isWinner ? FontWeight.bold : FontWeight.w600,
+              color: isWinner ? Colors.green[800] : Colors.black87,
+            ),
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -353,4 +408,95 @@ class _ConnectorPainter extends CustomPainter {
   @override
   bool shouldRepaint(_ConnectorPainter oldDelegate) =>
       oldDelegate.matchCount != matchCount;
+}
+
+//
+// WINNER CONNECTOR (Single line to trophy)
+//
+class _WinnerConnector extends StatelessWidget {
+  final double roundMaxHeight;
+
+  const _WinnerConnector({required this.roundMaxHeight});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 50,
+      height: roundMaxHeight,
+      child: CustomPaint(painter: _SimpleLinePainter()),
+    );
+  }
+}
+
+class _SimpleLinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2;
+
+    // Draw horizontal line from left center to right center
+    canvas.drawLine(
+      Offset(0, size.height / 2),
+      Offset(size.width, size.height / 2),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+//
+// WINNER COLUMN
+//
+class _WinnerColumn extends StatelessWidget {
+  final String winnerName;
+
+  const _WinnerColumn({required this.winnerName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.emoji_events, color: Colors.amber, size: 40),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              const Text(
+                "CHAMPION",
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
+              ),
+              Text(
+                winnerName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }

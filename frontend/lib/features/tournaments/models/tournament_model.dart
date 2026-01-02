@@ -211,6 +211,7 @@ class TournamentModel {
   final List<TournamentTeam> teams;
   final List<MatchModel>? matches;
   final String? createdBy;
+  final String? winnerName; // [ADDED]
 
   TournamentModel({
     required this.id,
@@ -223,6 +224,7 @@ class TournamentModel {
     required this.teams,
     this.matches,
     this.createdBy,
+    this.winnerName,
   });
 
   TournamentStatus get tournamentStatus => TournamentStatus.fromString(status);
@@ -273,6 +275,7 @@ class TournamentModel {
       matches: matchesList.isNotEmpty ? matchesList : null,
       createdBy:
           json['created_by']?.toString() ?? json['creator_id']?.toString(),
+      winnerName: json['winner_name']?.toString(), // [ADDED]
     );
   }
 }

@@ -11,10 +11,9 @@ const {
   startTournamentMatch,
   endTournamentMatch,
   deleteTournamentMatch,
-
-  // ... other imports
-  createFriendlyMatch, // Import this
-  createManualMatch // Import this
+  generateBracket, // Import this
+  createFriendlyMatch,
+  createManualMatch
 } = require("../controllers/tournamentMatchController");
 // ... existing routes ...
 
@@ -31,5 +30,6 @@ router.put("/update/:id", authMiddleware, validateSingleNumericParam('id'), upda
 router.put("/start/:id", authMiddleware, validateSingleNumericParam('id'), startTournamentMatch);
 router.put("/end/:id", authMiddleware, validateSingleNumericParam('id'), endTournamentMatch);
 router.delete("/delete/:id", authMiddleware, validateSingleNumericParam('id'), deleteTournamentMatch);
+router.post("/generate-bracket/:id", authMiddleware, validateSingleNumericParam('id'), generateBracket);
 
 module.exports = router;

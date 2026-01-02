@@ -10,7 +10,8 @@ const Sidebar = ({ currentView, onViewChange, user, onLogout }) => {
     { id: 'teams', label: 'Teams', icon: 'users', section: 'main' },
     { id: 'tournaments', label: 'Tournaments', icon: 'trophy', section: 'management' },
     { id: 'matches', label: 'Matches', icon: 'zap', section: 'management' },
-    { id: 'system-health', label: 'System Health', icon: 'activity', section: 'monitoring' },
+    { id: 'activity', label: 'Activity Logs', icon: 'activity', section: 'monitoring' }, // [NEW]
+    { id: 'system-health', label: 'System Health', icon: 'server', section: 'monitoring' },
     { id: 'reports', label: 'Reports', icon: 'trendingUp', section: 'analytics' },
   ];
 
@@ -61,11 +62,10 @@ const Sidebar = ({ currentView, onViewChange, user, onLogout }) => {
                 <button
                   key={item.id}
                   onClick={() => onViewChange(item.id)}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded transition-colors ${
-                    currentView === item.id
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded transition-colors ${currentView === item.id
                       ? 'bg-indigo-600 text-white'
                       : 'text-gray-300 hover:bg-gray-800'
-                  }`}
+                    }`}
                   title={isExpanded ? '' : item.label}
                 >
                   <Icon name={item.icon} size={20} className="flex-shrink-0" />

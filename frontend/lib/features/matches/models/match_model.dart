@@ -12,6 +12,7 @@ enum MatchStatus {
       'scheduled' => planned,
       'live' => live,
       'completed' => completed,
+      'finished' => completed, // Fix: Map 'finished' to completed
       'cancelled' => cancelled,
       _ => planned,
     };

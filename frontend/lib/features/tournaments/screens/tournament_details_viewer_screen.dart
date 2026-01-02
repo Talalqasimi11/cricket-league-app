@@ -4,11 +4,8 @@ import 'package:intl/intl.dart';
 // Alias the Local Tournament Model
 import '../models/tournament_model.dart' as local;
 
-// Alias the Detailed Match Model used by Bracket & Scoring
-import '../../matches/models/match_model.dart' as detailed_matches;
-
 import '../../../widgets/tournament_bracket_widget.dart';
-import '../widgets/tournament_stats_view.dart'; // [ADDED] Stats View
+import '../widgets/tournament_stats_view.dart';
 
 class TournamentDetailsViewerScreen extends StatelessWidget {
   final local.TournamentModel tournament;
@@ -162,40 +159,19 @@ class TournamentDetailsViewerScreen extends StatelessWidget {
       return const Center(child: Text('No matches to display in bracket'));
     }
 
-    // [FIX] Map local MatchModel to Detailed MatchModel
-    final bracketMatches = matches.map((m) {
-      // Safe access to properties that might be null in local model
-      final dynamic dynMatch = m;
-      String roundVal = 'round_1';
-      try {
-        roundVal = dynMatch.round ?? 'round_1';
-      } catch (_) {}
-
-      return detailed_matches.MatchModel(
-        id: m.id,
-        teamA: m.teamA,
-        teamB: m.teamB,
-        // Map status string to detailed Enum
-        status: detailed_matches.MatchStatus.fromBackendValue(m.status),
-        scheduledAt: m.scheduledAt,
-        creatorId: '',
-        tournamentId: int.tryParse(tournament.id) ?? 0,
-        // Map 'round' (required by bracket)
-        round: roundVal,
-        runs: 0,
-        wickets: 0,
-        overs: 0.0,
-      );
-    }).toList();
-
     return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      child: TournamentBracketWidget(
-        matches: bracketMatches,
-        onMatchTap: (match) {
-          // Tap logic can be added here if needed
-        },
+      scrollDirection:
+          Axis.vertical, // Allow vertical scrolling if bracket is tall
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: TournamentBracketWidget(
+          matches: matches,
+          onMatchTap: (match) {
+            // Tap logic can be added here if needed
+          },
+          tournamentWinner: tournament.winnerName,
+        ),
       ),
     );
   }

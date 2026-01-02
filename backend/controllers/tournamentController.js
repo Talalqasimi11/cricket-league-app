@@ -115,9 +115,10 @@ const getTournamentById = async (req, res) => {
   try {
     // 1. Fetch Tournament Details
     const [rows] = await db.query(`
-      SELECT t.*, u.phone_number AS creator_phone
+      SELECT t.*, u.phone_number AS creator_phone, wt.team_name AS winner_name
       FROM tournaments t
       JOIN users u ON t.created_by = u.id
+      LEFT JOIN teams wt ON t.winner_team_id = wt.id
       WHERE t.id = ?
     `, [tournamentId]);
 
@@ -143,12 +144,15 @@ const getTournamentById = async (req, res) => {
              COALESCE(t1.team_name, tt1.temp_team_name) AS teamA,
              COALESCE(t2.team_name, tt2.temp_team_name) AS teamB,
              m.team1_id AS teamAId, m.team2_id AS teamBId,
-             m.winner_id, m.parent_match_id
+             m.winner_id,
+             wt.team_name AS winner_name,
+             m.parent_match_id
       FROM tournament_matches m
       LEFT JOIN teams t1 ON m.team1_id = t1.id
       LEFT JOIN teams t2 ON m.team2_id = t2.id
       LEFT JOIN tournament_teams tt1 ON m.team1_tt_id = tt1.id
       LEFT JOIN tournament_teams tt2 ON m.team2_tt_id = tt2.id
+      LEFT JOIN teams wt ON m.winner_id = wt.id
       WHERE m.tournament_id = ?
       ORDER BY m.round, m.match_date ASC
     `, [tournamentId]);
@@ -171,7 +175,7 @@ const getTournamentById = async (req, res) => {
         status: m.status,
         round: m.round,
         scheduledAt: m.match_date,
-        winner: m.winner_id,
+        winner: m.winner_name,
         parentMatchId: m.parent_match_id
       }))
     };

@@ -11,6 +11,7 @@ import 'core/database/hive_service.dart';
 import 'core/caching/cache_manager.dart';
 import 'core/offline/offline_manager.dart';
 import 'services/api_service.dart';
+import 'services/activity_service.dart';
 
 // Models
 import 'features/teams/models/player.dart'; // ✅ Added Player Model
@@ -46,7 +47,8 @@ import 'widgets/route_error_widget.dart';
 // Viewer Screens (Aliased to avoid conflicts)
 import 'screens/team/viewer/team_dashboard_screen.dart' as viewer;
 // ✅ Update this import path to where you saved the viewer screen from the previous step
-import 'screens/player/viewer/player_dashboard_viewer_screen.dart' as player_view; 
+import 'screens/player/viewer/player_dashboard_viewer_screen.dart'
+    as player_view;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -109,6 +111,9 @@ class _AppBootstrapState extends State<AppBootstrap>
       await offlineManager!.init();
 
       ApiClient.instance.init();
+
+      // Log App Open
+      await ActivityService().logAppOpen();
 
       await Future.delayed(const Duration(milliseconds: 80));
 
@@ -180,7 +185,9 @@ class _AppBootstrapState extends State<AppBootstrap>
         Provider<OfflineManager>.value(value: offlineManager!),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => TournamentProvider()),
-        ChangeNotifierProvider(create: (_) => TournamentTeamRegistrationProvider()),
+        ChangeNotifierProvider(
+          create: (_) => TournamentTeamRegistrationProvider(),
+        ),
         ChangeNotifierProvider(create: (_) => LiveMatchProvider()),
         ChangeNotifierProvider(create: (_) => MatchProvider()),
         ChangeNotifierProvider(create: (_) => TeamProvider()),
@@ -218,7 +225,7 @@ class _AuthInitializerState extends State<AuthInitializer> {
 
       final offline = context.read<OfflineManager>();
       context.read<TournamentProvider>().setOfflineManager(offline);
-      
+
       AuthErrorHandler.initialize(context);
 
       setState(() {
@@ -301,10 +308,8 @@ class _AuthInitializerState extends State<AuthInitializer> {
             }
 
             return MaterialPageRoute(
-              builder: (_) => viewer.TeamDashboardScreen(
-                teamId: id,
-                teamName: name,
-              ),
+              builder: (_) =>
+                  viewer.TeamDashboardScreen(teamId: id, teamName: name),
             );
 
           case '/matches/live':
@@ -369,9 +374,8 @@ class _AuthInitializerState extends State<AuthInitializer> {
             // Case 1: Arguments are already a Player object
             if (args is Player) {
               return MaterialPageRoute(
-                builder: (_) => player_view.PlayerDashboardViewerScreen(
-                  player: args,
-                ),
+                builder: (_) =>
+                    player_view.PlayerDashboardViewerScreen(player: args),
               );
             }
 
@@ -380,9 +384,8 @@ class _AuthInitializerState extends State<AuthInitializer> {
               try {
                 final player = Player.fromJson(args);
                 return MaterialPageRoute(
-                  builder: (_) => player_view.PlayerDashboardViewerScreen(
-                    player: player,
-                  ),
+                  builder: (_) =>
+                      player_view.PlayerDashboardViewerScreen(player: player),
                 );
               } catch (e) {
                 return MaterialPageRoute(

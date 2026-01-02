@@ -23,6 +23,9 @@ const finalizeMatchInternal = async (match_id) => {
       throw { status: 404, message: "Match not found" };
     }
 
+    console.log("[Finalize Debug] Match found:", match); // DEBUG LOG
+
+
     if (match.status === "completed") {
       await conn.rollback();
       throw { status: 400, message: "Match already finalized" };
@@ -141,11 +144,29 @@ const finalizeMatchInternal = async (match_id) => {
 
     // 8️⃣ Sync Tournament Match Status & Promote Winner
     // If this was a tournament match, ensure the bracket reflects it is finished.
+    // 8️⃣ Sync Tournament Match Status & Promote Winner
+    // If this was a tournament match, ensure the bracket reflects it is finished.
+
     if (match.tournament_id) {
-      await conn.query(
+
+      const [updateRes] = await conn.query(
         "UPDATE tournament_matches SET status = 'finished', winner_id = ? WHERE match_id = ?",
         [winnerTeamId, match_id]
       );
+
+
+      if (updateRes.affectedRows === 0) {
+        // Fallback: Find by tournament and teams, ensure we link match_id
+        await conn.query(
+          `UPDATE tournament_matches 
+             SET status = 'finished', winner_id = ?, match_id = ? 
+             WHERE tournament_id = ? 
+             AND (team1_id IN (?, ?) AND team2_id IN (?, ?))
+             AND status != 'finished'`,
+          [winnerTeamId, match_id, match.tournament_id, match.team1_id, match.team2_id, match.team1_id, match.team2_id]
+        );
+      }
+
 
       // --- Promotion Logic ---
       const [[currentMatch]] = await conn.query(
@@ -179,6 +200,14 @@ const finalizeMatchInternal = async (match_id) => {
         );
 
         console.log(`[Tournament] Promoted Team ${winnerTeamId} to Match ${currentMatch.parent_match_id} (${targetPrefix})`);
+      } else if (currentMatch && !currentMatch.parent_match_id) {
+        // ✅ NO PARENT MATCH -> THIS IS THE FINAL!
+        // Update Tournament Winner and Status
+        await conn.query(
+          "UPDATE tournaments SET status = 'completed', winner_team_id = ? WHERE id = ?",
+          [winnerTeamId, match.tournament_id]
+        );
+        console.log(`[Tournament] Tournament ${match.tournament_id} COMPLETED. Winner: Team ${winnerTeamId}`);
       }
     }
 
