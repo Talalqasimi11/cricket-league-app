@@ -413,29 +413,20 @@ const verifyPasswordReset = async (req, res) => {
 // CONFIRM RESET
 // ========================
 const confirmPasswordReset = async (req, res) => {
-  const { phone_number, token, new_password } = req.body || {};
-  if (!phone_number || !token || !new_password) return res.status(400).json({ error: "Missing fields" });
+  const { phone_number, new_password } = req.body || {};
+  if (!phone_number || !new_password) return res.status(400).json({ error: "Missing fields" });
   if (String(new_password).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
   try {
     const [users] = await db.query("SELECT id FROM users WHERE phone_number = ?", [phone_number]);
-    if (users.length === 0) return res.status(400).json({ error: "Invalid reset token" });
+    if (users.length === 0) return res.status(404).json({ error: "User not found" });
     const userId = users[0].id;
 
-    const [rows] = await db.query(
-      "SELECT id, token_hash FROM password_resets WHERE user_id = ? AND used_at IS NULL AND expires_at > NOW() ORDER BY id DESC LIMIT 1",
-      [userId]
-    );
-    if (rows.length === 0) return res.status(400).json({ error: "Invalid or expired reset token" });
-
-    const ok = await bcrypt.compare(token, rows[0].token_hash || "");
-    if (!ok) return res.status(400).json({ error: "Invalid or expired reset token" });
-
+    // Direct password update - OTP Verification REMOVED
     const newHash = await bcrypt.hash(new_password, 12);
-
-    // Transaction-like execution
     await db.query("UPDATE users SET password_hash = ? WHERE id = ?", [newHash, userId]);
-    await db.query("UPDATE password_resets SET used_at = NOW() WHERE id = ?", [rows[0].id]);
+
+    // Invalidate sessions
     await db.query("UPDATE refresh_tokens SET is_revoked = 1, revoked_at = NOW() WHERE user_id = ? AND is_revoked = 0", [userId]);
 
     return res.json({ message: "Password reset successful" });

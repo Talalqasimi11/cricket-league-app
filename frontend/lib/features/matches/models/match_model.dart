@@ -36,6 +36,7 @@ class MatchModel {
   final String creatorId;
   final int? tournamentId;
   final String round; // [ADDED] Required for Brackets
+  final String? tournamentName; // [ADDED] Tournament Name
   final int runs;
   final int wickets;
   final double overs;
@@ -49,6 +50,7 @@ class MatchModel {
     required this.creatorId,
     this.tournamentId,
     this.round = 'round_1', // [ADDED]
+    this.tournamentName,
     this.runs = 0,
     this.wickets = 0,
     this.overs = 0.0,
@@ -89,6 +91,7 @@ class MatchModel {
             ? _parseInt(m['tournament_id'])
             : null,
         round: m['round']?.toString() ?? 'round_1', // [ADDED]
+        tournamentName: m['tournament_name']?.toString(), // [ADDED]
         runs: _parseInt(m['runs']),
         wickets: _parseInt(m['wickets']),
         overs: _parseDouble(m['overs']),
@@ -129,6 +132,7 @@ class MatchModel {
       creatorId: '',
       tournamentId: _parseInt(json['tournament_id']),
       round: json['round']?.toString() ?? 'round_1',
+      tournamentName: json['tournament_name']?.toString(),
       runs: 0,
       wickets: 0,
       overs: 20.0,
@@ -170,6 +174,7 @@ class MatchModel {
         getProp('tournamentId') ?? getProp('tournament_id'),
       ),
       round: getProp('round') ?? 'round_1', // [ADDED]
+      tournamentName: getProp('tournamentName') ?? getProp('tournament_name'),
       runs: _parseInt(getProp('runs')),
       wickets: _parseInt(getProp('wickets')),
       overs: _parseDouble(getProp('overs')),
@@ -186,6 +191,7 @@ class MatchModel {
       'creator_id': creatorId,
       'tournament_id': tournamentId,
       'round': round, // [ADDED]
+      'tournament_name': tournamentName,
       'runs': runs,
       'wickets': wickets,
       'overs': overs,
@@ -201,6 +207,7 @@ class MatchModel {
     String? creatorId,
     int? tournamentId,
     String? round, // [ADDED]
+    String? tournamentName,
     int? runs,
     int? wickets,
     double? overs,
@@ -214,6 +221,7 @@ class MatchModel {
       creatorId: creatorId ?? this.creatorId,
       tournamentId: tournamentId ?? this.tournamentId,
       round: round ?? this.round, // [ADDED]
+      tournamentName: tournamentName ?? this.tournamentName,
       runs: runs ?? this.runs,
       wickets: wickets ?? this.wickets,
       overs: overs ?? this.overs,

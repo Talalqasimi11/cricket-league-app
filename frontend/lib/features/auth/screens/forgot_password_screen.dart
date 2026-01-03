@@ -2,10 +2,9 @@
 
 import 'package:flutter/material.dart';
 import 'dart:convert';
-import 'dart:io'; 
+import 'dart:io';
 import '../../../core/api_client.dart';
 import '../../../core/error_dialog.dart';
-// [Added] Import shared helpers
 import '../../../core/utils/app_validators.dart';
 import '../../../core/theme/app_input_styles.dart';
 
@@ -18,82 +17,14 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   bool _isLoading = false;
-  bool _otpSent = false;
   bool _passwordChanged = false;
-  String _resetToken = '';
 
-  /// Request password reset
-  Future<void> _requestReset() async {
-    // Simple check before API call, detailed validation happens in Form
-    if (_phoneController.text.isEmpty) {
-      ErrorDialog.show(context, 'Phone number is required');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      // [Fixed] Use shared formatter
-      final phone = AppValidators.formatPhoneNumber(_phoneController.text.trim());
-      final response = await ApiClient.instance.post(
-        '/api/auth/forgot-password',
-        body: {'phone_number': phone},
-      );
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        _resetToken = data['token']?.toString() ?? '';
-        setState(() => _otpSent = true);
-        
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('OTP sent successfully to your phone.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        String message;
-        try {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          message = data['error'] ?? 'Failed to send OTP. Please check the phone number and try again.';
-        } catch (_) {
-          message = 'Failed to send OTP (Error ${response.statusCode}). Please try again.';
-        }
-        
-        if (!mounted) return;
-        ErrorDialog.show(context, message);
-      }
-    } on SocketException catch (_) {
-      if (!mounted) return;
-      ErrorDialog.show(
-        context,
-        'No internet connection. Please check your network.',
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ErrorDialog.show(
-        context,
-        'An unexpected error occurred while sending OTP.',
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  /// Verify OTP and reset password
+  /// Reset password directly (No OTP)
   Future<void> _resetPassword() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -104,15 +35,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
 
     try {
-      // [Fixed] Use shared formatter
-      final phone = AppValidators.formatPhoneNumber(_phoneController.text.trim());
+      final phone = AppValidators.formatPhoneNumber(
+        _phoneController.text.trim(),
+      );
+      // Calling the modified API which now accepts just phone and new_password
       final response = await ApiClient.instance.post(
         '/api/auth/reset-password',
         body: {
           'phone_number': phone,
-          'otp': _otpController.text,
           'new_password': _newPasswordController.text,
-          'token': _resetToken,
+          // 'token' is no longer needed
         },
       );
 
@@ -120,11 +52,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         setState(() => _passwordChanged = true);
-        
+
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Password reset successful. Please login with your new password.'),
+            content: Text(
+              'Password reset successful. Please login with your new password.',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -136,15 +70,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         String message;
         try {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
-          message = data['error'] ?? 'Failed to reset password. Please check your details and try again.';
+          message =
+              data['error'] ??
+              'Failed to reset password. Please check your details.';
         } catch (_) {
-          message = 'Failed to reset password (Error ${response.statusCode}). Please try again.';
+          message = 'Failed to reset password (Error ${response.statusCode}).';
         }
-        
-        if (response.statusCode == 400) {
-          message = 'Invalid OTP or password. Please try again.';
-        }
-        
+
         if (!mounted) return;
         ErrorDialog.show(context, message);
       }
@@ -170,7 +102,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   void dispose() {
     _phoneController.dispose();
-    _otpController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -193,7 +124,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Success message
               if (_passwordChanged)
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),
@@ -220,32 +150,56 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                 ),
 
-              // Step 1: Request Reset
               Text(
-                'Step 1: Enter Your Phone Number',
+                'Enter your details to reset password',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 16),
+
               TextFormField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
-                // [Fixed] Use shared validator
                 validator: AppValidators.validatePhoneNumber,
-                enabled: !_otpSent,
-                // [Fixed] Use shared style
                 decoration: AppInputStyles.textFieldDecoration(
                   context: context,
                   hintText: 'Phone Number (03XX-XXXXXXX)',
                   prefixIcon: Icons.phone,
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _newPasswordController,
+                obscureText: true,
+                validator: AppValidators.validatePassword,
+                decoration: AppInputStyles.textFieldDecoration(
+                  context: context,
+                  hintText: 'New Password (min 8 characters)',
+                  prefixIcon: Icons.lock,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _confirmPasswordController,
+                obscureText: true,
+                validator: (value) => AppValidators.validateConfirmPassword(
+                  value,
+                  _newPasswordController.text,
+                ),
+                decoration: AppInputStyles.textFieldDecoration(
+                  context: context,
+                  hintText: 'Confirm Password',
+                  prefixIcon: Icons.lock_outline,
+                ),
+              ),
+              const SizedBox(height: 24),
 
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: (!_otpSent && !_isLoading) ? _requestReset : null,
+                  onPressed: !_isLoading ? _resetPassword : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF15803D),
                     foregroundColor: Colors.white,
@@ -254,7 +208,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: _isLoading && !_otpSent
+                  child: _isLoading
                       ? const SizedBox(
                           height: 20,
                           width: 20,
@@ -263,115 +217,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             strokeWidth: 2,
                           ),
                         )
-                      : Text(_otpSent ? 'OTP Sent ✓' : 'Send OTP'),
+                      : const Text('Reset Password'),
                 ),
               ),
-
-              if (_otpSent) ...[
-                const SizedBox(height: 32),
-                const Divider(),
-                const SizedBox(height: 32),
-
-                // Step 2: Verify OTP and set new password
-                Text(
-                  'Step 2: Verify OTP and Set New Password',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _otpController,
-                  keyboardType: TextInputType.number,
-                  // [Fixed] Use shared validator
-                  validator: AppValidators.validateOtp,
-                  maxLength: 6,
-                  decoration: AppInputStyles.textFieldDecoration(
-                    context: context,
-                    hintText: 'Enter 6-digit OTP',
-                    prefixIcon: Icons.verified,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _newPasswordController,
-                  obscureText: true,
-                  // [Fixed] Use shared validator
-                  validator: AppValidators.validatePassword,
-                  decoration: AppInputStyles.textFieldDecoration(
-                    context: context,
-                    hintText: 'New Password (min 8 characters)',
-                    prefixIcon: Icons.lock,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  obscureText: true,
-                  // [Fixed] Use shared confirm validator
-                  validator: (value) => AppValidators.validateConfirmPassword(
-                    value,
-                    _newPasswordController.text,
-                  ),
-                  decoration: AppInputStyles.textFieldDecoration(
-                    context: context,
-                    hintText: 'Confirm Password',
-                    prefixIcon: Icons.lock_outline,
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: !_isLoading ? _resetPassword : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF15803D),
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.grey.shade400,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text('Reset Password'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: _isLoading
-                        ? null
-                        : () {
-                            setState(() {
-                              _otpSent = false;
-                              _otpController.clear();
-                              _newPasswordController.clear();
-                              _confirmPasswordController.clear();
-                            });
-                          },
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text('Back to Phone Entry'),
-                  ),
-                ),
-              ],
             ],
           ),
         ),

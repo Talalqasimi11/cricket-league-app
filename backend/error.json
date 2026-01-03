@@ -1,5 +1,0 @@
-{
-  "error": "Server error creating match",
-  "details": "Incorrect datetime value: '2025-12-01T17:32:11.993Z' for column 'match_datetime' at row 1",
-  "stack": "Error: Incorrect datetime value: '2025-12-01T17:32:11.993Z' for column 'match_datetime' at row 1\n    at PromisePoolConnection.query (C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app\\backend\\node_modules\\mysql2\\lib\\promise\\connection.js:29:22)\n    at createFriendlyMatch (C:\\Users\\Administrator\\Desktop\\final project\\cricket-league-app\\backend\\controllers\\tournamentMatchController.js:516:33)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
-}

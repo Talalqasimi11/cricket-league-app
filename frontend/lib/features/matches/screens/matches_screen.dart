@@ -390,16 +390,51 @@ class _MatchesScreenState extends State<MatchesScreen>
   Widget _buildMatchesList(ThemeData theme, MatchProvider provider) {
     final matches = _getFilteredMatches(provider);
 
+    final tournamentMatches = matches
+        .where((m) => m.tournamentId != null)
+        .toList();
+    final friendlyMatches = matches
+        .where((m) => m.tournamentId == null)
+        .toList();
+
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       sliver: SliverList(
-        delegate: SliverChildBuilderDelegate((context, index) {
-          final match = matches[index];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _buildMatchCard(theme, match),
-          );
-        }, childCount: matches.length),
+        delegate: SliverChildListDelegate([
+          if (tournamentMatches.isNotEmpty) ...[
+            _buildSectionHeader(theme, 'Tournament Matches'),
+            ...tournamentMatches.map(
+              (m) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildMatchCard(theme, m),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (friendlyMatches.isNotEmpty) ...[
+            _buildSectionHeader(theme, 'Friendly Matches'),
+            ...friendlyMatches.map(
+              (m) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildMatchCard(theme, m),
+              ),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(ThemeData theme, String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: theme.colorScheme.onSurface,
+        ),
       ),
     );
   }
@@ -462,12 +497,28 @@ class _MatchesScreenState extends State<MatchesScreen>
                 children: [
                   _buildStatusBadge(theme, status),
                   const Spacer(),
-                  Text(
-                    _formatMatchDate(match.scheduledAt),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurface.withAlpha(140),
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        _formatMatchDate(match.scheduledAt),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurface.withAlpha(140),
+                        ),
+                      ),
+                      if (match.tournamentName != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          match.tournamentName!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),

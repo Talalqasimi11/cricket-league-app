@@ -40,7 +40,7 @@ exports.getLogs = async (req, res) => {
 
         // Fetch logs with user details if available
         const query = `
-            SELECT l.*, u.username, u.email 
+            SELECT l.*, u.email as username, u.email 
             FROM user_activity_logs l
             LEFT JOIN users u ON l.user_id = u.id
             ORDER BY l.created_at DESC
