@@ -297,7 +297,7 @@ class ApiService {
 
       final response = await _apiClient.get(
         path,
-        cacheDuration: const Duration(minutes: 5),
+        cacheDuration: const Duration(seconds: 30),
       );
 
       final result = await _parseListResponse(response, Match.fromJson);

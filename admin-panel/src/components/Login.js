@@ -3,7 +3,7 @@ import { authAPI } from '../services/api';
 
 const Login = ({ onLogin, onToast }) => {
   const [formData, setFormData] = useState({
-    phone_number: '',
+    identifier: '',
     password: ''
   });
   const [loading, setLoading] = useState(false);
@@ -18,6 +18,12 @@ const Login = ({ onLogin, onToast }) => {
     setError('');
   };
 
+  // Check if it's a phone number (digits and potential +)
+  const isPhoneNumber = (val) => {
+    // Basic check: looks like a phone number not an email
+    return /^[\d\+\-\(\)\s]+$/.test(val);
+  };
+
   const formatPhoneNumber = (phone) => {
     // Remove all non-digit characters
     const cleaned = phone.replace(/\D/g, '');
@@ -25,9 +31,14 @@ const Login = ({ onLogin, onToast }) => {
     return cleaned.startsWith('+') ? phone : '+' + cleaned;
   };
 
-  const validatePhone = (phone) => {
-    const e164Regex = /^\+[1-9]\d{1,14}$/;
-    return e164Regex.test(phone);
+  const validateInput = (identifier) => {
+    if (identifier.includes('@')) {
+      // Simple email regex
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+    }
+    // Assume phone
+    const cleaned = identifier.replace(/\D/g, '');
+    return cleaned.length >= 8 && cleaned.length <= 15;
   };
 
   const handleSubmit = async (e) => {
@@ -36,15 +47,20 @@ const Login = ({ onLogin, onToast }) => {
     setError('');
 
     try {
-      // Validate phone format
-      const formattedPhone = formatPhoneNumber(formData.phone_number);
-      if (!validatePhone(formattedPhone)) {
-        setError('Invalid phone number format. Please use E.164 format (e.g., +1234567890)');
+      let finalIdentifier = formData.identifier;
+
+      if (!validateInput(finalIdentifier)) {
+        setError('Invalid email or phone number format.');
         setLoading(false);
         return;
       }
 
-      const response = await authAPI.login(formattedPhone, formData.password);
+      // If phone, ensure E.164
+      if (!finalIdentifier.includes('@') && isPhoneNumber(finalIdentifier)) {
+        finalIdentifier = formatPhoneNumber(finalIdentifier);
+      }
+
+      const response = await authAPI.login(finalIdentifier, formData.password);
       const token = response.data.token || response.data.access_token;
       const userData = response.data.user;
 
@@ -56,15 +72,15 @@ const Login = ({ onLogin, onToast }) => {
 
       onLogin(userData, token);
       onToast?.('Login successful!', 'success');
-      
+
     } catch (err) {
-  
+
       console.error('Login error:', err);
 
       if (err.response?.status === 403 || err.response?.status === 401) {
         setError('Access denied. Admin privileges required or invalid credentials.');
       } else if (err.response?.status === 400) {
-        setError('Invalid phone number or password format.');
+        setError('Invalid email/phone or password format.');
       } else {
         setError(err.response?.data?.error || 'Login failed. Please try again.');
       }
@@ -88,20 +104,20 @@ const Login = ({ onLogin, onToast }) => {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm space-y-4">
             <div>
-              <label htmlFor="phone_number" className="block text-sm font-medium text-gray-700 mb-1">
-                Phone Number
+              <label htmlFor="identifier" className="block text-sm font-medium text-gray-700 mb-1">
+                Email or Phone Number
               </label>
               <input
-                id="phone_number"
-                name="phone_number"
-                type="tel"
+                id="identifier"
+                name="identifier"
+                type="text"
                 required
                 className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="+1234567890"
-                value={formData.phone_number}
+                placeholder="admin@example.com or +1234567890"
+                value={formData.identifier}
                 onChange={handleChange}
               />
-              <p className="mt-1 text-xs text-gray-500">Use E.164 format: +countrycode followed by digits</p>
+              <p className="mt-1 text-xs text-gray-500">Enter your registered email or phone number</p>
             </div>
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">

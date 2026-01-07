@@ -84,11 +84,17 @@ api.interceptors.response.use(
 
 // --- AUTH API ---
 export const authAPI = {
-  login: (phoneNumber, password) => {
-    return api.post('/auth/login', {
-      phone_number: phoneNumber,
-      password
-    });
+  login: (identifier, password) => {
+    const isEmail = identifier.includes('@');
+    const payload = {};
+    if (isEmail) {
+      payload.email = identifier;
+    } else {
+      payload.phone_number = identifier;
+    }
+    payload.password = password;
+
+    return api.post('/auth/login', payload);
   },
 };
 

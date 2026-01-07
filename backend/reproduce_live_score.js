@@ -14,8 +14,8 @@ async function runTest() {
         // Changing approach: Use the existing check script style to inspect DB/Controller logic directly 
         // instead of full API integration test which might hit auth walls.
 
-        const { db } = require('./backend/config/db');
-        const { getLiveScore } = require('./backend/controllers/liveScoreController');
+        const { db } = require('./config/db');
+        const { getLiveScore } = require('./controllers/liveScoreController');
 
         // Mock Req/Res
         const mockRes = {

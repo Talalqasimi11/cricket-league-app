@@ -173,8 +173,22 @@ const getCompletedMatches = async (req, res) => {
  */
 const getAllMatches = async (req, res) => {
   try {
-    // By default fetch all, or we could add pagination/filtering here
-    const matches = await getMatchData("", []);
+    // Build where clause based on query params
+    const { status, tournament_id } = req.query;
+    let whereClause = "";
+    const params = [];
+
+    if (status) {
+      whereClause += " WHERE m.status = ?";
+      params.push(status);
+    }
+
+    if (tournament_id) {
+      whereClause += whereClause ? " AND m.tournament_id = ?" : " WHERE m.tournament_id = ?";
+      params.push(tournament_id);
+    }
+
+    const matches = await getMatchData(whereClause, params);
     res.json({ matches });
   } catch (err) {
     logDatabaseError(req.log, "getAllMatches", err);

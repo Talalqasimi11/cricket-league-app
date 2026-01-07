@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+  api:
+    build: .
+    container_name: node_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      mysql:
+       condition: service_healthy
+
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 2499154
+      MYSQL_DATABASE: cricket_league
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: 2499154
+    
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+
+volumes:
+  mysql_data:
