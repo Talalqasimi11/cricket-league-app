@@ -2,8 +2,8 @@ const { db } = require('./config/db');
 
 async function fixMatch33() {
     try {
-        await db.query("UPDATE tournament_matches SET status = 'planned' WHERE id = 33");
-        console.log("Fixed match 33: status set to 'planned'");
+        await db.query("UPDATE tournament_matches SET status = 'upcoming' WHERE id = 33");
+        console.log("Fixed match 33: status set to 'upcoming'");
         process.exit(0);
     } catch (error) {
         console.error('Error:', error);

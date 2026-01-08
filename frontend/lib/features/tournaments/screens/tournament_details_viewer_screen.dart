@@ -6,6 +6,7 @@ import '../models/tournament_model.dart' as local;
 
 import '../../../widgets/tournament_bracket_widget.dart';
 import '../widgets/tournament_stats_view.dart';
+import '../../matches/screens/live_match_view_screen.dart';
 
 class TournamentDetailsViewerScreen extends StatelessWidget {
   final local.TournamentModel tournament;
@@ -141,13 +142,43 @@ class TournamentDetailsViewerScreen extends StatelessWidget {
             : null;
         final scheduled = _formatDateTime(m.scheduledAt);
 
-        return _MatchCardViewer(
-          matchNo: matchNo,
-          teamA: _safeString(m.teamA, 'Team A'),
-          teamB: _safeString(m.teamB, 'Team B'),
-          result: result,
-          scheduled: scheduled,
-          match: m,
+        return GestureDetector(
+          onTap: () {
+            final matchId = m.parentMatchId ?? m.id;
+            if (matchId.isEmpty) return;
+
+            // Integrity Check
+            if ((m.isLive || m.isCompleted) && m.parentMatchId == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Match data incomplete. Please ask creator to fix.',
+                  ),
+                ),
+              );
+              return;
+            }
+
+            if (m.isLive || m.isCompleted) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => LiveMatchViewScreen(matchId: matchId),
+                ),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Match is not yet live.')),
+              );
+            }
+          },
+          child: _MatchCardViewer(
+            matchNo: matchNo,
+            teamA: _safeString(m.teamA, 'Team A'),
+            teamB: _safeString(m.teamB, 'Team B'),
+            result: result,
+            scheduled: scheduled,
+            match: m,
+          ),
         );
       },
     );
