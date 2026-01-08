@@ -11,12 +11,17 @@ class TournamentFilterTabs extends StatelessWidget {
     required this.onChanged,
   });
 
-  // [CHANGED] Simplified tabs for better UX: Live, Completed, and Creator Dashboard
-  static const List<String> _tabs = ["Live", "Completed", "My Tournaments"];
+  // [CHANGED] Added "Upcoming" tab
+  static const List<String> _tabs = [
+    "Live",
+    "Upcoming",
+    "Completed",
+    "My Tournaments",
+  ];
 
-  // [CHANGED] Tooltip now points to index 2
+  // [CHANGED] Tooltip now points to index 3 (My Tournaments)
   static const Map<int, String> _tooltips = {
-    2: 'Shows tournaments you created. Tap to manage or edit them.',
+    3: 'Shows tournaments you created. Tap to manage or edit them.',
   };
 
   // Safe index validation
@@ -59,12 +64,15 @@ class TournamentFilterTabs extends StatelessWidget {
   Widget _buildTabs() {
     final safeSelectedIndex = _getSafeSelectedIndex();
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: List.generate(
-        _tabs.length,
-        (index) => _buildTab(index, safeSelectedIndex),
-        growable: false,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: List.generate(
+          _tabs.length,
+          (index) => _buildTab(index, safeSelectedIndex),
+          growable: false,
+        ),
       ),
     );
   }
@@ -73,7 +81,7 @@ class TournamentFilterTabs extends StatelessWidget {
     try {
       if (index < 0 || index >= _tabs.length) {
         debugPrint('Invalid tab index in build: $index');
-        return const Expanded(child: SizedBox.shrink());
+        return const SizedBox.shrink();
       }
 
       final isSelected = safeSelectedIndex == index;
@@ -87,7 +95,7 @@ class TournamentFilterTabs extends StatelessWidget {
           button: true,
           selected: isSelected,
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
             margin: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: isSelected ? Colors.green : Colors.grey[200],
@@ -114,10 +122,10 @@ class TournamentFilterTabs extends StatelessWidget {
         content = Tooltip(message: tooltip, child: content);
       }
 
-      return Expanded(child: content);
+      return content;
     } catch (e) {
       debugPrint('Error building tab at index $index: $e');
-      return const Expanded(child: SizedBox.shrink());
+      return const SizedBox.shrink();
     }
   }
 

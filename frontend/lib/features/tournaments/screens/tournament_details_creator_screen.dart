@@ -12,6 +12,7 @@ import '../../../core/api_client.dart';
 import '../../../core/auth_provider.dart';
 import '../../../widgets/tournament_bracket_widget.dart';
 import 'package:provider/provider.dart';
+import '../../tournaments/widgets/tournament_stats_view.dart';
 
 class TournamentDetailsCreatorScreen extends StatefulWidget {
   final local.TournamentModel tournament;
@@ -535,7 +536,7 @@ class _TournamentDetailsCreatorScreenState
     final tournamentName = _safeString(_tournament.name, 'Tournament');
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text(tournamentName),
@@ -595,6 +596,7 @@ class _TournamentDetailsCreatorScreenState
               Tab(text: 'Info'),
               Tab(text: 'Matches'),
               Tab(text: 'Bracket'),
+              Tab(text: 'Stats'),
             ],
           ),
         ),
@@ -603,6 +605,7 @@ class _TournamentDetailsCreatorScreenState
             _buildInfoTab(),
             _buildMatchesTab(context),
             _buildBracketTab(),
+            TournamentStatsView(tournamentId: _tournament.id),
           ],
         ),
         floatingActionButton: FloatingActionButton(

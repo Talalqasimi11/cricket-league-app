@@ -60,8 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text.trim();
 
     if (_rememberMe) {
-      await SecureStorage.saveString(
-          'remembered_phone', _phoneController.text);
+      await SecureStorage.saveString('remembered_phone', _phoneController.text);
     } else {
       await SecureStorage.deleteString('remembered_phone');
     }
@@ -97,16 +96,17 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('✅ Login successful'),
-              backgroundColor: Colors.green),
+            content: Text('✅ Login successful'),
+            backgroundColor: Colors.green,
+          ),
         );
         Navigator.pushReplacementNamed(context, '/home');
       } else {
         String message;
         try {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
-          message = data['error'] ??
-              'Login failed. Please check your credentials.';
+          message =
+              data['error'] ?? 'Login failed. Please check your credentials.';
         } catch (_) {
           message =
               'Login failed (Error ${response.statusCode}). Please try again.';
@@ -163,11 +163,14 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: theme.colorScheme.onSurface,
-          ),
-          onPressed: () => Navigator.of(context).pop(),
+          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              Navigator.of(context).pushReplacementNamed('/home');
+            }
+          },
         ),
       ),
       body: Center(

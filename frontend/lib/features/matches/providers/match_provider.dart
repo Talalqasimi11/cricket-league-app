@@ -91,19 +91,39 @@ class MatchProvider extends ChangeNotifier {
           .map((item) => MatchModel.fromLegacyMatch(item))
           .toList();
 
-      // Only keep 'planned' (scheduled) tournament matches to avoid duplicates with legacy 'live'/'completed' matches
       final parsedTournament = tournamentMatches
           .map((item) => MatchModel.fromTournamentMatch(item))
           .toList();
 
-      _matches = [...parsedLegacy, ...parsedTournament];
+      // De-duplicate: Prefer tournament match objects if IDs collide, or just merge uniquely
+      final Map<String, MatchModel> uniqueMatches = {};
 
-      // Apply local filters if needed (though API usually handles it, merging might require re-filtering)
-      if (status != null && status != 'all') {
+      for (var m in parsedTournament) {
+        uniqueMatches[m.id] = m;
+      }
+      for (var m in parsedLegacy) {
+        // Only add if not already present (or overwrite? Legacy usually has more live score data)
+        // Legacy 'matches' table usually has the authoritative 'Live' status and IDs.
+        // However, IDs might differ if they are from different tables.
+        // If they assume same ID space:
+        uniqueMatches.putIfAbsent(m.id, () => m);
+      }
+
+      _matches = uniqueMatches.values.toList();
+
+      // Apply local filters if needed
+      // Fix: Handle empty string status as null intentionally
+      final validStatus =
+          (status != null && status.isNotEmpty && status != 'all')
+          ? status
+          : null;
+
+      if (validStatus != null) {
         _matches = _matches
-            .where((m) => m.status.backendValue == status)
+            .where((m) => m.status.backendValue == validStatus)
             .toList();
       }
+
       if (tournamentId != null) {
         _matches = _matches
             .where((m) => m.tournamentId == tournamentId)

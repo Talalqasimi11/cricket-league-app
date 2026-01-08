@@ -51,16 +51,18 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
   Future<void> _fetchTournamentsSafely({bool forceRefresh = false}) async {
     try {
       if (!mounted) return;
-      // Set initial filter based on default tab (0 -> Live)
+      // Set initial filter based on default tab (0 -> Active)
       final provider = Provider.of<TournamentProvider>(context, listen: false);
 
-      // Ensure filter matches initial tab
       if (selectedTab == 0) {
-        provider.setFilter('live');
-      } else if (selectedTab == 1)
+        provider.setFilter('active'); // 'live' -> 'active' to match model
+      } else if (selectedTab == 1) {
+        provider.setFilter('upcoming');
+      } else if (selectedTab == 2) {
         provider.setFilter('completed');
-      else if (selectedTab == 2)
+      } else if (selectedTab == 3) {
         provider.setFilter('mine');
+      }
 
       await provider.fetchTournaments(forceRefresh: forceRefresh);
     } catch (e) {
@@ -148,14 +150,16 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                   selectedIndex: selectedTab,
                   onChanged: (index) {
                     setState(() => selectedTab = index);
-                    // [CHANGED] New filter mapping
-                    // 0: Live, 1: Completed, 2: My Tournaments
+                    // Updated filter mapping
                     if (index == 0) {
-                      provider.setFilter('live');
-                    } else if (index == 1)
+                      provider.setFilter('active');
+                    } else if (index == 1) {
+                      provider.setFilter('upcoming');
+                    } else if (index == 2) {
                       provider.setFilter('completed');
-                    else if (index == 2)
+                    } else if (index == 3) {
                       provider.setFilter('mine');
+                    }
                   },
                 ),
                 const SizedBox(height: 16),
@@ -213,8 +217,8 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                 ),
               );
               if (created != null && mounted) {
-                // [Fix] Auto-switch to "Your Tournaments" tab
-                setState(() => selectedTab = 2);
+                // [Fix] Auto-switch to "My Tournaments" (Index 3)
+                setState(() => selectedTab = 3);
                 Provider.of<TournamentProvider>(
                   context,
                   listen: false,
@@ -234,9 +238,9 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
   }
 
   Widget _buildEmptyState() {
-    // [CHANGED] Updated titles to match new tabs
     final tabTitles = [
       'live tournaments',
+      'upcoming tournaments',
       'completed tournaments',
       'your tournaments',
     ];
@@ -247,7 +251,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            selectedTab == 2 ? Icons.edit_document : Icons.sports_cricket,
+            selectedTab == 3 ? Icons.edit_document : Icons.sports_cricket,
             size: 64,
             color: Colors.grey[400],
           ),
@@ -265,12 +269,14 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
             selectedTab == 0
                 ? 'Live matches will appear here.'
                 : selectedTab == 1
+                ? 'Scheduled tournaments will appear here.'
+                : selectedTab == 2
                 ? 'Past tournament results will appear here.'
                 : 'Create a tournament to manage it here.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 14, color: Colors.grey),
           ),
-          if (selectedTab == 2) const SizedBox(height: 24),
+          if (selectedTab == 3) const SizedBox(height: 24),
         ],
       ),
     );

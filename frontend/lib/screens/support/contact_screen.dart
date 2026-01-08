@@ -18,9 +18,9 @@ class ContactScreen extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to open link: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to open link: $e')));
       }
     }
   }
@@ -31,11 +31,8 @@ class ContactScreen extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     // URIs
-    final emailUri = Uri(
-      scheme: 'mailto',
-      path: 'support@cricleague.app',
-    );
-    final phoneUri = Uri(scheme: 'tel', path: '+12345678900');
+    final emailUri = Uri(scheme: 'mailto', path: 'talalqasimi.dev@outlook.com');
+    // Phone removed as requested
 
     return Scaffold(
       appBar: AppBar(
@@ -67,7 +64,7 @@ class ContactScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 32),
-              
+
               Text(
                 'We\'re here to help',
                 textAlign: TextAlign.center,
@@ -92,7 +89,9 @@ class ContactScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.05),
@@ -107,35 +106,30 @@ class ContactScreen extends StatelessWidget {
                       context,
                       icon: Icons.email_outlined,
                       title: 'Email Support',
-                      subtitle: 'support@cricleague.app',
+                      subtitle: 'talalqasimi.dev@outlook.com',
                       onTap: () => _launchUri(context, emailUri),
-                    ),
-                    Divider(height: 1, indent: 70, color: colorScheme.outlineVariant),
-                    _buildContactItem(
-                      context,
-                      icon: Icons.phone_outlined,
-                      title: 'Phone',
-                      subtitle: '+1-234-567-8900',
-                      onTap: () => _launchUri(context, phoneUri),
                     ),
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 40),
-              
+
               // FAQ / Help Center Link (Optional placeholder)
               TextButton.icon(
                 onPressed: () {
-                   ScaffoldMessenger.of(context).showSnackBar(
-                     const SnackBar(content: Text('Help Center coming soon!')),
-                   );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Help Center coming soon!')),
+                  );
                 },
                 icon: const Icon(Icons.help_outline),
                 label: const Text('Visit Help Center'),
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -154,7 +148,7 @@ class ContactScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       leading: Container(
@@ -164,11 +158,7 @@ class ContactScreen extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: colorScheme.outlineVariant),
         ),
-        child: Icon(
-          icon,
-          color: colorScheme.primary,
-          size: 24,
-        ),
+        child: Icon(icon, color: colorScheme.primary, size: 24),
       ),
       title: Text(
         title,
@@ -184,7 +174,11 @@ class ContactScreen extends StatelessWidget {
           fontWeight: FontWeight.w500,
         ),
       ),
-      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: colorScheme.onSurfaceVariant),
+      trailing: Icon(
+        Icons.arrow_forward_ios,
+        size: 16,
+        color: colorScheme.onSurfaceVariant,
+      ),
       onTap: onTap,
     );
   }
