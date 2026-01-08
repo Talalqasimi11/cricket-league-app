@@ -962,6 +962,17 @@ class _TournamentDetailsCreatorScreenState
     final matchId = match.parentMatchId ?? match.id;
     if (matchId.isEmpty) return;
 
+    // Hardening: If live/completed, we expect a valid parentMatchId (from matches table).
+    // If parentMatchId is null but status says live/completed, it's a data sync error.
+    if ((_isLive(match.status) || _isCompleted(match.status)) &&
+        match.parentMatchId == null) {
+      _showMessage(
+        'Match data incomplete. Please reset or contact support.',
+        isError: true,
+      );
+      return;
+    }
+
     if (_isLive(match.status)) {
       await Navigator.of(context).push(
         MaterialPageRoute(
