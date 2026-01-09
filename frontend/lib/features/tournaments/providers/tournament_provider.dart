@@ -34,7 +34,8 @@ class TournamentProvider extends ChangeNotifier {
   List<TournamentModel> get filteredTournaments {
     switch (_filter) {
       case 'active':
-        return _tournaments.where((t) => t.isActive).toList();
+        // [CHANGED] 'Live' section now includes both active and upcoming
+        return _tournaments.where((t) => t.isActive || t.isUpcoming).toList();
       case 'upcoming':
         return _tournaments.where((t) => t.isUpcoming).toList();
       case 'completed':

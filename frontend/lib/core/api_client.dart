@@ -115,7 +115,7 @@ class ApiClient {
 
   // -------------------- Base URL & Storage --------------------
   String getPlatformDefaultUrl() {
-    return 'http://192.168.10.38:3000';
+    return 'http://13.62.18.120:3000';
   }
 
   Future<void> setCustomBaseUrl(String url) async {

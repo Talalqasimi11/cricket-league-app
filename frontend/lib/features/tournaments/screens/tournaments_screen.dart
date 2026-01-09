@@ -55,12 +55,11 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
       final provider = Provider.of<TournamentProvider>(context, listen: false);
 
       if (selectedTab == 0) {
-        provider.setFilter('active'); // 'live' -> 'active' to match model
+        // [CHANGED] "Live" tab now shows all active tournaments (including upcoming)
+        provider.setFilter('active');
       } else if (selectedTab == 1) {
-        provider.setFilter('upcoming');
-      } else if (selectedTab == 2) {
         provider.setFilter('completed');
-      } else if (selectedTab == 3) {
+      } else if (selectedTab == 2) {
         provider.setFilter('mine');
       }
 
@@ -154,10 +153,8 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     if (index == 0) {
                       provider.setFilter('active');
                     } else if (index == 1) {
-                      provider.setFilter('upcoming');
-                    } else if (index == 2) {
                       provider.setFilter('completed');
-                    } else if (index == 3) {
+                    } else if (index == 2) {
                       provider.setFilter('mine');
                     }
                   },
@@ -217,8 +214,8 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                 ),
               );
               if (created != null && mounted) {
-                // [Fix] Auto-switch to "My Tournaments" (Index 3)
-                setState(() => selectedTab = 3);
+                // [Fix] Auto-switch to "My Tournaments" (Index 2)
+                setState(() => selectedTab = 2);
                 Provider.of<TournamentProvider>(
                   context,
                   listen: false,
@@ -239,10 +236,9 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
 
   Widget _buildEmptyState() {
     final tabTitles = [
-      'live tournaments',
-      'upcoming tournaments',
-      'completed tournaments',
-      'your tournaments',
+      'live tournaments', // Index 0 (Active + Upcoming)
+      'completed tournaments', // Index 1
+      'your tournaments', // Index 2
     ];
     final tabTitle = tabTitles[selectedTab];
 

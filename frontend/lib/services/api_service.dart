@@ -83,6 +83,10 @@ class ApiService {
             items = data['data'] as List;
           } else if (data['items'] is List) {
             items = data['items'] as List;
+          } else if (data['matches'] is List) {
+            items = data['matches'] as List;
+          } else if (data['tournaments'] is List) {
+            items = data['tournaments'] as List;
           }
         }
 

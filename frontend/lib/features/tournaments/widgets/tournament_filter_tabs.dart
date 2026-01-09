@@ -12,16 +12,11 @@ class TournamentFilterTabs extends StatelessWidget {
   });
 
   // [CHANGED] Added "Upcoming" tab
-  static const List<String> _tabs = [
-    "Live",
-    "Upcoming",
-    "Completed",
-    "My Tournaments",
-  ];
+  static const List<String> _tabs = ["Live", "Completed", "My Tournaments"];
 
-  // [CHANGED] Tooltip now points to index 3 (My Tournaments)
+  // [CHANGED] Tooltip now points to index 2 (My Tournaments)
   static const Map<int, String> _tooltips = {
-    3: 'Shows tournaments you created. Tap to manage or edit them.',
+    2: 'Shows tournaments you created. Tap to manage or edit them.',
   };
 
   // Safe index validation

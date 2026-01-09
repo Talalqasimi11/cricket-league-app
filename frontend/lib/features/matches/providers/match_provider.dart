@@ -95,18 +95,19 @@ class MatchProvider extends ChangeNotifier {
           .map((item) => MatchModel.fromTournamentMatch(item))
           .toList();
 
-      // De-duplicate: Prefer tournament match objects if IDs collide, or just merge uniquely
+      // De-duplicate: Prefer legacy (real) matches over tournament match slots
       final Map<String, MatchModel> uniqueMatches = {};
 
+      // 1. Add Tournament Matches first (as base)
       for (var m in parsedTournament) {
         uniqueMatches[m.id] = m;
       }
+
+      // 2. Add/Overwrite with Legacy Matches (Source of Truth for Live status)
       for (var m in parsedLegacy) {
-        // Only add if not already present (or overwrite? Legacy usually has more live score data)
-        // Legacy 'matches' table usually has the authoritative 'Live' status and IDs.
-        // However, IDs might differ if they are from different tables.
-        // If they assume same ID space:
-        uniqueMatches.putIfAbsent(m.id, () => m);
+        // We overwrite because this comes from the main 'matches' table
+        // which tracks the actual live status, scores, etc.
+        uniqueMatches[m.id] = m;
       }
 
       _matches = uniqueMatches.values.toList();
